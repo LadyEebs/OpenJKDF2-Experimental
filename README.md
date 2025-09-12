@@ -5,7 +5,7 @@ This fork introduces a variety of new features and experiments. The content is c
 
 <img width="3840" height="2036" alt="image" src="https://github.com/user-attachments/assets/599ead8b-0479-40a8-8242-7841d02d729d" />
 
-<img width="3840" height="2036" alt="SHOT1381" src="https://github.com/user-attachments/assets/e759c699-55b5-4cd5-9955-fc905bbbae8b" />
+<img width="3840" height="2036" alt="image" src="https://github.com/user-attachments/assets/4b8506a7-a5e9-43a8-9287-5b9aefae42db" />
 
 
 Among the features (not all enabled by default):
