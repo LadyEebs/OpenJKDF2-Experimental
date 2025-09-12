@@ -1,6 +1,10 @@
 # This fork
 This fork introduces a variety of new features and experiments. The content is currently not in the branch, until an official package is uploaded you'll need to contact me to try it out.
 
+<img width="3839" height="2075" alt="image" src="https://github.com/user-attachments/assets/1a704d5e-d3e5-4c22-8fdb-778f995e319b" />
+<img width="3840" height="2036" alt="SHOT1378" src="https://github.com/user-attachments/assets/13c8adf4-f8c8-4de0-a958-2c29281127f9" />
+<img width="3840" height="2036" alt="SHOT1381" src="https://github.com/user-attachments/assets/2149af60-e45b-4852-a828-92b0b5f9b8f2" />
+
 Among the features (not all enabled by default):
 
 General:
