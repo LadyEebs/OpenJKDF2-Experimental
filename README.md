@@ -3,9 +3,10 @@ This fork introduces a variety of new features and experiments. The content is c
 
 <img width="3839" height="2075" alt="image" src="https://github.com/user-attachments/assets/1a704d5e-d3e5-4c22-8fdb-778f995e319b" />
 
-<img width="3840" height="2036" alt="SHOT1378" src="https://github.com/user-attachments/assets/2c9b6091-8497-47c5-98bb-6878b46deba9" />
+<img width="3840" height="2036" alt="image" src="https://github.com/user-attachments/assets/599ead8b-0479-40a8-8242-7841d02d729d" />
 
-<img width="3840" height="2036" alt="SHOT1381" src="https://github.com/user-attachments/assets/fc901cc9-d48a-4253-bc12-b6e723ebb403" />
+<img width="3840" height="2036" alt="SHOT1381" src="https://github.com/user-attachments/assets/e759c699-55b5-4cd5-9955-fc905bbbae8b" />
+
 
 Among the features (not all enabled by default):
 
