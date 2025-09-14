@@ -7,7 +7,7 @@
 // Experimental features
 #ifdef QOL_IMPROVEMENTS
 
-//#define RENDER_DROID2        // new gpu path, skips rdCache and uses a fixed-function like API to pass information to the GPU for HW transform, clipping and lighting
+#define RENDER_DROID2        // new gpu path, skips rdCache and uses a fixed-function like API to pass information to the GPU for HW transform, clipping and lighting
 
 //#define HW_VBUFFER // temp stuff, trying to move vbuffer to GPU and use fbos in there so we can render to them
 
@@ -15,6 +15,10 @@
 
 #ifndef RENDER_DROID2
 #define TILE_SW_RASTER
+#else
+#ifdef TILE_SW_RASTER
+#undef TILE_SW_RASTER
+#endif
 #endif
 
 #ifdef TILE_SW_RASTER
@@ -144,7 +148,7 @@
 #endif // QOL_IMPROVEMENTS
 
 // If I ever do demo recording, add it here
-#define NEEDS_STEPPED_PHYS 0//(!jkPlayer_bJankyPhysics || sithNet_isMulti)
+#define NEEDS_STEPPED_PHYS (!jkPlayer_bJankyPhysics || sithNet_isMulti)
 
 // Settings for stepped physics
 #ifdef TARGET_TWL
@@ -459,7 +463,7 @@
 #endif
 
 // Deferred loading and LRU unloading
-#if defined(QOL_IMPROVEMENTS) && !defined(TILE_SW_RASTER)
+#if defined(QOL_IMPROVEMENTS) && !defined(TILE_SW_RASTER) && !defined(RENDER_DROID2)
 #define RDMATERIAL_LRU_LOAD_UNLOAD
 #endif
 

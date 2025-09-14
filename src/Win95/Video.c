@@ -246,12 +246,20 @@ LABEL_9:
     _memcpy(Video_aPalette, color_buf, sizeof(Video_aPalette));
     Video_pOtherBuf = &Video_otherBuf;
     Video_pMenuBuffer = &Video_menuBuffer;
+#ifdef TILE_SW_RASTER
 	int use3d = 0; // added
 	use3d = Video_modeStruct.b3DAccel && d3d_device_ptr;
     if ( !Video_modeStruct.b3DAccel || !d3d_device_ptr) // Added d3d_device_ptr
     {
         Video_pMenuBuffer = stdDisplay_VBufferNew(&Video_format, 0, 0, color_buf);
         //if ( !Video_modeStruct.b3DAccel || !d3d_device_ptr )
+#else
+	int use3d = 0;
+	if (!Video_modeStruct.b3DAccel)
+	{
+		Video_pMenuBuffer = stdDisplay_VBufferNew(&Video_format, 0, 0, color_buf);
+		if ( !Video_modeStruct.b3DAccel )
+#endif
         {
             result = rdOpen(use3d);
             if ( !result )
@@ -265,16 +273,22 @@ LABEL_9:
 			goto LABEL_25;
         }
     }
-    //std3D_Startup();
+#ifndef TILE_SW_RASTER
+    std3D_Startup();
+#endif
     if ( !std3D_FindClosestDevice(Video_modeStruct.Video_8605C8, 1) )
     {
-        //std3D_Shutdown();
+	#ifndef TILE_SW_RASTER
+        std3D_Shutdown();
+	#endif
         return 0;
     }
     if ( !d3d_device_ptr->hasColorModel )
     {
-        //v4 = std3D_GetRenderList();
-        //std3D_SetRenderList(v4 & ~0x1B2u);
+	#ifndef TILE_SW_RASTER
+        v4 = std3D_GetRenderList();
+        std3D_SetRenderList(v4 & ~0x1B2u);
+	#endif
     }
     std3D_GetValidDimensions(Video_modeStruct.minTexSize, Video_modeStruct.minTexSize, 256, 256);
     result = rdOpen(1);
