@@ -110,7 +110,7 @@ int stdDisplay_VBufferSetColorKey(stdVBuffer *vbuf, int color);
 void stdDisplay_VBufferFree(stdVBuffer *vbuf);
 void stdDisplay_ddraw_surface_flip2();
 void stdDisplay_RestoreDisplayMode();
-stdVBuffer* stdDisplay_VBufferConvertColorFormat(void* a, stdVBuffer* b);
+stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* a, stdVBuffer* b);
 int stdDisplay_GammaCorrect3(int a1);
 
 int stdDisplay_SetCooperativeLevel(uint32_t a);

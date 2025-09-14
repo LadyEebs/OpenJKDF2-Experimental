@@ -1752,10 +1752,97 @@ void stdDisplay_RestoreDisplayMode()
 
 }
 
-stdVBuffer* stdDisplay_VBufferConvertColorFormat(void* a, stdVBuffer* b)
+#ifdef TILE_SW_RASTER
+stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* pDesiredColorFormat, stdVBuffer* pSrc)
+{
+	assert(pSrc != NULL);
+	if (memcmp(pDesiredColorFormat, &pSrc->format.format, sizeof(rdTexformat)) == 0)
+		return pSrc;
+
+	if (pSrc->format.format.colorMode == STDCOLOR_PAL)
+	{
+		if (pDesiredColorFormat->colorMode == STDCOLOR_PAL)
+		{
+			return pSrc;
+		}
+		assert(pSrc->format.format.colorMode != STDCOLOR_PAL);
+	}
+
+	const rdTexformat* pSrcColorFormat = &pSrc->format.format;
+	assert(pDesiredColorFormat->colorMode != STDCOLOR_PAL);
+	assert(pSrcColorFormat->r_bits != 0);
+	assert(pSrcColorFormat->g_bits != 0);
+	assert(pSrcColorFormat->b_bits != 0);
+	assert(pDesiredColorFormat->r_bits != 0);
+	assert(pDesiredColorFormat->g_bits != 0);
+	assert(pDesiredColorFormat->b_bits != 0);
+	assert(pSrcColorFormat->r_shift != 0 || pSrcColorFormat->g_shift != 0 || pSrcColorFormat->b_shift != 0);
+	assert(pDesiredColorFormat->r_shift != 0 || pDesiredColorFormat->g_shift != 0 || pDesiredColorFormat->b_shift != 0);
+
+	stdVBuffer* pDest;
+	if (pSrc->format.format.bpp == pDesiredColorFormat->bpp)
+	{
+		pDest = pSrc;
+		pDest = pSrc;
+	}
+	else
+	{
+		stdVBufferTexFmt rasterInfo;
+		memcpy(&rasterInfo, &pSrc->format, sizeof(rasterInfo));
+		memcpy(&rasterInfo.format, pDesiredColorFormat, sizeof(rasterInfo.format));
+
+		pDest = stdDisplay_VBufferNew(&rasterInfo, 0, 0, 0);
+		if (!pDest)
+		{
+			stdPrintf(std_pHS->errorPrint, ".\\Platform\\D3D\\std3D.c", __LINE__, "Unable to allocate memory for new stdVBuffer.\n");
+			return NULL;
+		}
+	}
+
+	// Convert pixel data
+	assert(pSrc->surface_lock_alloc != NULL);
+	assert(pDest->surface_lock_alloc != NULL);
+
+	stdDisplay_VBufferLock(pSrc);
+	stdDisplay_VBufferLock(pDest);
+
+	const uint8_t* pSrcRow = NULL;
+	uint8_t* pDestRow = NULL;
+	for (size_t row = 0; row < (signed int)pDest->format.height; ++row)
+	{
+		pSrcRow = &pSrc->surface_lock_alloc[pSrc->format.width_in_pixels * row];
+		pDestRow = &pDest->surface_lock_alloc[pDest->format.width_in_pixels * row];
+
+		stdColor_ColorConvertOneRow(
+			pDestRow,
+			pDesiredColorFormat,
+			pSrcRow,
+			&pSrc->format.format,
+			pDest->format.width
+		);
+	}
+
+	assert(pDestRow <= pDest->surface_lock_alloc + pDest->format.texture_size_in_bytes);
+	assert(pSrcRow <= pSrc->surface_lock_alloc + pSrc->format.texture_size_in_bytes);
+	stdDisplay_VBufferUnlock(pSrc);
+	stdDisplay_VBufferUnlock(pDest);
+
+	// Copy color format
+	memcpy(&pDest->format.format, pDesiredColorFormat, sizeof(pDest->format.format));
+
+	if (pDest != pSrc)
+	{
+		stdDisplay_VBufferFree(pSrc);
+	}
+
+	return pDest;
+}
+#else
+stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* a, stdVBuffer* b)
 {
     return b;
 }
+#endif
 
 int stdDisplay_GammaCorrect3(int gammaIndex)
 {
