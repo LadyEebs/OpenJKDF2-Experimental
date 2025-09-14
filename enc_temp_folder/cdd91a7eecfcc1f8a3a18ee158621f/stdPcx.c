@@ -175,6 +175,64 @@ int stdPcx_Write(char *fpath, stdBitmap *bitmap)
 	stdFPutc(0x0C, fd);
 	std_pHS->fileWrite(fd, bitmap->palette, 768);
 
+	// Done
 	std_pHS->fileClose(fd);
 	return 1;
+
+/*    stdVBuffer* mipSurface;
+    uint8_t* lockAlloc;
+    stdPcx_Header pcxHeader;
+
+    pcxHeader.magic = 10;
+    pcxHeader.version = 5;
+    pcxHeader.isRle = 1;
+    pcxHeader.bitDepth = 8;
+    pcxHeader.xMin = 0;
+    pcxHeader.yMin = 0;
+    pcxHeader.xMax = ((uint16_t)bitmap->mipSurfaces[0]->format.width) - 1;
+    pcxHeader.yMax = ((uint16_t)bitmap->mipSurfaces[0]->format.height) - 1;
+    pcxHeader.xDpi = bitmap->mipSurfaces[0]->format.width;
+    pcxHeader.yDpi = bitmap->mipSurfaces[0]->format.height;
+    pcxHeader.reserved_40 = 0;
+    pcxHeader.colorDims = 1;
+    pcxHeader.stride = bitmap->mipSurfaces[0]->format.width;
+    pcxHeader.paletteMode = 0;
+    _memset(pcxHeader.egaPalette, 0, sizeof(pcxHeader.egaPalette));
+    _memset(&pcxHeader.width, 0, 0x38u);
+    *(uint16_t*)&pcxHeader.reserved_4A[52] = 0;
+    
+    int fhand = std_pHS->fileOpen(fpath, "wb");
+    if ( !fhand )
+        return 0;
+
+    std_pHS->fileWrite(fhand, &pcxHeader, sizeof(stdPcx_Header));
+    mipSurface = *bitmap->mipSurfaces;
+    lockAlloc = (uint8_t*)mipSurface->surface_lock_alloc;
+    for (int i = 0; i < mipSurface->format.height; i++)
+    {
+        for (int j = 0; j < mipSurface->format.width; j++ )
+        {
+            uint8_t* v14 = &lockAlloc[(mipSurface->format.width * i) + j];
+            uint8_t v13 = *v14;
+            int v15 = 1;
+            while ( v13 == v14[v15] )
+            {
+                if ( j + v15 >= mipSurface->format.width )
+					break;
+                if ( v15 >= 0x3Fu )
+					break;
+				++v15;
+            }
+
+            if ( v15 > 1u || v13 > 0xBFu )
+                stdFPutc(v15 | 0xC0, fhand);
+            stdFPutc(*v14, fhand);
+            j += v15;
+        }
+    }
+
+    stdFPutc(0xC, fhand);
+    std_pHS->fileWrite(fhand, bitmap->palette, 0x300);
+    std_pHS->fileClose(fhand);
+    return 1;*/
 }
