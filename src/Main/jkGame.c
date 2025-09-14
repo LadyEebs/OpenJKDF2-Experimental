@@ -1,6 +1,9 @@
 #include "jkGame.h"
 
 #include "General/stdPalEffects.h"
+#include "General/stdBitmap.h"
+#include "General/stdBmp.h"
+#include "General/stdPcx.h"
 #include "Main/sithMain.h"
 #include "Engine/rdroid.h"
 #include "Raster/rdCache.h"
@@ -417,7 +420,101 @@ int jkGame_Update()
     return result;
 }
 
-#ifdef SDL2_RENDER
+#ifdef TILE_SW_RASTER
+void jkGame_Screenshot(void)
+{
+	stdBitmap* bitmap = NULL;
+	stdVBuffer* vbuf = NULL;
+	char filename[128];
+	int done;
+	stdFile_t file;
+
+	// Screenshot numbering state
+	if (Video_pMenuBuffer->format.format.colorMode == 0)// Video_modeStruct.b3DAccel == 0)
+	{
+		// Software mode: dump directly to PCX
+		bitmap = stdBitmap_VBufferToBitmap(Video_pMenuBuffer, 0, 0);
+		if (bitmap)
+		{
+			// Find an available filename
+			done = 0;
+			while (!done)
+			{
+				sprintf(filename, "JSHOT%03d.PCX", Video_dword_5528B0);
+				file = (*pHS->fileOpen)(filename, "r");
+				if (file == 0)
+				{
+					done = 1; // free slot
+				}
+				else
+				{
+					(*pHS->fileClose)(file);
+					Video_dword_5528B0++;
+					if (Video_dword_5528B0 > 999)
+						done = 1;
+				}
+			}
+
+			// Swap palette, write, then restore
+			void* oldPalette = bitmap->palette;
+			bitmap->palette = stdDisplay_GetPalette();
+			stdPcx_Write(filename, bitmap);
+			bitmap->palette = oldPalette;
+
+			stdBitmap_Free(bitmap);
+			return;
+		}
+	}
+	else
+	{
+		// 3D-accelerated mode: dump as BMP
+		vbuf = stdDisplay_VBufferNew(&Video_menuBuffer.format, 0, 0, NULL);
+		stdDisplay_VBufferCopy(vbuf, Video_pMenuBuffer, 0, 0, NULL, 0);
+
+		// Convert to BMP-compatible format
+		static rdTexformat bmpFormat = {
+			.colorMode = 1,   // true-color
+			.bpp = 24,  // 24-bit
+			.r_bits = 8,
+			.g_bits = 8,
+			.b_bits = 8,
+			.unk_40 = 8,
+			.r_shift = 16,
+			.g_shift = 8,
+			.b_shift = 0,
+			.unk_44 = 0,
+		};
+
+		vbuf = stdDisplay_VBufferConvertColorFormat(&bmpFormat, vbuf);
+		bitmap = stdBitmap_VBufferToBitmap(vbuf, 0, 0);
+		if (bitmap)
+		{
+			done = 0;
+			while (!done)
+			{
+				sprintf(filename, "JSHOT%03d.BMP", Video_dword_5528B0);
+				file = (*pHS->fileOpen)(filename, "r");
+				if (file == 0)
+				{
+					done = 1; // free slot
+				}
+				else
+				{
+					(*pHS->fileClose)(file);
+					Video_dword_5528B0++;
+					if (Video_dword_5528B0 > 999)
+						done = 1;
+				}
+			}
+
+			stdBmp_Write(filename, bitmap);
+			stdBitmap_Free(bitmap);
+		}
+
+		stdDisplay_VBufferFree(vbuf);
+	}
+}
+#elif defined(SDL2_RENDER)
 void jkGame_Screenshot()
 {
     //stdPlatform_Printf("TODO: Implement screenshots\n");

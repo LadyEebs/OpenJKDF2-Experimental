@@ -74,6 +74,8 @@ int stdBitmap_LoadEntryFromFile(intptr_t fp, stdBitmap *out, int bCreateDDrawSur
 void stdBitmap_ConvertColorFormat(rdTexformat *formatTo, stdBitmap *bitmap);
 void stdBitmap_Free(stdBitmap *bitmap);
 
+stdBitmap* stdBitmap_VBufferToBitmap(stdVBuffer* src, int a1, int a2);
+
 // Added
 //stdBitmap* stdBitmap_NewEntryFromRGBA(uint8_t* pixels, uint32_t width, uint32_t height, int bCreateDDrawSurface, int gpuMem);
 

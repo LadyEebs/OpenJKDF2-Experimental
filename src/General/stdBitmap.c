@@ -291,6 +291,63 @@ void stdBitmap_Free(stdBitmap *pBitmap)
     //stdPrintf(std_pHS->debugPrint, ".\\General\\stdBitmap.c", 322, "Bitmap successfully freed.\n", 0, 0, 0, 0);
 }
 
+stdBitmap* stdBitmap_VBufferToBitmap(stdVBuffer* src, int a1, int a2)
+{
+	if (!src) return NULL;
+
+	// Allocate the bitmap object
+	stdBitmap* bmp = (stdBitmap*)(*std_pHS->alloc)(sizeof(stdBitmap));
+	if (!bmp) return NULL;
+
+	bmp->field_20 = 0;
+	bmp->palFmt = (src->palette ? 2 : 0);
+	bmp->numMips = 1;
+	bmp->field_68 = 0;
+	bmp->xPos = 0;
+	bmp->yPos = 0;
+
+	// Allocate space for mip surface array (1 entry)
+	bmp->mipSurfaces = (stdVBuffer**)(*std_pHS->alloc)(sizeof(stdVBuffer*));
+	if (!bmp->mipSurfaces)
+	{
+		return NULL;
+	}
+
+	// Create new vbuffer and copy from source
+	stdVBuffer* vbuf = stdDisplay_VBufferNew(&src->format, a1, a2, NULL);
+	*bmp->mipSurfaces = vbuf;
+	if (!vbuf)
+	{
+		return NULL;
+	}
+
+	stdDisplay_VBufferCopy(vbuf, src, 0, 0, NULL, 0);
+	stdDisplay_VBufferUnlock(src);
+
+	// Copy palette if present
+	if (bmp->palFmt & 2)
+	{
+		bmp->palette = (*std_pHS->alloc)(0x300); // 768 bytes
+		if (!bmp->palette)
+		{
+			return NULL;
+		}
+
+		uint32_t* dst = (uint32_t*)bmp->palette;
+		uint32_t* srcPal = (uint32_t*)src->palette;
+		for (int i = 0; i < 0xC0; i++)
+		{ // 192 * 4 = 768
+			*dst++ = *srcPal++;
+		}
+	}
+	else
+	{
+		bmp->palette = NULL;
+	}
+
+	return bmp;
+}
+
 /*
 stdBitmap* stdBitmap_NewEntryFromRGBA(uint8_t* pixels, uint32_t width, uint32_t height, int bCreateDDrawSurface, int gpuMem)
 {
