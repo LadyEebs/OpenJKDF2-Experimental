@@ -23,7 +23,7 @@ int stdBmp_Write(const char* filename, stdBitmap* bmp)
 	{
 		if (bpp != 24)
 		{
-			std_pHS->assert("Only 24bpp supported", "stdBmp.c", 0x1c8);
+			std_pHS->assert("Only 24bpp supported", ".\\General\\stdBmp.c", __LINE__);
 			return 0;
 		}
 	}
@@ -53,32 +53,32 @@ int stdBmp_Write(const char* filename, stdBitmap* bmp)
 	ih.biXPelsPerMeter = 0xb12; // just a fixed DPI constant
 	ih.biYPelsPerMeter = 0xb12;
 
-	stdFile_t f = (*std_pHS->fileOpen)(filename, "wb");
+	stdFile_t f = std_pHS->fileOpen(filename, "wb");
 	if (!f)
 	{
-		stdPrintf(std_pHS->errorPrint, "stdBmp.c", 0x1fb,
+		stdPrintf(std_pHS->errorPrint, ".\\General\\stdBmp.c", __LINE__,
 				  "Unable to open file '%s' for writing.", filename);
 		return 0;
 	}
 
 	// Write headers
-	if ((*std_pHS->fileWrite)(f, &fh, sizeof(fh)) != sizeof(fh) ||
-		(*std_pHS->fileWrite)(f, &ih, sizeof(ih)) != sizeof(ih))
+	if (std_pHS->fileWrite(f, &fh, sizeof(fh)) != sizeof(fh) ||
+		std_pHS->fileWrite(f, &ih, sizeof(ih)) != sizeof(ih))
 	{
-		stdPrintf(std_pHS->errorPrint, "stdBmp.c", 0x204,
+		stdPrintf(std_pHS->errorPrint, ".\\General\\stdBmp.c", __LINE__,
 				  "Error writing BMP headers to '%s'", filename);
-		(*std_pHS->fileClose)(f);
+		std_pHS->fileClose(f);
 		return 0;
 	}
 
 	// Write palette if needed
 	if (paletteSize > 0)
 	{
-		if ((*std_pHS->fileWrite)(f, bmp->palette, paletteSize) != paletteSize)
+		if (std_pHS->fileWrite(f, bmp->palette, paletteSize) != paletteSize)
 		{
-			stdPrintf(std_pHS->errorPrint, "stdBmp.c", 0x21c,
+			stdPrintf(std_pHS->errorPrint, ".\\General\\stdBmp.c", __LINE__,
 					  "Error writing %zu bytes of palette to '%s'", paletteSize, filename);
-			(*std_pHS->fileClose)(f);
+			std_pHS->fileClose(f);
 			return 0;
 		}
 	}
@@ -87,15 +87,15 @@ int stdBmp_Write(const char* filename, stdBitmap* bmp)
 	for (int y = height - 1; y >= 0; y--)
 	{
 		uint8_t* row = vbuf->surface_lock_alloc + y * vbuf->format.width_in_bytes;
-		if ((*std_pHS->fileWrite)(f, row, rowSize) != rowSize)
+		if (std_pHS->fileWrite(f, row, rowSize) != rowSize)
 		{
-			stdPrintf(std_pHS->errorPrint, "stdBmp.c", 0x22d,
+			stdPrintf(std_pHS->errorPrint, ".\\General\\stdBmp.c", __LINE__,
 					  "Error writing %zu bytes of pixel data to '%s'", rowSize, filename);
-			(*std_pHS->fileClose)(f);
+			std_pHS->fileClose(f);
 			return 0;
 		}
 	}
 
-	(*std_pHS->fileClose)(f);
+	std_pHS->fileClose(f);
 	return 1;
 }

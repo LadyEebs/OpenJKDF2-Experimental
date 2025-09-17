@@ -283,12 +283,12 @@ void stdDisplay_CreateDefaultModes()
 	Video_renderSurface[7].format.format.colorMode = 1;
 	Video_renderSurface[7].format.format.bpp = 16;
 	Video_renderSurface[7].format.format.r_bits = 5;
-	Video_renderSurface[7].format.format.g_bits = 5;
+	Video_renderSurface[7].format.format.g_bits = 6;
 	Video_renderSurface[7].format.format.b_bits = 5;
 	Video_renderSurface[7].format.format.r_bitdiff = 3;
-	Video_renderSurface[7].format.format.g_bitdiff = 3;
+	Video_renderSurface[7].format.format.g_bitdiff = 2;
 	Video_renderSurface[7].format.format.b_bitdiff = 3;
-	Video_renderSurface[7].format.format.r_shift = 10;
+	Video_renderSurface[7].format.format.r_shift = 11;
 	Video_renderSurface[7].format.format.g_shift = 5;
 	Video_renderSurface[7].format.format.b_shift = 0;
 	Video_renderSurface[7].aspectRatio = 1.0;
@@ -301,12 +301,12 @@ void stdDisplay_CreateDefaultModes()
 	Video_renderSurface[8].format.format.colorMode = 1;
 	Video_renderSurface[8].format.format.bpp = 16;
 	Video_renderSurface[8].format.format.r_bits = 5;
-	Video_renderSurface[8].format.format.g_bits = 5;
+	Video_renderSurface[8].format.format.g_bits = 6;
 	Video_renderSurface[8].format.format.b_bits = 5;
 	Video_renderSurface[8].format.format.r_bitdiff = 3;
-	Video_renderSurface[8].format.format.g_bitdiff = 3;
+	Video_renderSurface[8].format.format.g_bitdiff = 2;
 	Video_renderSurface[8].format.format.b_bitdiff = 3;
-	Video_renderSurface[8].format.format.r_shift = 10;
+	Video_renderSurface[8].format.format.r_shift = 11;
 	Video_renderSurface[8].format.format.g_shift = 5;
 	Video_renderSurface[8].format.format.b_shift = 0;
 	Video_renderSurface[8].aspectRatio = 1.0;
@@ -1813,12 +1813,17 @@ stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* pDesiredColo
 	stdDisplay_VBufferLock(pSrc);
 	stdDisplay_VBufferLock(pDest);
 
+	size_t height = pDest->format.height;
+	uint32_t dst_stride = pDest->format.width_in_bytes;
+	uint32_t src_stride = pSrc->format.width_in_bytes;
+
 	const uint8_t* pSrcRow = NULL;
 	uint8_t* pDestRow = NULL;
+
 	for (size_t row = 0; row < (signed int)pDest->format.height; ++row)
 	{
-		pSrcRow = &pSrc->surface_lock_alloc[pSrc->format.width_in_pixels * row];
-		pDestRow = &pDest->surface_lock_alloc[pDest->format.width_in_pixels * row];
+		pSrcRow = pSrc->surface_lock_alloc + src_stride * row;
+		pDestRow = pDest->surface_lock_alloc + dst_stride * row;
 
 		stdColor_ColorConvertOneRow(
 			pDestRow,
@@ -1837,6 +1842,8 @@ stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* pDesiredColo
 	// Copy color format
 	memcpy(&pDest->format.format, pDesiredColorFormat, sizeof(pDest->format.format));
 
+	pDest->transparent_color = stdColor_ColorConvertOnePixel(pDesiredColorFormat, pSrc->transparent_color, &pSrc->format.format);
+	
 	if (pDest != pSrc)
 	{
 		stdDisplay_VBufferFree(pSrc);

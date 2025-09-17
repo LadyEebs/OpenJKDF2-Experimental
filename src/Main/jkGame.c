@@ -441,14 +441,14 @@ void jkGame_Screenshot(void)
 			while (!done)
 			{
 				sprintf(filename, "JSHOT%03d.PCX", Video_dword_5528B0);
-				file = (*pHS->fileOpen)(filename, "r");
+				file = pHS->fileOpen(filename, "r");
 				if (file == 0)
 				{
 					done = 1; // free slot
 				}
 				else
 				{
-					(*pHS->fileClose)(file);
+					pHS->fileClose(file);
 					Video_dword_5528B0++;
 					if (Video_dword_5528B0 > 999)
 						done = 1;
@@ -478,10 +478,10 @@ void jkGame_Screenshot(void)
 			.r_bits = 8,
 			.g_bits = 8,
 			.b_bits = 8,
-			.unk_40 = 8,
-			.r_shift = 16,
+			.unk_40 = 0,
+			.r_shift = 0,
 			.g_shift = 8,
-			.b_shift = 0,
+			.b_shift = 16,
 			.unk_44 = 0,
 		};
 
@@ -493,14 +493,14 @@ void jkGame_Screenshot(void)
 			while (!done)
 			{
 				sprintf(filename, "JSHOT%03d.BMP", Video_dword_5528B0);
-				file = (*pHS->fileOpen)(filename, "r");
+				file = pHS->fileOpen(filename, "r");
 				if (file == 0)
 				{
 					done = 1; // free slot
 				}
 				else
 				{
-					(*pHS->fileClose)(file);
+					pHS->fileClose(file);
 					Video_dword_5528B0++;
 					if (Video_dword_5528B0 > 999)
 						done = 1;
