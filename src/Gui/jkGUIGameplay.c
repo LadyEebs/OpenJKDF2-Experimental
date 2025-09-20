@@ -75,7 +75,7 @@ static jkGuiElement jkGuiGameplay_buttons[] = {
     {ELEMENT_CHECKBOX, 0, 0, "GUIEXT_DISABLE_WAGGLE", 0, {30, 270, 270, 20}, 1, 0, "GUIEXT_DISABLE_WAGGLE_HINT", 0, 0, 0, {0}, 0},
 
     // 41
-    {ELEMENT_SLIDER, 0, 0, (const char*)10, 50, { 30, 345, 235, 30 }, 1, 0, "GUIEXT_CROSSHAIR_SCALE_HINT", jkGuiGameplay_ScaleDraw, 0, slider_images, {0}, 0},
+    {ELEMENT_SLIDER, 0, 0, (const char*)8, 50, { 30, 345, 235, 30 }, 1, 0, "GUIEXT_CROSSHAIR_SCALE_HINT", jkGuiGameplay_ScaleDraw, 0, slider_images, {0}, 0},
     {ELEMENT_TEXT,         0,            0, "GUIEXT_CROSSHAIR_SCALE",                 3, {30, 345-25, 235, 20}, 1,  0, 0, 0, 0, 0, {0}, 0},
     {ELEMENT_TEXT,         0,            0, slider_val_text,        3, {30, 345+30, 235, 20}, 1,  0, 0, 0, 0, 0, {0}, 0},
 #ifdef DYNAMIC_POV
@@ -108,7 +108,7 @@ void jkGuiGameplay_Shutdown()
 #ifdef QOL_IMPROVEMENTS
 void jkGuiGameplay_ScaleDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vbuf, int redraw)
 {
-    flex_t tmp = ((flex_t)jkGuiGameplay_buttons[41].selectedTextEntry)*0.2f; // FLEXTODO
+    flex_t tmp = ((flex_t)jkGuiGameplay_buttons[41].selectedTextEntry)*0.25f; // FLEXTODO
     
     jk_snwprintf(slider_val_text, 5, L"%f", tmp);
     jkGuiGameplay_buttons[42].wstr = slider_val_text;
@@ -148,7 +148,7 @@ int jkGuiGameplay_Show()
     jkGuiGameplay_buttons[38].selectedTextEntry = jkPlayer_setCrosshairOnLightsaber;
     jkGuiGameplay_buttons[39].selectedTextEntry = jkPlayer_setCrosshairOnFist;
     jkGuiGameplay_buttons[40].selectedTextEntry = jkPlayer_bDisableWeaponWaggle;
-    jkGuiGameplay_buttons[41].selectedTextEntry = jkPlayer_crosshairScale * 5;
+    jkGuiGameplay_buttons[41].selectedTextEntry = jkPlayer_crosshairScale * 4;
 
 #ifdef DYNAMIC_POV
     jkGuiGameplay_buttons[44].selectedTextEntry = jkPlayer_aimLock;
@@ -196,7 +196,7 @@ int jkGuiGameplay_Show()
         jkPlayer_setCrosshairOnLightsaber = jkGuiGameplay_buttons[38].selectedTextEntry;
         jkPlayer_setCrosshairOnFist = jkGuiGameplay_buttons[39].selectedTextEntry;
         jkPlayer_bDisableWeaponWaggle = jkGuiGameplay_buttons[40].selectedTextEntry;
-        jkPlayer_crosshairScale = ((flex_t)jkGuiGameplay_buttons[41].selectedTextEntry)*0.2f; // FLEXTODO
+        jkPlayer_crosshairScale = ((flex_t)jkGuiGameplay_buttons[41].selectedTextEntry)*0.25f; // FLEXTODO
 		
 	#ifdef DYNAMIC_POV
 		jkPlayer_aimLock = (float)jkGuiGameplay_buttons[44].selectedTextEntry;

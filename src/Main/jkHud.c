@@ -621,17 +621,33 @@ void jkHud_Draw()
 #endif /* ifdef QOL_IMPROVEMENTS */
 
     )
-	if(0) // issue with display and crashing in old path
+	if(1) // issue with display and crashing in old path
     {
 #ifdef DYNAMIC_POV
-	// draw crosshair on projected position
-		v20 = (double)Video_format.height * (0.0015625 / 3.0) * jkPlayer_crosshairScale;
-		double tex_w = jkHud_pCrosshair->mipSurfaces[0]->format.width;
-		double tex_h = jkHud_pCrosshair->mipSurfaces[0]->format.height;
-		v21 = v20 * (64.0f / tex_h);
-		v20 *= (64.0f / tex_w);
-		//std3D_DrawUIBitmapRGBA(jkHud_pCrosshair, 0, jkPlayer_crosshairPos.x - tex_w * v20 / 2.0, jkPlayer_crosshairPos.y - tex_h * v20 / 2.0, NULL, v20, v20, 1, 0xFF, 0xFF, 0xFF, 0x0);
-		stdDisplay_VBufferCopy(Video_pCanvas->vbuffer, jkHud_pCrosshair->mipSurfaces[0], jkPlayer_crosshairPos.x - tex_w * v20 / 2.0, jkPlayer_crosshairPos.y - tex_h * v20 / 2.0, 0, 1);
+		// draw crosshair on projected position
+		flex_t scale = jkPlayer_crosshairScale * jkPlayer_hudScale;
+		//flex_t ar = (flex_t)(Video_pCanvas->widthMinusOne+1) / (flex_t)(Video_pCanvas->heightMinusOne+1);
+		//flex_t scale_x = scale * ar;
+		//flex_t scale_y = scale;
+
+		// todo: would be nice to use the ai alignment stuff...
+		int frame = 0;
+		if (jkPlayer_crosshairTarget && (jkPlayer_crosshairTarget->type == SITH_THING_ACTOR || jkPlayer_crosshairTarget->type == SITH_THING_PLAYER))
+		{
+			int isFriendly = (jkPlayer_crosshairTarget->actorParams.typeflags & SITH_AF_NOTARGET);
+			if (sithNet_isMulti)
+				isFriendly |= sithPlayer_OnSameTeam(sithPlayer_pLocalPlayerThing, jkPlayer_crosshairTarget);
+
+			frame = isFriendly ? 1 : 2;
+		}
+		frame = frame % jkHud_pCrosshair->numMips;
+
+		int x = ((int)((flex_t)(jkHud_pCrosshair->xPos)*scale));
+		int y = ((int)((flex_t)(jkHud_pCrosshair->yPos)*scale));
+		stdDisplay_VBufferCopyScaled(Video_pCanvas->vbuffer, jkHud_pCrosshair->mipSurfaces[frame], jkPlayer_crosshairPos.x - x, jkPlayer_crosshairPos.y - y, 0, 1, scale, scale);
+
+		//std3D_DrawUIBitmapRGBA(jkHud_pCrosshair, 0, jkPlayer_crosshairPos.x - tex_w * v20 / 2.0, jkPlayer_crosshairPos.y - tex_h * v20 / 2.0, NULL, v20, v20, 1, r, g, b, 0x0);
+		//std3D_DrawUIBitmap(jkHud_pCrosshair, 0, v22, v23, NULL, jkPlayer_crosshairScale, 1);
 #else
         uint32_t tmpInt;
 #ifdef QOL_IMPROVEMENTS

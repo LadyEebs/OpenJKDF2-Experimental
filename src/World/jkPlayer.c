@@ -1162,6 +1162,21 @@ void jkPlayer_DrawPov()
 
 	STD_BEGIN_PROFILER_LABEL();
 
+#ifdef DYNAMIC_POV
+	flex_t povfov = (flex_t)stdMath_ClampInt(jkPlayer_povFov, FOV_MIN, FOV_MAX);
+	flex_t fpfov = povfov;//stdMath_ArcTan3(1.0, stdMath_Tan(povfov * 0.5f) / rdCamera_pCurCamera->screenAspectRatio) * -2.0;
+	fpfov /= sithCamera_currentCamera->zoomScale;
+	flex_t lastFov = rdCamera_pCurCamera->fov;
+	rdClipFrustum* lastFrustum = rdCamera_pCurCamera->pClipFrustum;
+
+	// setup a POV specific clip frustum
+	rdClipFrustum povClip;
+	povClip.bClipFar = 0;
+	povClip.zNear = SITHCAMERA_ZNEAR_FIRSTPERSON;
+	povClip.zFar = SITHCAMERA_ZFAR_FIRSTPERSON;
+	rdCamera_pCurCamera->pClipFrustum = &povClip;
+#endif
+
 #ifdef RENDER_DROID2
 	int32_t tex_w = (int32_t)((double)Window_xSize * jkPlayer_ssaaMultiple);
 	int32_t tex_h = (int32_t)((double)Window_ySize * jkPlayer_ssaaMultiple);
@@ -1182,9 +1197,6 @@ void jkPlayer_DrawPov()
 	rdMatrixMode(RD_MATRIX_PROJECTION);
 	rdIdentity();
 	
-	flex_t povfov = (flex_t)stdMath_ClampInt(jkPlayer_povFov, FOV_MIN, FOV_MAX);
-	flex_t fpfov = stdMath_ArcTan3(1.0, stdMath_Tan(povfov * 0.5f) / rdCamera_pCurCamera->screenAspectRatio) * -2.0;
-	fpfov /= sithCamera_currentCamera->zoomScale;
 	rdPerspective(/*rdCamera_pCurCamera->fov*/fpfov, rdCamera_pCurCamera->screenAspectRatio, rdCamera_pCurCamera->pClipFrustum->zNear, rdCamera_pCurCamera->pClipFrustum->zFar);
 
 	rdMatrixMode(RD_MATRIX_MODEL);
@@ -1203,6 +1215,10 @@ void jkPlayer_DrawPov()
 	// when drawn first this is the prev frame or black..
 	extern void std3D_BlitFrame();
 	std3D_BlitFrame();
+#endif
+
+#if defined(TILE_SW_RASTER) && defined(DYNAMIC_POV)
+	rdCamera_SetFOV(rdCamera_pCurCamera, fpfov);
 #endif
 
     if ( playerThings[playerThingIdx].povModel.puppet )
@@ -1324,8 +1340,13 @@ void jkPlayer_DrawPov()
         rdSetOcclusionMethod(0);
 #else
         // Force weapon to draw in front of scene
+		#ifdef TILE_SW_RASTER
+		rdCamera_pCurCamera->canvas->bIdk |= 4; // clear Z
+		rdSetZBufferMethod(RD_ZBUFFER_READ_WRITE);
+		#else
         rdSetZBufferMethod(RD_ZBUFFER_NOREAD_NOWRITE); // set RD_ZBUFFER_READ_WRITE to have guns clip through walls
-        rdSetSortingMethod(2);
+        #endif
+		rdSetSortingMethod(2);
         rdSetOcclusionMethod(0);
 #endif
 
@@ -1601,6 +1622,11 @@ void jkPlayer_DrawPov()
 		rdCache_FlushLights();
 #endif
     }
+
+#if defined(TILE_SW_RASTER) && defined(DYNAMIC_POV)
+	rdCamera_pCurCamera->pClipFrustum = lastFrustum;
+	rdCamera_SetFOV(rdCamera_pCurCamera, lastFov);
+#endif
 
 	STD_END_PROFILER_LABEL();
 }
