@@ -16,6 +16,9 @@
 #ifdef TARGET_TWL
 uint8_t sithSurface_skyColorGuess = 0;
 #endif
+#ifdef TILE_SW_RASTER
+rdVector3 sithSurface_skyColorGuess = { 0, 0, 0};
+#endif
 
 int sithSurface_Startup()
 {
@@ -217,10 +220,13 @@ int sithSurface_Load(sithWorld *world)
             face->lightingMode = RD_LIGHTMODE_FULLYLIT;
 
             // Guess the sky color for fog
-#ifdef TARGET_TWL
+#if defined(TARGET_TWL) || defined(TILE_SW_RASTER)
             if (face->material) {
                 rdMaterial* mat = face->material;
                 rdMaterial_EnsureData(mat);
+			#ifdef TILE_SW_RASTER
+				rdMaterial_GetFillColor(&sithSurface_skyColorGuess, mat, world->colormaps, 0, -1);
+			#else
                 rdTexture* texture = &mat->textures[0];
                 stdVBuffer* lowestMipBuf = NULL;
                 for (int mip = 0; mip < texture->num_mipmaps; mip++) {
@@ -234,6 +240,7 @@ int sithSurface_Load(sithWorld *world)
                                      //+ (lowestMipBuf->format.width / 2);
                     sithSurface_skyColorGuess = lowestMipBuf->surface_lock_alloc[pxIdx];
                 }
+			#endif
             }
 #endif
         }

@@ -5,17 +5,21 @@
 #include "Raster/rdCache.h"
 #include "Primitives/rdModel3.h"
 #include "General/stdPalEffects.h"
+#include "General/stdMath.h"
 #include "Engine/rdCamera.h"
 #include "Win95/stdDisplay.h"
 #include "Primitives/rdPrimit3.h"
 
 #include "Modules/rdroid/Engine/rdCluster.h"
 
+#include "General/stdColor.h"
+
 #ifdef FOG
 int rdroid_curFogEnabled;
 rdVector4 rdroid_curFogColor;
 float rdroid_curFogStartDepth;
 float rdroid_curFogEndDepth;
+float rdroid_curFogRange;
 #endif
 
 
@@ -215,7 +219,7 @@ int rdOpen(int a1)
 	rdroid_curFogEnabled = 0;
 	rdVector_Zero3(&rdroid_curFogColor);
 	rdroid_curFogStartDepth = 0.0f;
-	rdroid_curFogEndDepth = 10000.0f;
+	rdroid_curFogEndDepth = rdroid_curFogRange = 10000.0f;
 #endif
 
     stdPalEffects_ResetEffect(&rdroid_curColorEffects);
@@ -298,12 +302,51 @@ void rdSetVertexColorMode(int a1)
 }
 
 #if defined(FOG) && !defined(RENDER_DROID2)
+
+#ifdef TILE_SW_RASTER
+uint8_t rdroid_fogTable[256 * 64];
+void rdUpdateFogTable()
+{
+	if (rdroid_curAcceleration == 0)
+	{
+		for (int d = 0; d < 64; ++d)
+		{
+			flex_t depth = (flex_t)d / 64.0f;
+			depth *= rdroid_curFogColor.w;
+
+			flex_t invDepth = (1.0f - depth) / 255.0f;
+			flex_t fogR = rdroid_curFogColor.x * depth;
+			flex_t fogG = rdroid_curFogColor.y * depth;
+			flex_t fogB = rdroid_curFogColor.z * depth;
+			for (int i = 0; i < 256; ++i)
+			{
+				rdColor24 color = rdColormap_pCurMap->colors[i];
+				flex_t fr = (flex_t)color.r * invDepth + fogR;
+				flex_t fg = (flex_t)color.g * invDepth + fogG;
+				flex_t fb = (flex_t)color.b * invDepth + fogB;
+				
+
+				uint32_t r = (uint32_t)(stdMath_Saturate(fr) * 64.0f);
+				uint32_t g = (uint32_t)(stdMath_Saturate(fg) * 64.0f);
+				uint32_t b = (uint32_t)(stdMath_Saturate(fb) * 64.0f);
+				uint32_t offset = (b << 12) | (g << 6) | r;
+				rdroid_fogTable[d * 256 + i] = rdColormap_pCurMap->searchTable[offset];
+			}
+		}
+	}
+}
+#endif
+
 void rdSetFog(int active, const rdVector4* color, float startDepth, float endDepth)
 {
 	rdroid_curFogEnabled = active;
 	rdVector_Copy4(&rdroid_curFogColor, color);
 	rdroid_curFogStartDepth = startDepth;
 	rdroid_curFogEndDepth = endDepth;
+	rdroid_curFogRange = 1.0 / (endDepth - startDepth);
+#ifdef TILE_SW_RASTER
+	rdUpdateFogTable();
+#endif
 }
 #endif
 

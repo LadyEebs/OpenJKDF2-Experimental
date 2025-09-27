@@ -48,6 +48,10 @@
 extern uint8_t sithSurface_skyColorGuess;
 #endif
 
+#ifdef TILE_SW_RASTER
+extern rdVector3 sithSurface_skyColorGuess;
+#endif
+
 enum SithSurfaceFlag
 {
     SITH_SURFACE_FLOOR = 0x1,

@@ -986,6 +986,32 @@ int sithRender_AddSurfaceLight(sithSurface* surface)
 
 #endif
 
+#if defined(FOG) && defined(TILE_SW_RASTER)
+void sithRender_SetCameraFog()
+{
+	if (sithCamera_currentCamera->sector->flags & SITH_SECTOR_UNDERWATER)
+	{
+		rdVector4 fog = { sithCamera_currentCamera->sector->tint.x, sithCamera_currentCamera->sector->tint.y, sithCamera_currentCamera->sector->tint.z, 1.0f };
+
+		rdVector3 halfFog;
+		halfFog.x = fog.x * 0.5f;
+		halfFog.y = fog.y * 0.5f;
+		halfFog.z = fog.z * 0.5f;
+
+		fog.x = fog.x - (halfFog.z + halfFog.y);
+		fog.y = fog.y - (halfFog.x + halfFog.y);
+		fog.z = fog.z - (halfFog.x + halfFog.z);
+
+		rdSetFog(1, &fog, 0.0f, 5.0f);
+	}
+	else
+	{
+		rdVector4 fog = { sithSurface_skyColorGuess.x, sithSurface_skyColorGuess.y, sithSurface_skyColorGuess.z, 1 };
+		rdSetFog(1, &fog, 0.0f, sithCamera_currentCamera->rdCam.pClipFrustum->zFar);
+	}
+}
+#endif
+
 // todo: in order to do refractions better, we need to split the frame into before and after water surfaces
 void sithRender_Draw()
 {
@@ -1128,6 +1154,10 @@ void sithRender_Draw()
 	rdCluster_Clear();
 
 	sithRender_ResetState();
+#endif
+
+#if defined(FOG) && defined(TILE_SW_RASTER)
+	sithRender_SetCameraFog();
 #endif
 
     //printf("------\n");

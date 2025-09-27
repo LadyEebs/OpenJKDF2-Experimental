@@ -41,6 +41,9 @@ static thread_local alignas(16) uint16_t rdRaster_TileDepth[RDCACHE_FINE_TILE_SI
 //static thread_local uint16_t rdRaster_TileHiZ = 0xFFFF;
 static thread_local alignas(16) uint32_t rdRaster_TileColorRGBA[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 
+static flex_t rdRaster_fogOffset = 0.0f;
+static flex_t rdRaster_fogScale = 1.0f;
+
 //flex_t stdMath_Rcp(fixed_t x)
 //{
 //	return 1.0f / (flex_t)x;
@@ -990,7 +993,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 4);
 
 						// Extract the indices and masks so we can do light/transparency lookups
-						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
+						//if constexpr (UseGouraud || UseFlatLight || UseAlpha)
 						{
 							alignas(16) uint8_t index_arr[4];
 							_mm_storeu_si32((__m128i*)index_arr, index);
@@ -1002,6 +1005,14 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 							if constexpr (UseGouraud)
 								_mm_storeu_ps(l_arr, l);
 
+						#ifdef FOG
+							__m128 fog = _mm_fmadd_ps(iz, _mm_set_ps1(rdRaster_fogScale), _mm_set_ps1(rdRaster_fogOffset));
+							__m128i fogi = _mm_cvtps_epi32(fog);
+
+							alignas(16) uint32_t fog_arr[4];
+							_mm_storeu_si128((__m128i*)fog_arr, fogi);
+						#endif
+
 							for (int lane = 0; lane < 4; lane++)
 							{
 								if constexpr (UseGouraud)
@@ -1010,6 +1021,13 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 								if constexpr (UseFlatLight)
 									index_arr[lane] = laneMasks[lane] ? lightLevels[(stdMath_ClampInt(pCommand->flatLight + dither, 0, 63) << 8) + index_arr[lane]] : 0;
 						
+							#ifdef FOG
+								// tiletodo: optimize me
+								if (rdroid_curFogEnabled)
+									index_arr[lane] = laneMasks[lane] ? rdroid_fogTable[(stdMath_ClampInt(fog_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]] : index_arr[lane];
+							#endif
+
+
 								if constexpr (UseAlpha)
 									index_arr[lane] = laneMasks[lane] ? transparency[(oldIndex_arr[lane] << 8) + index_arr[lane]] : 0;
 							}
@@ -1311,6 +1329,15 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 						rdRaster_TileDepth[offset] = (write_mask & zi) | (read_mask & oldZ);
 						//rdRaster_TileHiZ = zi < rdRaster_TileHiZ ? zi : rdRaster_TileHiZ;
 					}
+
+					#ifdef FOG
+					// tiletodo: optimize me
+					if constexpr (IsIndexedColor)
+					{
+						int fogIndex = (int)(stdMath_Saturate((iz - rdroid_curFogStartDepth) * rdroid_curFogRange) * 64.0f);
+						index = write_mask ? rdroid_fogTable[index * 64 + fogIndex] : index;
+					}
+					#endif
 
 					// Lighting
 					if constexpr (UseGouraud)
@@ -2186,6 +2213,9 @@ extern "C" {
 
 void rdRaster_FlushBins()
 {
+	rdRaster_fogScale = rdroid_curFogRange * rdCamera_pCurCamera->pClipFrustum->zFar * 63.0f;
+	rdRaster_fogOffset = -rdroid_curFogStartDepth * rdroid_curFogRange * 63.0f;
+
 	rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
 	stdDisplay_VBufferLock(pCanvas->vbuffer);
 	stdDisplay_VBufferLock(pCanvas->d3d_vbuf);

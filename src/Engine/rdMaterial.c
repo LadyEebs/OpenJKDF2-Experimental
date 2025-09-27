@@ -730,7 +730,7 @@ void rdMaterial_ResetCacheInfo(rdMaterial *pMaterial)
 }
 
 #endif
-#ifdef RGB_THING_LIGHTS
+#if defined(RGB_THING_LIGHTS) || defined(TILE_SW_RASTER)
 int rdMaterial_GetFillColor(rdVector3* pOutColor, rdMaterial* pMaterial, rdColormap* pColormap, int cel, int lightLevel)
 {
 	rdVector_Set3(pOutColor, 1.0f, 1.0f, 1.0f);

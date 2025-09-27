@@ -39,6 +39,10 @@ extern int rdroid_curFogEnabled;
 extern rdVector4 rdroid_curFogColor;
 extern float rdroid_curFogStartDepth;
 extern float rdroid_curFogEndDepth;
+extern float rdroid_curFogRange;
+#ifdef TILE_SW_RASTER
+extern uint8_t rdroid_fogTable[256 * 64];
+#endif
 #endif
 
 int rdStartup(HostServices *p_hs);
@@ -58,6 +62,10 @@ void rdSetProcFaceUserData(int a1);
 void rdSetVertexColorMode(int a1);
 
 #if defined(FOG) && !defined(RENDER_DROID2)
+
+#ifdef TILE_SW_RASTER
+void rdUpdateFogTable();
+#endif
 void rdSetFog(int active, const rdVector4* color, float startDepth, float endDepth);
 #endif
 
