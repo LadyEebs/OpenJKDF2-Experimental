@@ -748,7 +748,9 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
                 //printf("Using precached %s\n", path);
             }
 
-            if (data || loadPngImage(path, &entry->albedo_width, &entry->albedo_height, &entry->albedo_hasAlpha, &data, 0))
+            if (data)
+			{
+			if(loadPngImage(path, &entry->albedo_width, &entry->albedo_height, &entry->albedo_hasAlpha, &data, 0))
             {
                 //printf("Loaded %s %p\n", path, data);
                 //glTexStorage2D(GL_TEXTURE_2D, 1, entry->albedo_hasAlpha ? GL_RGBA8 : GL_RGB8, width, height);
@@ -792,6 +794,7 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
 
                 return 0;
             }
+			}
         }
 
         if (has_emissive)
@@ -824,7 +827,8 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
                 //printf("Using precached %s\n", path);
             }
 
-            if (data || loadPngImage(path, &entry->emissive_width, &entry->emissive_height, &entry->emissive_hasAlpha, &data, 0))
+            if (data)
+			if(loadPngImage(path, &entry->emissive_width, &entry->emissive_height, &entry->emissive_hasAlpha, &data, 0))
             {
                 //printf("Loaded %s\n", path);
                 //glTexStorage2D(GL_TEXTURE_2D, 1, entry->emissive_hasAlpha ? GL_RGBA8 : GL_RGB8, width, height);
