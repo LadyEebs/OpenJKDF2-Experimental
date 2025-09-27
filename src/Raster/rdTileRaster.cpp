@@ -597,6 +597,16 @@ uint32_t rdRaster_GetDither(int x, int y)
 	return rdRaster_DitherLUT[(x & 3) + (y & 3) * 4];
 }
 
+rdVector2 rdRaster_GetTexDither(int x, int y)
+{
+	static const rdVector2 rdRaster_TexDitherLUT[4] = {
+		{0.25, 0.00}, {0.50, 0.75},
+		{0.75, 0.50}, {0.00, 0.25}
+	};
+
+	return rdRaster_TexDitherLUT[2 * (y & 1) + (x&1)];
+}
+
 // Templated using constexpr branches to avoid having to duplicate a crap ton of code
 template <int8_t ColorMode, int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode, bool UseDiscard, bool UseAlpha>
 void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, uint8_t** ppStream, int tileX, int tileY)
@@ -819,6 +829,12 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 				if (_mm_movemask_ps(inside))
 				{
 					int dither = 0;//rdRaster_GetDither(x, y);
+					//rdVector2 texDither0 = rdRaster_GetTexDither(x, y);
+					//rdVector2 texDither1 = rdRaster_GetTexDither(x+1, y);
+					//rdVector2 texDither2 = rdRaster_GetTexDither(x+2, y);
+					//rdVector2 texDither3 = rdRaster_GetTexDither(x+3, y);
+					//__m128 texDitherX = _mm_set_ps(texDither3.x, texDither2.x, texDither1.x, texDither0.x);
+					//__m128 texDitherY = _mm_set_ps(texDither3.y, texDither2.y, texDither1.y, texDither0.y);
 
 					// Convert float mask to integer mask (0xFFFFFFFF or 0x00000000 per lane)
 					const __m128i coverageMask = _mm_castps_si128(inside);
@@ -857,6 +873,8 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 							uz = _mm_mul_ps(uz, iz);
 							vz = _mm_mul_ps(vz, iz);
 						}
+						//uz = _mm_add_ps(uz, texDitherX);
+						//vz = _mm_add_ps(vz, texDitherY);
 
 						// Fixed point (int)(u * fixedScale)
 						const __m128 scaled_uz = _mm_mul_ps(uz, uvFixedScale);
