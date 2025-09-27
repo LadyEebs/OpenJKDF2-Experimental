@@ -878,7 +878,7 @@ void std3D_EnumerateDevices()
 	IDXGIAdapter* pAdapter;
 	for (UINT i = 0; IDXGIFactory_EnumAdapters(pFactory, i, &pAdapter) != DXGI_ERROR_NOT_FOUND; ++i)
 	{
-		if (stdDisplay_numDevices >= 16)
+		if (!pAdapter || stdDisplay_numDevices >= 16)
 			break;
 
 		stdVideoDevice* device3D = &stdDisplay_aDevices[stdDisplay_numDevices++];
