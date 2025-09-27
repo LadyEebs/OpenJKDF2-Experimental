@@ -51,9 +51,9 @@
 //#define DECAL_RENDERING      // .dcal support and decal rendering path (for blast marks etc)
 //#define SPHERE_AO            // deferred ambient occlusion via sphere volumes
 //#define ADDITIVE_BLEND       // additive/screen blending support with a new face flags
-//#define POLYLINE_EXT         // .pln support and polyline template param, allows using polylines as rendering primitives for things (ex. blaster bolts)
+#define POLYLINE_EXT         // .pln support and polyline template param, allows using polylines as rendering primitives for things (ex. blaster bolts)
 //#define VERTEX_COLORS        // add vertex color face flag to indicate using the rdProcEntry's color field as the vertex color
-//#define FOG                  // infernal machine style fog rendering
+#define FOG                  // infernal machine style fog rendering
 
 #define RD_AMBIENT_LOBES 8
 
