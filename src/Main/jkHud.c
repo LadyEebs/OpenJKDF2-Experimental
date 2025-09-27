@@ -623,7 +623,7 @@ void jkHud_Draw()
     )
 	if(1) // issue with display and crashing in old path
     {
-#ifdef DYNAMIC_POV
+#if defined(DYNAMIC_POV) && defined(TILE_SW_RASTER)
 		// draw crosshair on projected position
 		flex_t scale = jkPlayer_crosshairScale * jkPlayer_hudScale;
 		//flex_t ar = (flex_t)(Video_pCanvas->widthMinusOne+1) / (flex_t)(Video_pCanvas->heightMinusOne+1);
