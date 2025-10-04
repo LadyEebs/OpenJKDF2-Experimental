@@ -1,3 +1,6 @@
+This branch is intended for bringing over the raytracing features of a custom engine.
+https://forums.massassi.net/Main_Massassi_Forums/Showcase/thread_68314_page_1.html
+
 # OpenJKDF2
 
 ![MacOS Screenshot](docs/images/screenshot.png)
