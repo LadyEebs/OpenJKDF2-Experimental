@@ -142,7 +142,7 @@ void main(void)
 
 	// alpha testing
 #ifdef ALPHA_DISCARD
-    if (outColor.a < 0.5) // todo: alpha test value
+    if (outColor.a < 1e-3) // todo: alpha test value
 		discard;
 #endif
 
