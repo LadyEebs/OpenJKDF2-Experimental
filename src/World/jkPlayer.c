@@ -1162,10 +1162,11 @@ void jkPlayer_DrawPov()
 
 	STD_BEGIN_PROFILER_LABEL();
 
-#ifdef DYNAMIC_POV
 	flex_t povfov = (flex_t)stdMath_ClampInt(jkPlayer_povFov, FOV_MIN, FOV_MAX);
 	flex_t fpfov = povfov;//stdMath_ArcTan3(1.0, stdMath_Tan(povfov * 0.5f) / rdCamera_pCurCamera->screenAspectRatio) * -2.0;
 	fpfov /= sithCamera_currentCamera->zoomScale;
+
+#if defined(TILE_SW_RASTER) && defined(DYNAMIC_POV)
 	flex_t lastFov = rdCamera_pCurCamera->fov;
 	rdClipFrustum* lastFrustum = rdCamera_pCurCamera->pClipFrustum;
 
