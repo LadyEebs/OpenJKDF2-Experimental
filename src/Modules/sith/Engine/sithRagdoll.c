@@ -627,7 +627,10 @@ void sithRagdoll_StopPhysics(sithThing* pThing)
 		}
 		pSithHS->free(pThing->ragdoll);
 		pThing->ragdoll = 0;
+		sithPhysics_ThingStop(pThing);
 	}
+	if (pThing->rdthing.paHiearchyNodeMatrixOverrides)
+		memset(pThing->rdthing.paHiearchyNodeMatrixOverrides, NULL, sizeof(rdMatrix34*) * pThing->rdthing.model3->numHierarchyNodes);
 }
 
 static void sithRagdoll_UpdateJointMatrices(sithThing* thing)

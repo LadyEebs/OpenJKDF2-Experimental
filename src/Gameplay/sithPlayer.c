@@ -317,6 +317,9 @@ void sithPlayer_debug_loadauto(sithThing *player)
     sithSoundMixer_ResumeMusic(1);
     player->type = SITH_THING_PLAYER;
     player->lifeLeftMs = 0;
+#ifdef PUPPET_PHYSICS
+	player->moveType = SITH_MT_PHYSICS;
+#endif
 }
 
 void sithPlayer_SetScreenTint(flex_t tintR, flex_t tintG, flex_t tintB)
@@ -394,6 +397,9 @@ void sithPlayer_HandleSentDeathPkt(sithThing *thing)
         thing->physicsParams.physflags &= ~(SITH_PF_CROUCHING| SITH_PF_NOWALLGRAVITY | SITH_PF_ATTACHED);
         thing->physicsParams.physflags |= (SITH_PF_SURFACEALIGN|SITH_PF_USEGRAVITY);
         thing->actorParams.typeflags &= ~SITH_AF_BLEEDS;
+#ifdef PUPPET_PHYSICS
+		thing->moveType = SITH_MT_PHYSICS;
+#endif
         sithPhysics_ThingStop(thing);
         sithWeapon_SyncPuppet(thing);
         if ( sithNet_isMulti )
