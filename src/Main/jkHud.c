@@ -115,8 +115,11 @@ int jkHud_Open()
         ++bitmapIter;
     }
 
-    //jkHud_pTestbitmap = stdBitmap_Load("ui\\bm\\statusLeft16.bm",0,0);
-    
+#ifdef RENDER_DROID2
+	// auto scale HUD
+	jkPlayer_hudScale = Video_format.width < 640 ? 1.0f : (flex_t)Video_format.width / 640.0f;
+#endif
+
     jkHud_blittedAmmoAmt = 0;
     jkHud_blittedHealthIdx = 0;
     jkHud_blittedBatteryAmt = 0;
