@@ -467,7 +467,7 @@
 #endif
 
 // Deferred loading and LRU unloading
-#if defined(QOL_IMPROVEMENTS) && !defined(TILE_SW_RASTER)// && !defined(RENDER_DROID2)
+#if defined(QOL_IMPROVEMENTS) && !defined(TILE_SW_RASTER) && !defined(RENDER_DROID2)
 #define RDMATERIAL_LRU_LOAD_UNLOAD
 #endif
 
