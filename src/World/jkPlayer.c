@@ -858,7 +858,7 @@ void jkPlayer_ParseLegacyExt()
 	if (stdConffile_ReadLine())
 	{
 		if (_sscanf(stdConffile_aLine, "multisample %d", &jkPlayer_multiSample) != 1)
-			jkPlayer_multiSample = 1;
+			jkPlayer_multiSample = SAMPLE_NONE;
 	}
 
     if (stdConffile_ReadLine())

@@ -813,10 +813,7 @@ void std3D_generateFramebuffer(int32_t width, int32_t height, std3DFramebuffer* 
 	GLuint fboLayout = GL_RGBA;
 #endif
 
-	pFb->msaaMode = stdMath_ClampInt(jkPlayer_multiSample, SAMPLE_MODE_MIN, SAMPLE_MODE_MAX);
-	if (!GL_ARB_sample_locations)
-		pFb->msaaMode = stdMath_ClampInt(jkPlayer_multiSample, SAMPLE_NONE, SAMPLE_MODE_MAX);
-
+	pFb->msaaMode = stdMath_ClampInt(jkPlayer_multiSample, GL_ARB_sample_locations ? SAMPLE_MODE_MIN : SAMPLE_NONE, SAMPLE_MODE_MAX);
 	pFb->samples = abs(pFb->msaaMode) << 1;
 	pFb->downscale = pFb->msaaMode < SAMPLE_NONE;
 
@@ -850,7 +847,7 @@ void std3D_generateFramebuffer(int32_t width, int32_t height, std3DFramebuffer* 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	if(pFb->samples != 1)
+	if(pFb->samples)
 	{
 		glGenTextures(1, &pFb->tex0);
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pFb->tex0);
@@ -883,7 +880,7 @@ void std3D_generateFramebuffer(int32_t width, int32_t height, std3DFramebuffer* 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 
 		// Set up our emissive fb texture
-		if (pFb->samples != 1)
+		if (pFb->samples)
 		{
 			glGenTextures(1, &pFb->tex1);
 			glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pFb->tex1);
@@ -942,7 +939,7 @@ void std3D_generateFramebuffer(int32_t width, int32_t height, std3DFramebuffer* 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-	if (pFb->samples != 1)
+	if (pFb->samples)
 	{
 		glGenTextures(1, &pFb->ztex);
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, pFb->ztex);
@@ -969,7 +966,7 @@ void std3D_generateFramebuffer(int32_t width, int32_t height, std3DFramebuffer* 
 #endif
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, pFb->resolveZ, 0);
 
-	if (pFb->samples != 1)
+	if (pFb->samples)
 	{
 		glGenFramebuffers(1, &pFb->fbo);			
 		glBindFramebuffer(GL_FRAMEBUFFER, pFb->fbo);
@@ -2783,7 +2780,7 @@ void std3D_DrawUIRenderList();
 
 void std3D_ResolveMSAA()
 {
-	if (std3D_framebuffer.samples != 1)
+	if (std3D_framebuffer.samples)
 	{
 		std3D_PushDebugGroup("std3D_ResolveMSAA");
 
@@ -6228,10 +6225,10 @@ void std3D_DoSSAO()
 		glBindFramebuffer(GL_FRAMEBUFFER, ssao.fbo);
 		glUseProgram(std3D_ssaoStage[0].program);
 
-		std3D_bindTexture(std3D_framebuffer.samples != 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
+		std3D_bindTexture(std3D_framebuffer.samples ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
 		std3D_bindTexture(GL_TEXTURE_2D, ssaoDepth.tex, 1);
 		std3D_bindTexture(GL_TEXTURE_2D, tiledrand_texture, 2);
-		std3D_bindTexture(std3D_framebuffer.samples != 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.tex0, 0);
+		std3D_bindTexture(std3D_framebuffer.samples ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.tex0, 0);
 
 		glUniform1i(std3D_ssaoStage[0].uniform_tex,  0);
 		glUniform1i(std3D_ssaoStage[0].uniform_tex2, 1);
@@ -6259,7 +6256,7 @@ void std3D_DoSSAO()
 		glBindFramebuffer(GL_FRAMEBUFFER, std3D_framebuffer.fbo);
 		glUseProgram(std3D_ssaoStage[1].program);
 
-		std3D_bindTexture(std3D_framebuffer.samples != 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
+		std3D_bindTexture(std3D_framebuffer.samples ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
 		std3D_bindTexture(GL_TEXTURE_2D, ssao.tex, 1);
 		std3D_bindTexture(GL_TEXTURE_2D, tiledrand_texture, 2);
 
@@ -6306,7 +6303,7 @@ void std3D_DoDeferredLighting()
 
 	glUseProgram(std3D_deferredStage.program);
 
-	std3D_bindTexture(std3D_framebuffer.samples != 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
+	std3D_bindTexture(std3D_framebuffer.samples ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, std3D_framebuffer.ztex, 0);
 	//std3D_bindTexture(GL_TEXTURE_2D, std3D_framebuffer.ntex, 1);
 	std3D_bindTexture(GL_TEXTURE_2D, tiledrand_texture, 2);
 
