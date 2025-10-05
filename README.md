@@ -21,13 +21,13 @@ Mutliplayer:
 - Steam integration
 - IP-free p2p networking and games list
 - Lobby driven networking
-- Invites (both in-game and from the steam overlay and friends list)
+- Invites (both in-game and from the steam overlay and friends list, including MSN Gaming Zone style game launching)
 - Friends integration
 - Voice chat (with optional proximity behavior)
 - QoL improvements
+- Implements various commands and networking behavior not present in existing OpenJKDF2
 
-Rendering (General):
-- Tiled software renderer path with threading and SSE (with full D3D11 hardware version, very early WIP)
+Rendering (Misc):
 - Fog (Infernal Machine style), requires JKL version 2.0 to use (or a level cog)
 - Underwater distortion PostFX
 - Specular lighting (RD_LIGHTMODE_SPECULAR)
@@ -48,7 +48,7 @@ Render Droid 2:
 - Clustered forward rendering, with per pixel lighting, decals and AO/shadow support (just like the old deferred path, but works on transparencies)
 - Spotlights and rectangular area lights
 - Quadrilinear texturing for polylines (removes UV distortion artifacts)
-- Pixel shader VM for custom vfx (akin to Xbox asm shaders)
+- Xbox style Pixel shader VM for custom vfx (currently only embedded files but there are plans for user created shaders)
 - Emissive surface flag, generates a rectangle light at the surface for dynamic lighting (ex. breakable neon signs)
 - Backdrop sector for skyboxes and dynamic skies including geometry
 - Still works under GL 3.3 as of now (clustering is done on CPU for now)
@@ -61,6 +61,12 @@ Legacy OpenJKDF2 Renderer:
 - Optimized GBuffer using reconstructed position and smaller formats (16/32 bit options for color/depth, octahedron encoded normals, 2-3x bandwidth savings)
 - New SSAO with less halos
 - Particle lights are flat face normals only due to old pipeline limitations
+
+Tiled Software Rasterizer:
+- Completely separate rendering path using multithreaded SIMD CPU rasterization
+- Focus on being faithful to the original as a start
+- Includes classic Display menu with resolution selection and Advanced section (to select a display device and renderer, which would allow for swapping between software and D3D11)
+- Disables all of the other rendering features as it's a separate code path based on the original
 
 Physics/Animation:
 - Physics constraints and physicalized puppet animation/ragdolls
