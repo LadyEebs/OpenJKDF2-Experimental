@@ -748,10 +748,7 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
                 //printf("Using precached %s\n", path);
             }
 
-			if (!data)
-				goto fail;
-
-			if(loadPngImage(path, &entry->albedo_width, &entry->albedo_height, &entry->albedo_hasAlpha, &data, 0))
+			if(data || loadPngImage(path, &entry->albedo_width, &entry->albedo_height, &entry->albedo_hasAlpha, &data, 0))
             {
                 //printf("Loaded %s %p\n", path, data);
                 //glTexStorage2D(GL_TEXTURE_2D, 1, entry->albedo_hasAlpha ? GL_RGBA8 : GL_RGB8, width, height);
@@ -771,7 +768,6 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
             }
             else
             {
-			fail:
                 texture->albedo_data = NULL;
                 entry->albedo_data = NULL;
                 glDeleteTextures(1, &image_texture);
@@ -828,10 +824,7 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
                 //printf("Using precached %s\n", path);
             }
 
-			if (!data)
-				goto fail_emissive;
-
-			if(loadPngImage(path, &entry->emissive_width, &entry->emissive_height, &entry->emissive_hasAlpha, &data, 0))
+			if(data || loadPngImage(path, &entry->emissive_width, &entry->emissive_height, &entry->emissive_hasAlpha, &data, 0))
             {
                 //printf("Loaded %s\n", path);
                 //glTexStorage2D(GL_TEXTURE_2D, 1, entry->emissive_hasAlpha ? GL_RGBA8 : GL_RGB8, width, height);
@@ -851,7 +844,6 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
             }
             else
             {
-			fail_emissive:
                 texture->emissive_data = NULL;
                 entry->emissive_data = NULL;
                 glDeleteTextures(1, &emiss_texture);
@@ -892,10 +884,7 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
                 //printf("Using precached %s\n", path);
             }
 
-			if (!data)
-				goto fail_displacement;
-
-            if (loadPngImage(path, &entry->displacement_width, &entry->displacement_height, &entry->displacement_hasAlpha, &data, 0))
+            if (data || loadPngImage(path, &entry->displacement_width, &entry->displacement_height, &entry->displacement_hasAlpha, &data, 0))
             {
                 //printf("Loaded %s\n", path);
                 //glTexStorage2D(GL_TEXTURE_2D, 1, entry->displacement_hasAlpha ? GL_RGBA8 : GL_RGB8, width, height);
@@ -915,7 +904,6 @@ int jkgm_std3D_AddToTextureCache(stdVBuffer *vbuf, rdDDrawSurface *texture, int 
             }
             else
             {
-			fail_displacement:
                 texture->displacement_data = NULL;
                 entry->displacement_data = NULL;
                 glDeleteTextures(1, &displace_texture);
