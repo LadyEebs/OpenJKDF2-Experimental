@@ -18,6 +18,10 @@
 
 #ifndef TILE_SW_RASTER
 
+#if defined(RENDER_DROID2)
+	#define NEW_DISPLAY_GUI
+#endif
+
 enum jkGuiDecisionButton_t
 {
     GUI_GENERAL = 100,
@@ -27,6 +31,56 @@ enum jkGuiDecisionButton_t
     GUI_CONTROLS = 104,
 
     GUI_ADVANCED = 105,
+};
+
+enum jkGuiElementIds_t
+{
+	ID_GUI_SETUP = 1,
+	ID_GUI_GENERAL,
+	ID_GUI_GAMEPLAY,
+	ID_GUI_DISPLAY,
+	ID_GUI_SOUND,  
+	ID_GUI_CONTROLS,
+	ID_GUI_OK,
+	ID_GUI_CANCEL,
+
+	ID_GUI_FOV,
+	ID_GUI_FOV_SLIDER,
+	ID_GUI_FOV_TEXT,
+
+#ifndef NEW_DISPLAY_GUI
+	ID_GUI_FOV_VERTICAL,
+#endif
+	ID_GUI_FULLSCREEN,
+	ID_GUI_HIDPI,
+	ID_GUI_TEXTURE_FILTERING,
+#ifndef NEW_DISPLAY_GUI
+	ID_GUI_SQUARE_ASPECT,
+#endif
+
+	ID_GUI_VSYNC,
+	ID_GUI_SSAA,
+	ID_GUI_SSAA_TEXT,
+	ID_GUI_GAMMA,
+	ID_GUI_GAMMA_TEXT,
+
+	ID_GUI_COLOR_DEPTH,
+	ID_GUI_COLOR_DEPTH_TEXT,
+	ID_GUI_COLOR_DEPTH_LARROW,
+	ID_GUI_COLOR_DEPTH_RARROW,
+
+	ID_GUI_SAMPLES,
+	ID_GUI_SAMPLES_TEXT,
+	ID_GUI_SAMPLES_LARROW,
+	ID_GUI_SAMPLES_RARROW,
+
+	ID_GUI_DITHER,
+
+#ifndef NEW_DISPLAY_GUI
+	ID_GUI_HUD_SCALE,
+	ID_GUI_HUD_SCALE_VALUE,
+#endif
+
 };
 
 static wchar_t render_level[256] = {0};
@@ -61,11 +115,15 @@ static jkGuiElement jkGuiDisplay_aElements[] = {
     {ELEMENT_TEXT,         0,            0, "GUIEXT_FOV",                 3, {20, 130, 300, 30}, 1,  0, 0, 0, 0, 0, {0}, 0},
     {ELEMENT_SLIDER,       0,            0, (const char*)(FOV_MAX - FOV_MIN),                    0, {10, 160, 320, 30}, 1, 0, "GUIEXT_FOV_HINT", jkGuiDisplay_FovDraw, 0, slider_images, {0}, 0},
     {ELEMENT_TEXT,         0,            0, slider_val_text,        3, {20, 190, 300, 30}, 1,  0, 0, 0, 0, 0, {0}, 0},
-    {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_FOV_VERTICAL",    0, {20, 210, 200, 40}, 1,  0, NULL, 0, 0, 0, {0}, 0},
-    {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_FULLSCREEN",    0, {400, 250, 200, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+#ifndef NEW_DISPLAY_GUI
+	{ELEMENT_CHECKBOX,     0,            0, "GUIEXT_FOV_VERTICAL",    0, {20, 210, 200, 40}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+#endif
+	{ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_FULLSCREEN",    0, {400, 250, 200, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
     {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_HIDPI",    0, {400, 310, 200, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
     {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_TEXTURE_FILTERING",    0, {400, 340, 200, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+#ifndef NEW_DISPLAY_GUI
     {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_SQUARE_ASPECT",    0, {20, 240, 300, 40}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+#endif
 
     // 17
     {ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_VSYNC",    0, {400, 280, 300, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
@@ -78,24 +136,26 @@ static jkGuiElement jkGuiDisplay_aElements[] = {
     { ELEMENT_TEXT,        0,            0, "GUIEXT_GAMMA_VAL",            2, {20, 350, 140, 20},   1, 0, NULL,                        0, 0, 0, {0}, 0},
     { ELEMENT_TEXTBOX,      0,            0, NULL,    100, {170, 350, 80, 20}, 1,  0, NULL, 0, 0, 0, {0}, 0},
 
-    // 22
-    { ELEMENT_TEXT,        0,            0, "GUIEXT_HUD_SCALE",            2, {20, 380, 140, 20},   1, 0, NULL,                        0, 0, 0, {0}, 0},
-    { ELEMENT_TEXTBOX,      0,            0, NULL,    100, {170, 380, 80, 20}, 1,  0, NULL, 0, 0, 0, {0}, 0},
-
-	// 24
+	// 22
 	{ ELEMENT_TEXT,        0,            0, "GUIEXT_EN_COLORDEPTH",  3,  { 360, 160, 120, 25}, 1,  0, 0, 0, 0, 0, {0}, 0},
 	{ ELEMENT_TEXT,        0,            0, NULL,                    3,  { 506, 160, 78, 30 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 	{ ELEMENT_PICBUTTON, 103,            0, NULL,                    33, { 480, 160, 24, 24 }, 1, 0, NULL, NULL, jkGuiDisplay_ColorDepthArrowButtonClickHandler, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 	{ ELEMENT_PICBUTTON, 104,            0, NULL,                    34, { 584, 160, 24, 24 }, 1, 0, NULL, NULL, jkGuiDisplay_ColorDepthArrowButtonClickHandler, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 
-	// 28
+	// 26
 	{ ELEMENT_TEXT,        0,            0, "GUIEXT_EN_SAMPLES",     3,  { 360, 190, 120, 25}, 1,  0, 0, 0, 0, 0, {0}, 0},
 	{ ELEMENT_TEXT,        0,            0, NULL,                    3,  { 506, 190, 78, 30 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 	{ ELEMENT_PICBUTTON, 103,            0, NULL,                    33, { 480, 190, 24, 24 }, 1, 0, NULL, NULL, jkGuiDisplay_SamplesArrowButtonClickHandler, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 	{ ELEMENT_PICBUTTON, 104,            0, NULL,                    34, { 584, 190, 24, 24 }, 1, 0, NULL, NULL, jkGuiDisplay_SamplesArrowButtonClickHandler, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
 
-	// 32
+	// 30
 	{ELEMENT_CHECKBOX,     0,            0, "GUIEXT_EN_DITHER",    0, {400, 220, 200, 30}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+
+#ifndef NEW_DISPLAY_GUI
+	// 31
+	{ ELEMENT_TEXT,        0,            0, "GUIEXT_HUD_SCALE",            2, {20, 380, 140, 20},   1, 0, NULL,                        0, 0, 0, {0}, 0},
+	{ ELEMENT_TEXTBOX,      0,            0, NULL,    100, {170, 380, 80, 20}, 1,  0, NULL, 0, 0, 0, {0}, 0},
+#endif
 
     { ELEMENT_TEXTBUTTON,  GUI_ADVANCED, 2, "GUI_ADVANCED",               3, {220, 430, 200, 40}, 1, 0, NULL,                        0, 0, 0, {0}, 0},
 
@@ -155,7 +215,7 @@ void jkGuiDisplay_UpdateSampleText()
 	else
 		jk_snwprintf(samples_text, 16u, L"%dx MSAA", jkPlayer_multiSample << 1);
 
-	jkGuiDisplay_aElements[29].wstr = samples_text;
+	jkGuiDisplay_aElements[ID_GUI_SAMPLES_TEXT].wstr = samples_text;
 }
 
 void jkGuiDisplay_Startup()
@@ -167,14 +227,16 @@ void jkGuiDisplay_Startup()
     jkGui_InitMenu(&jkGuiDisplay_menu, jkGui_stdBitmaps[JKGUI_BM_BK_SETUP]);
     jkGui_InitMenu(&jkGuiDisplay_menuAdvanced, jkGui_stdBitmaps[JKGUI_BM_BK_SETUP]);
 #endif
-    jkGuiDisplay_aElements[19].wstr = render_level;
+    jkGuiDisplay_aElements[ID_GUI_SSAA_TEXT].wstr = render_level;
 
-    jkGuiDisplay_aElements[21].wstr = gamma_level;
+    jkGuiDisplay_aElements[ID_GUI_GAMMA_TEXT].wstr = gamma_level;
 
-    jkGuiDisplay_aElements[23].wstr = hud_level;
+#ifndef NEW_DISPLAY_GUI
+	jkGuiDisplay_aElements[ID_GUI_HUD_VALUE].wstr = hud_level;
+#endif
 
 	jk_snwprintf(colordepth_text, 8u, jkPlayer_enable32Bit ? L"32-bit" : L"16-bit");
-	jkGuiDisplay_aElements[25].wstr = colordepth_text;
+	jkGuiDisplay_aElements[ID_GUI_COLOR_DEPTH_TEXT].wstr = colordepth_text;
 
 	jkGuiDisplay_UpdateSampleText();
 
@@ -182,8 +244,10 @@ void jkGuiDisplay_Startup()
     jk_snwprintf(render_level, 255, L"%.2f", ftmp);
     ftmp = jkPlayer_gamma;
     jk_snwprintf(gamma_level, 255, L"%.2f", ftmp);
-    ftmp = jkPlayer_hudScale;
+#ifndef NEW_DISPLAY_GUI
+	ftmp = jkPlayer_hudScale;
     jk_snwprintf(hud_level, 255, L"%.2f", ftmp);
+#endif
 
 #ifdef TILE_SW_RASTER
 	// todo: we're really going to want to recreate that original menu to get this working...
@@ -199,14 +263,14 @@ void jkGuiDisplay_Shutdown()
 
 void jkGuiDisplay_FovDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vbuf, int redraw)
 {
-    uint32_t tmp = FOV_MIN + jkGuiDisplay_aElements[10].selectedTextEntry;
+    uint32_t tmp = FOV_MIN + jkGuiDisplay_aElements[ID_GUI_FOV_SLIDER].selectedTextEntry;
     
     jk_snwprintf(slider_val_text, 5, L"%u", tmp);
-    jkGuiDisplay_aElements[11].wstr = slider_val_text;
+    jkGuiDisplay_aElements[ID_GUI_FOV_TEXT].wstr = slider_val_text;
     
     jkGuiRend_SliderDraw(element, menu, vbuf, redraw);
     
-    jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[11], menu, 1);
+    jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[ID_GUI_FOV_TEXT], menu, 1);
 }
 
 void jkGuiDisplay_FramelimitDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vbuf, int redraw)
@@ -289,22 +353,24 @@ int jkGuiDisplay_Show()
     int v0; // esi
 
     jkGui_sub_412E20(&jkGuiDisplay_menu, GUI_DISPLAY, 104, GUI_DISPLAY);
-    jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiDisplay_menu, &jkGuiDisplay_aElements[7]);
-    jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiDisplay_menu, &jkGuiDisplay_aElements[8]);
+    jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiDisplay_menu, &jkGuiDisplay_aElements[ID_GUI_OK]);
+    jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiDisplay_menu, &jkGuiDisplay_aElements[ID_GUI_CANCEL]);
     jkGuiSetup_sub_412EF0(&jkGuiDisplay_menu, 0);
 
-    jkGuiDisplay_aElements[10].selectedTextEntry = jkPlayer_fov - FOV_MIN;
-    jkGuiDisplay_aElements[12].selectedTextEntry = jkPlayer_fovIsVertical;
-    jkGuiDisplay_aElements[13].selectedTextEntry = Window_isFullscreen;
-    jkGuiDisplay_aElements[14].selectedTextEntry = Window_isHiDpi;
-    jkGuiDisplay_aElements[15].selectedTextEntry = jkPlayer_enableTextureFilter;
-    jkGuiDisplay_aElements[16].selectedTextEntry = jkPlayer_enableOrigAspect;
-	jkGuiDisplay_aElements[32].selectedTextEntry = jkPlayer_enableDithering;
+    jkGuiDisplay_aElements[ID_GUI_FOV_SLIDER].selectedTextEntry = jkPlayer_fov - FOV_MIN;
+#ifndef NEW_DISPLAY_GUI
+    jkGuiDisplay_aElements[ID_GUI_FOV_VERTICAL].selectedTextEntry = jkPlayer_fovIsVertical;
+	jkGuiDisplay_aElements[ID_GUI_SQUARE_ASPECT].selectedTextEntry = jkPlayer_enableOrigAspect;
+#endif
+    jkGuiDisplay_aElements[ID_GUI_FULLSCREEN].selectedTextEntry = Window_isFullscreen;
+    jkGuiDisplay_aElements[ID_GUI_HIDPI].selectedTextEntry = Window_isHiDpi;
+    jkGuiDisplay_aElements[ID_GUI_TEXTURE_FILTERING].selectedTextEntry = jkPlayer_enableTextureFilter;
+	jkGuiDisplay_aElements[ID_GUI_DITHER].selectedTextEntry = jkPlayer_enableDithering;
 
-    jkGuiDisplay_aElements[17].selectedTextEntry = jkPlayer_enableVsync;
+    jkGuiDisplay_aElements[ID_GUI_VSYNC].selectedTextEntry = jkPlayer_enableVsync;
 
 	jk_snwprintf(colordepth_text, 8u, jkPlayer_enable32Bit ? L"32-bit" : L"16-bit");
-	jkGuiDisplay_aElements[25].wstr = colordepth_text;
+	jkGuiDisplay_aElements[ID_GUI_COLOR_DEPTH_TEXT].wstr = colordepth_text;
 
 	jkGuiDisplay_UpdateSampleText();
 	
@@ -312,8 +378,11 @@ int jkGuiDisplay_Show()
     jk_snwprintf(render_level, 255, L"%.2f", ftmp);
     ftmp = jkPlayer_gamma;
     jk_snwprintf(gamma_level, 255, L"%.2f", ftmp);
-    ftmp = jkPlayer_hudScale;
+
+#ifndef NEW_DISPLAY_GUI
+	ftmp = jkPlayer_hudScale;
     jk_snwprintf(hud_level, 255, L"%.2f", ftmp);
+#endif
 
 continue_menu:
     v0 = jkGuiRend_DisplayAndReturnClicked(&jkGuiDisplay_menu);
@@ -324,14 +393,16 @@ continue_menu:
     }
     else if ( v0 != -1 )
     {
-        jkPlayer_fov = FOV_MIN + jkGuiDisplay_aElements[10].selectedTextEntry;
-        jkPlayer_fovIsVertical = jkGuiDisplay_aElements[12].selectedTextEntry;
-        Window_SetFullscreen(jkGuiDisplay_aElements[13].selectedTextEntry);
-        Window_SetHiDpi(jkGuiDisplay_aElements[14].selectedTextEntry);
-        jkPlayer_enableTextureFilter = jkGuiDisplay_aElements[15].selectedTextEntry;
-        jkPlayer_enableOrigAspect = jkGuiDisplay_aElements[16].selectedTextEntry;
-        jkPlayer_enableVsync = jkGuiDisplay_aElements[17].selectedTextEntry;
-		jkPlayer_enableDithering = jkGuiDisplay_aElements[32].selectedTextEntry;
+        jkPlayer_fov = FOV_MIN + jkGuiDisplay_aElements[ID_GUI_FOV_SLIDER].selectedTextEntry;
+#ifndef NEW_DISPLAY_GUI
+		jkPlayer_fovIsVertical = jkGuiDisplay_aElements[ID_GUI_FOV_VERTICAL].selectedTextEntry;
+		jkPlayer_enableOrigAspect = jkGuiDisplay_aElements[ID_GUI_SQUARE_ASPECT].selectedTextEntry;
+#endif
+		Window_SetFullscreen(jkGuiDisplay_aElements[ID_GUI_FULLSCREEN].selectedTextEntry);
+        Window_SetHiDpi(jkGuiDisplay_aElements[ID_GUI_HIDPI].selectedTextEntry);
+        jkPlayer_enableTextureFilter = jkGuiDisplay_aElements[ID_GUI_TEXTURE_FILTERING].selectedTextEntry;
+        jkPlayer_enableVsync = jkGuiDisplay_aElements[ID_GUI_VSYNC].selectedTextEntry;
+		jkPlayer_enableDithering = jkGuiDisplay_aElements[ID_GUI_DITHER].selectedTextEntry;
 
         char tmp[256];
         stdString_WcharToChar(tmp, render_level, 255);
@@ -354,7 +425,8 @@ continue_menu:
             jkPlayer_gamma = ftmp;
         }
 
-        stdString_WcharToChar(tmp, hud_level, 255);
+#ifndef NEW_DISPLAY_GUI
+		stdString_WcharToChar(tmp, hud_level, 255);
         if(_sscanf(tmp, "%f", &ftmp) != 1) {
             jkPlayer_hudScale = 1.0;
         }
@@ -365,6 +437,7 @@ continue_menu:
         if (jkPlayer_hudScale > 100.0) {
             jkPlayer_hudScale = 100.0;
         }
+#endif
 
         jkPlayer_WriteConf(jkPlayer_playerShortName);
 
@@ -393,8 +466,8 @@ int jkGuiDisplay_ColorDepthArrowButtonClickHandler(jkGuiElement* pElement, jkGui
 	}
 
 	jk_snwprintf(colordepth_text, 8u, jkPlayer_enable32Bit ? L"32-bit" : L"16-bit");
-	jkGuiDisplay_aElements[25].wstr = colordepth_text;
-	jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[25], pMenu, 1);
+	jkGuiDisplay_aElements[ID_GUI_COLOR_DEPTH_TEXT].wstr = colordepth_text;
+	jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[ID_GUI_COLOR_DEPTH_TEXT], pMenu, 1);
 
 	return 0;
 }
@@ -410,7 +483,7 @@ int jkGuiDisplay_SamplesArrowButtonClickHandler(jkGuiElement* pElement, jkGuiMen
 		jkPlayer_multiSample = stdMath_ClampInt(jkPlayer_multiSample + 1, GL_ARB_sample_locations ? SAMPLE_MODE_MIN : SAMPLE_NONE, SAMPLE_MODE_MAX);
 
 	jkGuiDisplay_UpdateSampleText();
-	jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[29], pMenu, 1);
+	jkGuiRend_UpdateAndDrawClickable(&jkGuiDisplay_aElements[ID_GUI_SAMPLES_TEXT], pMenu, 1);
 
 	return 0;
 }
