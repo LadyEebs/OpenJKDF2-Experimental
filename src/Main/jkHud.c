@@ -1091,8 +1091,8 @@ void jkHud_DrawGPU()
     // The rendering for GPU is kind of inverted from how the original does it.
     // The original blits onto the left/right statuses, then blits those to the screen.
     // We have to blit the left/right status, then everything on top of it.
-    std3D_DrawUIBitmap(jkHud_pStatusLeftBm, 0, jkHud_leftBlitX, jkHud_leftBlitY, NULL, jkPlayer_hudScale, 1);
-    std3D_DrawUIBitmap(jkHud_pStatusRightBm, 0, jkHud_rightBlitX, jkHud_rightBlitY, NULL, jkPlayer_hudScale, 1);
+    std3D_DrawUIBitmapZ(jkHud_pStatusLeftBm, 0, jkHud_leftBlitX, jkHud_leftBlitY, NULL, jkPlayer_hudScale, jkPlayer_hudScale, 1, 0.9);
+	std3D_DrawUIBitmapZ(jkHud_pStatusRightBm, 0, jkHud_rightBlitX, jkHud_rightBlitY, NULL, jkPlayer_hudScale, jkPlayer_hudScale, 1, 0.9);
 
     if ( v4->type == SITH_THING_PLAYER && !(sithNet_isServer && jkGuiNetHost_bIsDedicated) )
     {
