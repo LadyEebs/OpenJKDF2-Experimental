@@ -369,8 +369,8 @@ int jkGame_Update()
 #endif
 
 #if (defined(SDL2_RENDER) || defined(TARGET_TWL)) && !defined(TILE_SW_RASTER)
-	stdDisplay_DDrawGdiSurfaceFlip();
-    rdFinishFrame();
+	std3D_DrawMenu();
+	rdFinishFrame();
 #endif
 
 #ifdef TILE_SW_RASTER
