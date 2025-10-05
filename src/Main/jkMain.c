@@ -1706,7 +1706,7 @@ int jkMain_SetVideoMode()
     if (newH < 480)
         newH = 480;
 	
-	Video_SetVideoDesc(sithWorld_pCurrentWorld->colormaps->colors);
+//	Video_SetVideoDesc(sithWorld_pCurrentWorld->colormaps->colors);
 
     Video_modeStruct.viewSizeIdx = 0;
     Video_modeStruct.aViewSizes[Video_modeStruct.viewSizeIdx].xMin = 0;
@@ -1754,11 +1754,7 @@ int jkMain_SetVideoMode()
     }
     jkDev_Open();
     
-#ifdef TILE_SW_RASTER
-	rdroid_curAcceleration = 0;// tmp
-#else
     rdroid_curAcceleration = 1;
-#endif
     Video_pCanvas = rdCanvas_New(2, Video_pMenuBuffer, Video_pVbufIdk, 0, 0, newW, newH, 6);
 #if defined(SDL2_RENDER)
     Video_pCanvasOverlayMap = rdCanvas_New(2, Video_pOverlayMapBuffer, Video_pOverlayMapBuffer, 0, 0, newW, newH, 6);

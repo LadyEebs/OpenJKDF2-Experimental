@@ -292,9 +292,9 @@ void jkGui_Shutdown()
     playerShortName[31] = 0;
     wuRegistry_SetString("playerShortName", playerShortName);
 
-//#ifndef SDL2_RENDER
+#if !defined(SDL2_RENDER) || defined(TILE_SW_RASTER)
     stdDisplay_FreeBackBuffers();
-//#endif
+#endif
     jkGui_bInitialized = 0;
 }
 
