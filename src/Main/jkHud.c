@@ -931,7 +931,7 @@ LABEL_116:
     #endif
 	}
 
-//#ifdef DEBUG_QOL_CHEATS
+#if defined(DEBUG_QOL_CHEATS) || defined(TILE_SW_RASTER)
     int fps = (int)sithTime_TickHz;
     if (fps > 999)
         fps = 999;
@@ -940,7 +940,7 @@ LABEL_116:
     memset(tmp, 0, 32);
     stdString_snprintf(tmp, 32, "%03d", fps);
     stdFont_DrawAscii(Video_pMenuBuffer, jkHud_pMsgFontSft, jkHud_leftBlitX, jkHud_leftBlitY, 999, tmp, 0);
-//#endif
+#endif
 
 #if defined(SDL2_RENDER) && !defined(TILE_SW_RASTER)
     stdDisplay_VBufferUnlock(Video_pCanvasOverlayMap->vbuffer);
