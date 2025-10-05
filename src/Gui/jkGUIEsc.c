@@ -199,11 +199,11 @@ void jkGuiEsc_Show()
                 continue;
 
             case JKGUIESC_ABORT:
-				if (!jkGuiDialog_YesNoDialog(jkStrings_GetUniStringWithFallback("GUI_ABORT_GAME"), jkStrings_GetUniStringWithFallback("GUI_CONFIRM_ABORT")))
-					continue;
 #ifdef MENU_16BIT
 				jkuGuiRend_dialogBackgroundMenu = &jkGuiEsc_menu;
 #endif
+				if (!jkGuiDialog_YesNoDialog(jkStrings_GetUniStringWithFallback("GUI_ABORT_GAME"), jkStrings_GetUniStringWithFallback("GUI_CONFIRM_ABORT")))
+					continue;
                 jkMain_MenuReturn();
                 jkGuiRend_UpdateSurface();
                 return;
