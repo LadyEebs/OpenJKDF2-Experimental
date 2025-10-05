@@ -707,10 +707,26 @@ void sithRender_SetCameraFog()
 	}
 	else
 	{
-		rdSetFogMode(sithWorld_pCurrentWorld->fogEnabled ? RD_FOG_ENABLED : RD_FOG_DISABLED);
-		rdFogColorf(sithWorld_pCurrentWorld->fogColor.x, sithWorld_pCurrentWorld->fogColor.y, sithWorld_pCurrentWorld->fogColor.z, sithWorld_pCurrentWorld->fogColor.w);
-		rdFogRange(sithWorld_pCurrentWorld->fogStartDepth, sithWorld_pCurrentWorld->fogEndDepth);
-		rdFogAnisotropy(0.35f);
+		if (sithWorld_pCurrentWorld->fogEnabled) // user fog is enabled
+		{
+			rdSetFogMode(RD_FOG_ENABLED);
+			rdFogColorf(sithWorld_pCurrentWorld->fogColor.x, sithWorld_pCurrentWorld->fogColor.y, sithWorld_pCurrentWorld->fogColor.z, sithWorld_pCurrentWorld->fogColor.w);
+			rdFogRange(sithWorld_pCurrentWorld->fogStartDepth, sithWorld_pCurrentWorld->fogEndDepth);
+			rdFogAnisotropy(0.35f);
+		}
+		else if (sithSurface_hasSkyColorGuess)
+		{
+			float mapDist = rdVector_Dist3(&sithWorld_pCurrentWorld->maxBounds, &sithWorld_pCurrentWorld->minBounds);
+
+			rdSetFogMode(RD_FOG_ENABLED);
+			rdFogColorf(sithSurface_skyColorGuess.x, sithSurface_skyColorGuess.y, sithSurface_skyColorGuess.z, 1.0f);
+			rdFogRange(0, mapDist);//sithCamera_currentCamera->rdCam.pClipFrustum->zFar);
+			rdFogAnisotropy(0.35f);
+		}
+		else
+		{
+			rdSetFogMode(RD_FOG_DISABLED);
+		}
 	}
 #endif
 }

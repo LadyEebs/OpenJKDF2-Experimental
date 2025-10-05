@@ -2813,6 +2813,7 @@ typedef struct sithWorld
 	int numShadersLoaded;
 	rdShader* shaders;
 	sithSector* backdropSector;
+	rdVector3 minBounds, maxBounds;
 #endif
 } sithWorld;
 

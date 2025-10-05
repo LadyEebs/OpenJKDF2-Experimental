@@ -470,6 +470,12 @@ int sithWorld_NewEntry(sithWorld *pWorld)
 #endif
 
 #ifdef RENDER_DROID2
+			if (sithWorld_pCurrentWorld->backdropSector)
+			{
+				sithSurface_skyColorGuess = sithWorld_pCurrentWorld->backdropSector->tint;
+				sithSurface_hasSkyColorGuess = 1;
+			}
+
 #if 0//def JOB_SYSTEM // crashes and null argument weirdness
 			stdJob_Dispatch(pWorld->numSurfaces, 16, sithWorld_PostLoadSurfaceJob);
 			stdJob_Wait();
@@ -973,6 +979,11 @@ int sithWorld_LoadGeoresource(sithWorld *pWorld, int a2)
         return 0;
     }
 
+#ifdef RENDER_DROID2
+	pWorld->minBounds.x = pWorld->minBounds.y = pWorld->minBounds.z =  FLT_MAX;
+	pWorld->maxBounds.x = pWorld->maxBounds.y = pWorld->maxBounds.z = -FLT_MAX;
+#endif
+
     vertex = vertices;
     for (int i = 0; i < num_vertices; i++)
     {
@@ -989,6 +1000,13 @@ int sithWorld_LoadGeoresource(sithWorld *pWorld, int a2)
         vertex->x = v_x;
         vertex->y = v_y;
         vertex->z = v_z;
+
+
+#ifdef RENDER_DROID2
+		rdVector_Min3Acc(&pWorld->minBounds, vertex);
+		rdVector_Max3Acc(&pWorld->maxBounds, vertex);
+#endif
+
         ++vertex;
     }
 

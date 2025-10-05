@@ -850,3 +850,38 @@ void rdVector_Copy4To3(rdVector3* out, rdVector4* in)
 	out->y = in->y;
 	out->z = in->z;
 }
+
+rdVector3 rdVector_Min3(rdVector3* a, rdVector3* b)
+{
+	rdVector3 c;
+	c.x = stdMath_Min(a->x, b->x);
+	c.y = stdMath_Min(a->y, b->y);
+	c.z = stdMath_Min(a->z, b->z);
+	return c;
+}
+
+rdVector3 rdVector_Max3(rdVector3* a, rdVector3* b)
+{
+	rdVector3 c;
+	c.x = stdMath_Max(a->x, b->x);
+	c.y = stdMath_Max(a->y, b->y);
+	c.z = stdMath_Max(a->z, b->z);
+	return c;
+}
+
+
+rdVector3* rdVector_Min3Acc(rdVector3* out, rdVector3* in)
+{
+	out->x = stdMath_Min(out->x, in->x);
+	out->y = stdMath_Min(out->y, in->y);
+	out->z = stdMath_Min(out->z, in->z);
+	return out;
+}
+ 
+rdVector3* rdVector_Max3Acc(rdVector3* out, rdVector3* in)
+{
+	out->x = stdMath_Max(out->x, in->x);
+	out->y = stdMath_Max(out->y, in->y);
+	out->z = stdMath_Max(out->z, in->z);
+	return out;
+}

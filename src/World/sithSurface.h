@@ -48,8 +48,9 @@
 extern uint8_t sithSurface_skyColorGuess;
 #endif
 
-#ifdef TILE_SW_RASTER
+#if defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
 extern rdVector3 sithSurface_skyColorGuess;
+extern int sithSurface_hasSkyColorGuess;
 #endif
 
 enum SithSurfaceFlag

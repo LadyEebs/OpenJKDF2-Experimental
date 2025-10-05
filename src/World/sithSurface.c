@@ -16,7 +16,8 @@
 #ifdef TARGET_TWL
 uint8_t sithSurface_skyColorGuess = 0;
 #endif
-#ifdef TILE_SW_RASTER
+#if defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
+int sithSurface_hasSkyColorGuess = 0;
 rdVector3 sithSurface_skyColorGuess = { 0, 0, 0};
 #endif
 
@@ -220,12 +221,13 @@ int sithSurface_Load(sithWorld *world)
             face->lightingMode = RD_LIGHTMODE_FULLYLIT;
 
             // Guess the sky color for fog
-#if defined(TARGET_TWL) || defined(TILE_SW_RASTER)
+#if defined(TARGET_TWL) || defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
             if (face->material) {
                 rdMaterial* mat = face->material;
                 rdMaterial_EnsureData(mat);
-			#ifdef TILE_SW_RASTER
-				rdMaterial_GetFillColor(&sithSurface_skyColorGuess, mat, world->colormaps, 0, -1);
+			#if defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
+				if(rdMaterial_GetFillColor(&sithSurface_skyColorGuess, mat, world->colormaps, 0, -1))
+					sithSurface_hasSkyColorGuess = 1;
 			#else
                 rdTexture* texture = &mat->textures[0];
                 stdVBuffer* lowestMipBuf = NULL;

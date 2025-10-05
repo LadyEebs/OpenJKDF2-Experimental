@@ -153,7 +153,10 @@ MATH_FUNC void rdVector_FromPYR(rdVector3* v, const rdVector3* pyr);
 MATH_FUNC void rdVector_Perpendicular3(rdVector3* perp, const rdVector3* v);
 MATH_FUNC void rdVector_Copy3To4(rdVector4* out, rdVector3* in);
 MATH_FUNC void rdVector_Copy4To3(rdVector3* out, rdVector4* in);
-
+MATH_FUNC rdVector3 rdVector_Min3(rdVector3* a, rdVector3* b);
+MATH_FUNC rdVector3 rdVector_Max3(rdVector3* a, rdVector3* b);
+MATH_FUNC rdVector3* rdVector_Min3Acc(rdVector3* out, rdVector3* in);
+MATH_FUNC rdVector3* rdVector_Max3Acc(rdVector3* out, rdVector3* in);
 
 #ifdef __cplusplus
 }
