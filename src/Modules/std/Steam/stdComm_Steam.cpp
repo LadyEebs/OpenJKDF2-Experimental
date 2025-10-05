@@ -86,6 +86,8 @@ extern "C" {
 		if (!lobbyID.IsValid())
 			return 0;
 
+		stdPlatform_Printf("Getting lobby session description\n");
+
 		pEntry->guidInstance = lobbyID.ConvertToUint64();
 
 		pEntry->maxPlayers = SteamMatchmaking()->GetLobbyMemberLimit(lobbyID);
@@ -107,6 +109,8 @@ extern "C" {
 
 	static void Steam_SetLobbySessionDesc(CSteamID lobbyID, stdCommSession* pEntry)
 	{
+		stdPlatform_Printf("Setting lobby session description\n");
+
 		// make sure we're the owner
 		SteamMatchmaking()->SetLobbyOwner(lobbyID, SteamUser()->GetSteamID());
 
