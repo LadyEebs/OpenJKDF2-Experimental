@@ -24,8 +24,8 @@ MSGS 100          # <--- DON'T FORGET TO UPDATE THIS COUNT
 #******************************
 #  Display
 #******************************
-   "GUIEXT_FOV"                           0 "FOV"
-   "GUIEXT_FOV_HINT"                      0 "Set FOV"
+   "GUIEXT_FOV"                           0 "Field of View"
+   "GUIEXT_FOV_HINT"                      0 "Set field of view"
    "GUIEXT_FOV_VERTICAL"                  0 "FOV is vertical (Hor+)"
    "GUIEXT_EN_FULLSCREEN"                 0 "Fullscreen"
    "GUIEXT_EN_DITHER"                     0 "Dithering"
@@ -38,9 +38,9 @@ MSGS 100          # <--- DON'T FORGET TO UPDATE THIS COUNT
    "GUIEXT_EN_BLOOM"                      0 "Glow/Bloom"
    "GUIEXT_EN_SSAO"                       0 "Screen Space AO"
    "GUIEXT_EN_SHADOWS"                    0 "Dynamic Shadows"
-   "GUIEXT_SSAA_MULT"                     0 "Resolution Scale:"
-   "GUIEXT_GAMMA_VAL"                     0 "Gamma Value:"
-   "GUIEXT_HUD_SCALE"                     0 "HUD Scale:"
+   "GUIEXT_SSAA_MULT"                     0 "Resolution Scale"
+   "GUIEXT_GAMMA_VAL"                     0 "Gamma Value"
+   "GUIEXT_HUD_SCALE"                     0 "HUD Scale"
    "GUIEXT_EN_DECALS"                     0 "Show Decals"
    "GUIEXT_EN_COLORDEPTH"                 0 "Color Depth"
    "GUIEXT_EN_SAMPLES"                    0 "Sample Mode"
