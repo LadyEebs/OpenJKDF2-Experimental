@@ -1092,7 +1092,12 @@ void jkPlayer_SetPovSprite(jkPlayerInfo* info, rdSprite* sprite)
 		rdThing_FreeEntry(&info->povSprite);
 		rdThing_NewEntry(&info->povSprite, info->actorThing);
 		if (sprite)
+		{
+			// tmp should be in the sprite definition?
+			sprite->face.type |= RD_FF_ADDITIVE;
+
 			rdThing_SetSprite3(&info->povSprite, sprite);
+		}
 	}
 	info->povSprite.spriteScale = 1.0f;
 	jkPlayer_drawMuzzleFlash = 0;
