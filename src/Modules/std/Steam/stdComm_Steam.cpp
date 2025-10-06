@@ -718,7 +718,7 @@ void DirectPlay_Close()
 int DirectPlay_OpenHost(stdCommSession* pEntry)
 {
 	if (!SteamAPI_IsSteamRunning())
-		return 0;
+		return 1;
 
 	// update the session desc if the lobby already exists
 	if (stdComm_steamLobbyID.IsValid())
@@ -732,7 +732,7 @@ int DirectPlay_OpenHost(stdCommSession* pEntry)
 		{
 			stdPlatform_Printf("Failed to create lobby with error %d\n", result);
 			stdComm_bIsServer = 0;
-			return result;
+			return 1;
 		}
 	}
 
