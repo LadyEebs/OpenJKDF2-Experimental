@@ -96,6 +96,8 @@ sithThing* sithRender_alphaDrawThing = NULL; // list of things to render after w
 #endif
 
 #ifdef RENDER_DROID2
+extern flex_t jkPlayer_overbright;
+
 rdAmbientFlags_t sithRender_aoFlags = 0;
 uint32_t sithRender_numStaticLights = 0;
 
@@ -1158,7 +1160,6 @@ void sithRender_Draw()
 	rdDepthRange(0.05f, 1.0f);
 	rdSetGlowIntensity(0.4f);
 
-	extern flex_t jkPlayer_overbright;
 	rdSetOverbright(jkPlayer_overbright);
 
 	_memset(sithWorld_pCurrentWorld->lightBuckets, 0, sizeof(uint64_t)*sithWorld_pCurrentWorld->numLightBuckets);
@@ -1967,6 +1968,7 @@ void sithRender_DrawSurface(sithSurface* surface)
 	}
 	else if (surface->surfaceFlags & SITH_SURFACE_HORIZON_SKY)
 	{
+		rdSetOverbright(1);
 		rdSetShader(sithRender_horizonSky);
 		rdSetShaderConstant4f(0, sithSector_flt_8553C0, sithSector_flt_8553C8, sithSector_flt_8553F4, 0);
 		rdSetShaderConstant4f(1, (sithWorld_pCurrentWorld->horizontalSkyOffs.x + sithSector_flt_8553B8) / w, (sithWorld_pCurrentWorld->horizontalSkyOffs.y + sithSector_flt_8553C4) / h, 0, 0);
@@ -1976,6 +1978,7 @@ void sithRender_DrawSurface(sithSurface* surface)
 		extern rdVector3 sithSector_ceilingSkyNormal;
 		extern float sithSector_ceilingDot;
 
+		rdSetOverbright(1);
 		rdSetShader(sithRender_ceilingSky);
 		rdSetShaderConstant4f(0, sithSector_ceilingSkyNormal.x, sithSector_ceilingSkyNormal.y, sithSector_ceilingSkyNormal.z, sithSector_ceilingDot);
 		rdSetShaderConstant4f(1, sithWorld_pCurrentWorld->ceilingSkyOffs.x / w, sithWorld_pCurrentWorld->ceilingSkyOffs.y / h, 0, 0);
@@ -2194,7 +2197,8 @@ void sithRender_DrawSurface(sithSurface* surface)
 	}
 
 	rdAmbientFlags(sithRender_aoFlags);
-	
+	rdSetOverbright(jkPlayer_overbright);
+
 	rdSetShader(0);
 	rdSetBlendEnabled(RD_FALSE);
 
