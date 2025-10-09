@@ -23,4 +23,4 @@ texadd r0, t0, r1[fmt:half2], c1.xy
 
 # sky uses full bright for emissive
 mul r1, r0, mat:glow
-mul r1, r1, 0.5
+mul r1, r1, 0.25
