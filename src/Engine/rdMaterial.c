@@ -2,6 +2,7 @@
 
 #include "General/stdString.h"
 #include "General/stdMath.h"
+#include "General/stdColor.h"
 #include "Engine/rdroid.h"
 #include "Win95/stdDisplay.h"
 #include "Win95/std.h"
@@ -756,12 +757,13 @@ int rdMaterial_GetFillColor(rdVector3* pOutColor, rdMaterial* pMaterial, rdColor
 		{
 			if(lightLevel >= 0)
 				return 0;
-			uint32_t rmask = (1u << pMaterial->tex_format.r_bits) - 1;
-			uint32_t gmask = (1u << pMaterial->tex_format.g_bits) - 1;
-			uint32_t bmask = (1u << pMaterial->tex_format.b_bits) - 1;
-			pOutColor->x = (float)(((paletteIndex >> pMaterial->tex_format.r_shift) & rmask) << pMaterial->tex_format.r_bitdiff) / 255.0f;
-			pOutColor->y = (float)(((paletteIndex >> pMaterial->tex_format.g_shift) & gmask) << pMaterial->tex_format.g_bitdiff) / 255.0f;
-			pOutColor->z = (float)(((paletteIndex >> pMaterial->tex_format.b_shift) & bmask) << pMaterial->tex_format.b_bitdiff) / 255.0f;
+
+			uint8_t r, g, b;
+			stdColor_DecodeRGB(paletteIndex, &pMaterial->tex_format, &r, &g, &b);
+
+			pOutColor->x = r / 255.0f;
+			pOutColor->y = g / 255.0f;
+			pOutColor->z = b / 255.0f;
 		}
 		return 1;
 	}
