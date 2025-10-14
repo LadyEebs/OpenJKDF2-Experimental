@@ -9,6 +9,7 @@ add r1, r0, r1 div:2 # (r0 + r1) / 2
 
 # output color
 mov r0, lum(r0)
+mul r0, v0
 
 # layer 2
 tex r2, tex0, t2
