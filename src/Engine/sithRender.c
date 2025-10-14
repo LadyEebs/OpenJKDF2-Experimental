@@ -1544,11 +1544,11 @@ void sithRender_Clip(sithSector *sector, rdClipFrustum *frustumArg, flex_t a3, i
         }
 
 #ifdef RENDER_DROID2
-		for (int bucket = 0; bucket < sithWorld_pCurrentWorld->numLightBuckets; ++bucket)
-		{
-			if(sector->lightBuckets)
-				sithWorld_pCurrentWorld->lightBuckets[bucket] |= sector->lightBuckets[bucket];
-		}
+		//for (int bucket = 0; bucket < sithWorld_pCurrentWorld->numLightBuckets; ++bucket)
+		//{
+		//	if(sector->lightBuckets)
+		//		sithWorld_pCurrentWorld->lightBuckets[bucket] |= sector->lightBuckets[bucket];
+		//}
 #endif
 
         sithRender_aSectors2[sithRender_numSectors2++] = sector;
@@ -3763,7 +3763,7 @@ void sithRender_RenderDynamicLights()
 {
 #ifdef RENDER_DROID2
 	// scan through the light buckets to add static lights
-	for (int bucket = 0; bucket < sithWorld_pCurrentWorld->numLightBuckets; ++bucket)
+	/*for (int bucket = 0; bucket < sithWorld_pCurrentWorld->numLightBuckets; ++bucket)
 	{
 		uint64_t lightOffset = bucket * 64;
 		uint64_t bucketBits = sithWorld_pCurrentWorld->lightBuckets[bucket];
@@ -3778,7 +3778,7 @@ void sithRender_RenderDynamicLights()
 
 			//rdCamera_AddLight(rdCamera_pCurCamera, &sithWorld_pCurrentWorld->lights[lightIndex].rdlight, &sithWorld_pCurrentWorld->lights[lightIndex].pos);
 		}
-	}
+	}*/
 
 	// this is now done on the GPU
 	for (int i = 0; i < rdCamera_pCurCamera->numLights; i++)
