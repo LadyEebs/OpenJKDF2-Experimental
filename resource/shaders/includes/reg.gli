@@ -128,18 +128,23 @@ vec4 read_constant(uint s_addr)
 	case SHADER_SYS_WPOS:				return vec4(transform44(viewMatrixInv, readVPOS().xyz), 1.0);
 	case SHADER_SYS_WVDIR:				return vec4(mat3(viewMatrixInv) * normalize(-readVPOS().xyz), 0.0);
 	case SHADER_SYS_WNORM:				return vec4(mat3(viewMatrixInv) * unpackSnorm4x8(vnorm).xyz, 1.0);
+#ifdef WORLD
+	case SHADER_IDENTITY:               return vec4(1.0/invlightMult);
+#else
+	case SHADER_IDENTITY:				return vec4(1.0);
+#endif
 #ifdef FRAGMENT_SHADER
 	case SHADER_SYS_XY:					return vec4(gl_FragCoord.xy, 0, 0);
 	case SHADER_SYS_UV:					return vec4(gl_FragCoord.xy / iResolution.xy, 0, 0);
 	case SHADER_SYS_AR:					return vec4(gl_FragCoord.y / gl_FragCoord.x, 1.0, 0, 0);
-		// material registers
+#endif
+	// material registers
 	case SHADER_SYS_MAT_FILL:			return fillColor;
 	case SHADER_SYS_MAT_ALBEDO:			return albedoFactor;
 	case SHADER_SYS_MAT_EMISSIVE:		return emissiveFactor;
 	case SHADER_SYS_MAT_SPECULAR:		return specularFactor;
 	case SHADER_SYS_MAT_ROUGHNESS:		return vec4(roughnessFactor);
 	case SHADER_SYS_MAT_DISPLACEMENT:	return vec4(displacement_factor);
-#endif
 	}
 }
 

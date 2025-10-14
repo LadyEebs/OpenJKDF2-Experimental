@@ -98,6 +98,7 @@ import "uniforms.gli"
 #define SHADER_SYS_WNORM 16
 #define SHADER_SYS_UV    17
 #define SHADER_SYS_AR    18
+#define SHADER_IDENTITY  19
 // material registers
 #define SHADER_SYS_MAT_FILL         32
 #define SHADER_SYS_MAT_ALBEDO       33

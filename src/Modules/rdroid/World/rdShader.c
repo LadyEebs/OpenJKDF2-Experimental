@@ -795,17 +795,18 @@ static void rdShader_InitAliasHash(rdShader_Assembler* assembler)
 	// add default system aliases
 	static const rdShader_StaticAlias systemAliases[] =
 	{
-		{"sv:sec",    "c8"},
-		{"sv:xy",     "c9"},
-		{"sv:z",      "c10"},
-		{"sv:pos",    "c11"},
-		{"sv:vdir",   "c12"},
-		{"sv:norm",   "c13"},
-		{"sv:wpos",   "c14"},
-		{"sv:wvdir",  "c15"},
-		{"sv:wnorm",  "c16"},
-		{"sv:uv",     "c17"},
-		{"sv:aspect", "c18"},
+		{"sv:sec",      "c8"},
+		{"sv:xy",       "c9"},
+		{"sv:z",        "c10"},
+		{"sv:pos",      "c11"},
+		{"sv:vdir",     "c12"},
+		{"sv:norm",     "c13"},
+		{"sv:wpos",     "c14"},
+		{"sv:wvdir",    "c15"},
+		{"sv:wnorm",    "c16"},
+		{"sv:uv",       "c17"},
+		{"sv:aspect",   "c18"},
+		{"sv:identity", "c19"}
 	};
 	for (uint8_t i = 0; i < ARRAY_SIZE(systemAliases); ++i)
 		stdHashTable_SetKeyVal(assembler->aliasHash, systemAliases[i].name, systemAliases[i].reg);

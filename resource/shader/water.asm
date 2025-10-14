@@ -31,6 +31,7 @@ cmp r0.a, r2[fmt:float], 0.8, r0.a # r2 > 0 ? 0.9 : r0 (0.5 or 0.0)
 mul r1, lum(r1), 0.025 fmt:float
 add r2, sv:uv, r1[fmt:float] fmt:half2
 tex r3, fbo, r2[fmt:half2], 0.0
+mul r3, r3, sv:identity
 
 # blend in some of the distorted diffuse
 texadd r1, t0, t0, r1[fmt:float]
