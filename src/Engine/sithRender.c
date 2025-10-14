@@ -723,7 +723,7 @@ void sithRender_SetCameraFog()
 			rdSetFogMode(RD_FOG_ENABLED);
 			rdFogColorf(sithSurface_skyColorGuess.x, sithSurface_skyColorGuess.y, sithSurface_skyColorGuess.z, 1.0f);
 			rdFogRange(0, mapDist);//sithCamera_currentCamera->rdCam.pClipFrustum->zFar);
-			rdFogAnisotropy(0.35f);
+			rdFogAnisotropy(0.1f);
 		}
 		else
 		{
