@@ -422,8 +422,8 @@ void sithPlayer_sub_4C9150(sithThing *player, sithThing *killedBy)
     player->actorParams.typeflags &= ~SITH_AF_BLEEDS;
 #ifdef PUPPET_PHYSICS
 	//player->collide = SITH_COLLIDE_NONE;
-	if (player->animclass && player->animclass->ragdoll)
-		player->moveType = SITH_MT_RAGDOLL;
+	//if (player->animclass && player->animclass->ragdoll)
+	//	player->moveType = SITH_MT_RAGDOLL;
 #endif
     sithPhysics_ThingStop(player);
     sithWeapon_SyncPuppet(player);

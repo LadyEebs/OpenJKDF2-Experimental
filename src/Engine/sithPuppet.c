@@ -777,9 +777,18 @@ void sithPuppet_DefaultCallback(sithThing *thing, int32_t track, uint32_t marker
             if ( thing->rdthing.puppet->tracks[track].playSpeed >= 0.5 && thing->attach_flags )
 			#ifdef PUPPET_PHYSICS
 				if (thing->moveType != SITH_MT_RAGDOLL || !thing->ragdoll) // let the physics system handle this
-			#endif
 					sithSoundClass_PlayModeRandom(thing, SITH_SC_CORPSEHIT);
-            return;
+			
+			// trigger ragdolls when the corpse hit occurs
+				if (thing->type == SITH_THING_ACTOR || thing->type == SITH_THING_PLAYER)
+				{
+					if (thing->animclass && thing->animclass->ragdoll)
+						thing->moveType = SITH_MT_RAGDOLL;
+				}
+			#else
+				sithSoundClass_PlayModeRandom(thing, SITH_SC_CORPSEHIT);
+            #endif
+			return;
         case MARKER_JUMP_LOW:
             if ( thing->attach_flags )
             {
