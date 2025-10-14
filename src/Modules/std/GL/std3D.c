@@ -3797,7 +3797,7 @@ void std3D_DrawUIRenderList()
 
 	float param1 = 1.0;
     glUniform1f(std3D_uiProgram.uniform_param1, param1);
-    glUniform1f(std3D_uiProgram.uniform_param3, jkPlayer_gamma);
+    glUniform1f(std3D_uiProgram.uniform_param3, 1.0f/jkPlayer_gamma);
     
     }
 
@@ -6440,7 +6440,7 @@ void std3D_FlushPostFX()
 	std3D_DrawSimpleTex(&std3D_motionblurStage, &refrZ, refr.tex, std3D_framebuffer.resolve2, 0, 0.5, 1.0, 1.0, 0, "Motion Blur 2nd");
 	std3D_DrawSimpleTex(&std3D_postfxStage, &window, refrZ.tex, bloomLayers[0].tex, 0, (rdCamera_pCurCamera->flags & 0x1) ? sithTime_curSeconds : -1.0, jkPlayer_enableDithering, jkPlayer_gamma, 0, "Final Output");
 #else
-	std3D_DrawSimpleTex(&std3D_postfxStage, &window, std3D_framebuffer.resolve0, (std3D_framebufferFlags & FBO_BLOOM) ? bloomLayers[0].tex : blank_tex, 0, (rdCamera_pCurCamera->flags & 0x1) ? sithTime_curSeconds : -1.0, jkPlayer_enableDithering, jkPlayer_gamma, 0, "Final Output");
+	std3D_DrawSimpleTex(&std3D_postfxStage, &window, std3D_framebuffer.resolve0, (std3D_framebufferFlags & FBO_BLOOM) ? bloomLayers[0].tex : blank_tex, 0, (rdCamera_pCurCamera->flags & 0x1) ? sithTime_curSeconds : -1.0, jkPlayer_enableDithering, 1.0f/jkPlayer_gamma, 0, "Final Output");
 #endif
 
 
