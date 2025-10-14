@@ -151,7 +151,7 @@ void main(void)
 	// apply fog to outputs
 	if(fogEnabled > 0)
 	{
-		vec3 fog_color = fogColor.rgb;
+		vec3 fog_color = fogColor.rgb * invlightMult;
 		if (fogLightDir.w > 0.0)
 		{
 			vec3  viewDir = normalize(-fetch_vtx_pos());
