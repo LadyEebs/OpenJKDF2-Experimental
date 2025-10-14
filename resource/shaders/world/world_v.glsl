@@ -36,7 +36,7 @@ vec3 CalculateAmbientSpecular(float roughness, vec3 normal, vec3 view, vec3 refl
 	for(int sg = 0; sg < AMBIENT_LOBES; ++sg)
 	{
 		vec4 sgCol = ambientSG[sg];//unpack_argb2101010(ambientSG[sg]);
-		vec3 ambientColor = mix(vec3(v_color[0].bgr), sgCol.xyz, vec3(sgCol.w)); // use vertex color if no ambientSG data
+		vec3 ambientColor = sgCol.xyz;//mix(vec3(v_color[0].bgr), sgCol.xyz, vec3(sgCol.w)); // use vertex color if no ambientSG data
 	
 		float umLength = length(sharpness * reflected + (ambientSGBasis[sg].w * ambientSGBasis[sg].xyz));
 		float attenuation = 1.0 - exp(-2.0 * umLength);
