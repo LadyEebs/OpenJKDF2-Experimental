@@ -304,7 +304,7 @@ void main(void)
 //	sampled_color *= pow(edge, vignettePower) * flex(0.5) + flex(0.5);
     
 	flex3 bloom = textureLod(tex2, uv.xy, 0).xyz;
-	sampled_color.rgb = bloom.rgb + sampled_color.rgb * (flex3(1.0) - bloom.rgb);
+	sampled_color.rgb = bloom.rgb + sampled_color.rgb;// * (flex3(1.0) - bloom.rgb);
 
 //#ifdef RENDER_DROID2
 //	sampled_color.rgb += flex3(colorEffects_add.rgb);
