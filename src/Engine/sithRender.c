@@ -108,6 +108,9 @@ rdShader* sithRender_ceilingSky = NULL;
 rdShader* sithRender_jkgmShader = NULL;
 rdShader* sithRender_waterShader = NULL;
 rdShader* sithRender_scopeShader = NULL;
+
+static size_t sithRender_numSectorPointLights;
+static rdLight sithRender_aSectorPointLights[SITHRENDER_MAXSECTORLIGHTS];
 #endif
 
 #ifdef RGB_THING_LIGHTS
@@ -2051,7 +2054,10 @@ void sithRender_DrawSurface(sithSurface* surface)
 				rdTexGenParams(0, 0, 0, sithTime_curSeconds);
 
 			// surface scroll currently causes popping when it loops
-			rdTexOffseti(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
+			if (sithWorld_pCurrentWorld->version > 1)
+				rdTexOffset(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
+			else
+				rdTexOffseti(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
 
 			//if(surface->adjoin)
 			//	rdAmbientLightSH(&surface->adjoin->sector->ambientSH);
@@ -2062,7 +2068,10 @@ void sithRender_DrawSurface(sithSurface* surface)
 		{
 			if (surface->parent_sector->flags & SITH_SECTOR_UNDERWATER)
 				rdAmbientFlags(sithRender_aoFlags | RD_AMBIENT_CAUSTICS);
-			rdTexOffseti(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
+			if (sithWorld_pCurrentWorld->version > 1)
+				rdTexOffset(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
+			else
+				rdTexOffseti(RD_TEXCOORD0, surface->surfaceInfo.face.clipIdk.x, surface->surfaceInfo.face.clipIdk.y);
 		}
 	}
 
@@ -2105,6 +2114,9 @@ void sithRender_DrawSurface(sithSurface* surface)
 	{
 		//tint = surface->parent_sector->tint;
 	}
+
+	if (surface->parent_sector->flags & SITH_SECTOR_UNDERWATER)
+		tint = surface->parent_sector->tint;
 
 	rdVector3 cmpTint = surface->parent_sector->colormap->tint;
 
@@ -2172,14 +2184,28 @@ void sithRender_DrawSurface(sithSurface* surface)
 			{
 				int uvidx = surface->surfaceInfo.face.vertexUVIdx[j];
 				rdVector2* uv = &sithWorld_pCurrentWorld->vertexUVs[uvidx];
-				rdTexCoord2i(RD_TEXCOORD0, uv->x, uv->y);
+
+				if (sithWorld_pCurrentWorld->version > 1)
+					rdTexCoord2f(RD_TEXCOORD0, uv->x, uv->y);
+				else
+					rdTexCoord2i(RD_TEXCOORD0, uv->x, uv->y);
 
 				if(isWater)
 				{
-					rdTexCoord2i(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
-					rdTexCoord2i(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
-					rdTexCoord2i(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
-					rdTexCoord2i(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
+					if (sithWorld_pCurrentWorld->version > 1)
+					{
+						rdTexCoord2i(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
+						rdTexCoord2i(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
+						rdTexCoord2i(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
+						rdTexCoord2i(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
+					}
+					else
+					{
+						rdTexCoord2f(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
+						rdTexCoord2f(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
+						rdTexCoord2f(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
+						rdTexCoord2f(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
+					}
 
 					rdTexOffset(RD_TEXCOORD0,stdMath_Frac( 0.2 * sithTime_curSeconds),stdMath_Frac( 0.2 * sithTime_curSeconds));
 					rdTexOffset(RD_TEXCOORD1,stdMath_Frac(-0.1 * sithTime_curSeconds*0.5)*2.0,stdMath_Frac(-0.1 * sithTime_curSeconds * 0.5) * 2.0);
@@ -3979,16 +4005,34 @@ void sithRender_RenderThings()
 			    rdMatrix_TransformPoint34(&thingIter->screenPos, &thingIter->position, &rdCamera_pCurCamera->view_matrix);
                 
                 //printf("%f %f %f ; %f %f %f\n", thingIter->screenPos.x, thingIter->screenPos.y, thingIter->screenPos.z, thingIter->position.x, thingIter->position.y, thingIter->position.z);
-                
+#ifdef RENDER_DROID2
+				int bLightSet = 0;
+#endif
+				rdVector3 lightColor;
+
                 if ( rdroid_curAcceleration > 0 || thingIter->rdthing.type != RD_THINGTYPE_SPRITE3 || sithRender_82F4B4 < 8 )
                 {
-                    clipRadius = 0.0f;
-                    switch ( thingIter->rdthing.type )
+					flex_t yval;
+					clipRadius = 0.0f;
+					switch ( thingIter->rdthing.type )
                     {
                         case RD_THINGTYPE_MODEL:
                             radius = thingIter->rdthing.model3->radius;
                             clipRadius = radius;
                             clippingVal = rdClip_SphereInFrustrum(v1->clipFrustum, &thingIter->screenPos, clipRadius);
+						#ifdef RENDER_DROID2
+							// Set sector point light 
+							// 
+							// TODO [bug]: sithRender_numSectorPointLights is never incremented, but changing this breaks thin illumination as the light will affect also things from other sectors
+							//             Maybe just a temp var can be used for light can be used instead and we can then increase limitation of max thing light?
+							rdVector_Copy4(&sithRender_aSectorPointLights[sithRender_numSectorPointLights].color, &thingIter->sector->light.color);
+
+							sithRender_aSectorPointLights[sithRender_numSectorPointLights].falloffMin = thingIter->sector->light.minRadius;
+							sithRender_aSectorPointLights[sithRender_numSectorPointLights].falloffMax = thingIter->sector->light.maxRadius;
+							rdCamera_AddLight(rdCamera_pCurCamera, &sithRender_aSectorPointLights[sithRender_numSectorPointLights], &thingIter->sector->light.pos);
+
+							bLightSet = 1;
+						#endif
                             break;
 
                         case RD_THINGTYPE_SPRITE3:
@@ -4014,10 +4058,10 @@ void sithRender_RenderThings()
                     }
                     thingIter->rdthing.clippingIdk = clippingVal;
                     if ( clippingVal == 2 || sithRender_008d1668) // MoTS added: sithRender_008d1668
-                        continue;
+                        goto skipThing;
                     curWorld = sithWorld_pCurrentWorld;
 
-                    flex_t yval = thingIter->screenPos.y;
+                    yval = thingIter->screenPos.y;
 
                     // MoTS added
                     if (sithCamera_currentCamera->zoomScale != 1.0) {
@@ -4113,7 +4157,6 @@ void sithRender_RenderThings()
 					)
                     {
 #ifdef RGB_AMBIENT
-						rdVector3 lightColor;
 						rdVector_Zero3(&lightColor);
 						rdVector_MultAcc3(&lightColor, &thingIter->lightColor, thingIter->light);
 						lightColor.x = stdMath_Clamp(lightColor.x, 0.0, 1.0);
@@ -4182,7 +4225,7 @@ void sithRender_RenderThings()
                     thingIter->rdthing.curLightMode = lightMode;
                     if (thingIter->thingflags & SITH_TF_80000000) {
                         lastDrawn = thingIter;
-                        continue;
+                        goto skipThing;
                     }
 
 #ifdef QOL_IMPROVEMENTS
@@ -4214,6 +4257,14 @@ void sithRender_RenderThings()
                     if (sithRender_RenderThing(thingIter) ) // MOTS added: flag check
                         ++sithRender_nongeoThingsDrawn;
                 }
+			skipThing:
+		#ifdef RENDER_DROID2
+				if (bLightSet == 1)
+				{
+					--rdCamera_pCurCamera->numLights;
+					bLightSet = 0;
+				}
+		#endif
             }
         }
     }

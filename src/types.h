@@ -2692,6 +2692,9 @@ typedef struct sithWorld
 #ifdef STATIC_JKL_EXT
 	uint32_t idx_offset;
 #endif
+#ifdef RENDER_DROID2
+	uint32_t version;
+#endif
     char map_jkl_fname[32];
     char episodeName[32];
     int32_t numColormaps;
@@ -3195,6 +3198,16 @@ typedef struct sithCollisionSearchResult
     sithCollisionSearchEntry collisions[128];
 } sithCollisionSearchResult;
 
+#ifdef RENDER_DROID2
+typedef struct sithSectorLight
+{
+	rdVector3 pos;
+	rdVector4 color;
+	float minRadius;
+	float maxRadius;
+} sithSectorLight;
+static_assert(sizeof(sithSectorLight) == 36, "sizeof(sithSectorLight) == 36");
+#endif
 
 typedef struct sithSector
 {
@@ -3229,6 +3242,7 @@ typedef struct sithSector
 #ifdef RENDER_DROID2
 	sithSector* nextBackdropSector;
 	uint64_t* lightBuckets;
+	sithSectorLight light;
 #endif
 #ifdef TARGET_TWL
     uint32_t geoRenderTick;

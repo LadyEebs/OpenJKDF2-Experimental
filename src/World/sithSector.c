@@ -93,19 +93,48 @@ int sithSector_Load(sithWorld *world, int tmp)
                 break;
             if ( !stdConffile_ReadLine() )
                 break;
-            if ( _sscanf(stdConffile_aLine, " ambient light %f", &tmpf1) != 1 )
-                break;
-            sectors->ambientLight = tmpf1; // FLEXTODO
-            if ( !stdConffile_ReadLine() )
-                break;
-            if ( _sscanf(stdConffile_aLine, " extra light %f", &tmpf1) != 1 )
-                break;
-            sectors->extraLight = tmpf1; // FLEXTODO
-            if ( !stdConffile_ReadLine() )
-                break;
-            if ( _sscanf(stdConffile_aLine, " colormap %d", &tmp) != 1 )
-                break;
-            sectors->colormap = &world->colormaps[tmp];
+
+		#ifdef RENDER_DROID2
+			if (world->version > 1)
+			{
+				flex_t red, green, blue;
+				if (_sscanf(stdConffile_aLine, " ambient light %f %f %f", &red, &green, &blue) != 3)
+					break;
+				if (!stdConffile_ReadLine())
+					break;
+				sectors->ambientLight = red; // RGBTODO
+				sectors->ambientLight = green; // RGBTODO
+				sectors->ambientLight = blue; // RGBTODO
+				sectors->ambientLight = 0.0f;
+
+				if (_sscanf(stdConffile_aLine, " extra light %f %f %f", &red, &green, &blue) != 3)
+					break;
+
+				sectors->extraLight = red;
+				sectors->extraLight = green;
+				sectors->extraLight = blue;
+				sectors->extraLight = 0.0f;
+
+				// colormaps not supported in newer versions, use the first one in the colormap array
+				sectors->colormap = world->colormaps;
+			}
+			else
+		#endif
+			{
+				if ( _sscanf(stdConffile_aLine, " ambient light %f", &tmpf1) != 1 )
+					break;
+				sectors->ambientLight = tmpf1; // FLEXTODO
+				if ( !stdConffile_ReadLine() )
+					break;
+				if ( _sscanf(stdConffile_aLine, " extra light %f", &tmpf1) != 1 )
+					break;
+				sectors->extraLight = tmpf1; // FLEXTODO
+				if ( !stdConffile_ReadLine() )
+					break;
+				if ( _sscanf(stdConffile_aLine, " colormap %d", &tmp) != 1 )
+					break;
+				sectors->colormap = &world->colormaps[tmp];
+			}
             if ( !stdConffile_ReadLine()
               || _sscanf(stdConffile_aLine, " tint %f %f %f", &tmpf1, &tmpf2, &tmpf3) == 3 && !stdConffile_ReadLine() )
             {
@@ -124,6 +153,32 @@ int sithSector_Load(sithWorld *world, int tmp)
                      &tmpf5,
                      &tmpf6) != 6 )
                 break;
+		#ifdef RENDER_DROID2
+			if (world->version > 1)
+			{
+				if (sscanf_s(stdConffile_aLine, " average light intensity %f %f %f", &sectors->light.color.x, &sectors->light.color.y, &sectors->light.color.z) == 3
+					&& !stdConffile_ReadLine())
+				{
+					break;
+				}
+
+				// Optional average light position
+				if (sscanf_s(stdConffile_aLine, " average light position %f %f %f", &sectors->light.pos.x, &sectors->light.pos.y, &sectors->light.pos.z) == 3
+					&& !stdConffile_ReadLine())
+				{
+					break;
+				}
+
+				// Optional average light falloff
+				if (sscanf_s(stdConffile_aLine, " average light falloff %f %f", &sectors->light.minRadius, &sectors->light.maxRadius) == 2)
+				{
+					if (!stdConffile_ReadLine())
+					{
+						break;
+					}
+				}
+			}
+		#endif
             sectors->boundingbox_onecorner.x = tmpf1; // FLEXTODO
             sectors->boundingbox_onecorner.y = tmpf2; // FLEXTODO
             sectors->boundingbox_onecorner.z = tmpf3; // FLEXTODO

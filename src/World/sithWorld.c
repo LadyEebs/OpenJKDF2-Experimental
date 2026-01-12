@@ -720,6 +720,10 @@ int sithHeader_Load(sithWorld *pWorld, int junk)
     _sscanf(stdConffile_aLine, "gouraud distance %f", &tmp);
     pWorld->gouradDistance = tmp; // FLEXTODO
 
+#ifdef RENDER_DROID2
+	pWorld->version = junk;
+#endif
+
 #ifdef FOG
 	if (junk > 1)
 	{

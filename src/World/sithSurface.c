@@ -69,7 +69,6 @@ int sithSurface_Load(sithWorld *world)
     int32_t adjoinIdx; // eax
     sithAdjoin *surfaceAdjoin; // ecx
     int32_t wallCel; // edx
-    flex_d_t v32; // st7
     char *v33; // eax
     uint32_t v34; // ebp
     uint32_t v40; // ebx
@@ -180,7 +179,8 @@ int sithSurface_Load(sithWorld *world)
 
         if ( !stdConffile_ReadArgs() )
             return 0;
-        v20 = _atoi(stdConffile_entry.args[1].value);
+		int curArg = 1;
+        v20 = _atoi(stdConffile_entry.args[curArg++].value);
         if ( v20 >= 0 )
         {
             if ( v20 >= sithMaterial_numMaterials )
@@ -192,16 +192,16 @@ int sithSurface_Load(sithWorld *world)
             face->material = 0;
         }
 
-        if ( _sscanf(stdConffile_entry.args[2].value, "%x", &surfaceIter->surfaceFlags) != 1 )
+        if ( _sscanf(stdConffile_entry.args[curArg++].value, "%x", &surfaceIter->surfaceFlags) != 1 )
             return 0;
 
-        if ( _sscanf(stdConffile_entry.args[3].value, "%x", &face->type) != 1 )
+        if ( _sscanf(stdConffile_entry.args[curArg++].value, "%x", &face->type) != 1 )
             return 0;
         if ( (sithSurface_byte_8EE668 & 1) == 0 )
         {
             face->type &= ~4;
         }
-        face->geometryMode = (rdGeoMode_t)_atoi(stdConffile_entry.args[4].value);
+        face->geometryMode = (rdGeoMode_t)_atoi(stdConffile_entry.args[curArg++].value);
 
         if ( face->material )
         {
@@ -215,7 +215,7 @@ int sithSurface_Load(sithWorld *world)
         {
             face->geometryMode = RD_GEOMODE_NOTRENDERED;
         }
-        face->lightingMode = (rdLightMode_t)_atoi(stdConffile_entry.args[5].value);
+        face->lightingMode = (rdLightMode_t)_atoi(stdConffile_entry.args[curArg++].value);
         
         if (surfaceIter->surfaceFlags & (SITH_SURFACE_CEILING_SKY | SITH_SURFACE_HORIZON_SKY)) {
             face->lightingMode = RD_LIGHTMODE_FULLYLIT;
@@ -247,8 +247,8 @@ int sithSurface_Load(sithWorld *world)
 #endif
         }
 
-        face->textureMode = (rdTexMode_t)_atoi(stdConffile_entry.args[6].value);
-        adjoinIdx = _atoi(stdConffile_entry.args[7].value);
+        face->textureMode = (rdTexMode_t)_atoi(stdConffile_entry.args[curArg++].value);
+        adjoinIdx = _atoi(stdConffile_entry.args[curArg++].value);
         if ( adjoinIdx == -1 )
         {
             surfaceIter->adjoin = 0;
@@ -275,13 +275,28 @@ int sithSurface_Load(sithWorld *world)
                 surfaceAdjoin->flags |= SITHSURF_ADJOIN_80;
             }
         }
-        v32 = _atof(stdConffile_entry.args[8].value);
-        v33 = stdConffile_entry.args[9].value;
-        face->extraLight = v32;
+	#ifdef RENDER_DROID2
+		// todo: rgb
+		if (world->version > 1)
+		{
+			// just reading to extraLight for now until we add rgb
+			face->extraLight = strtof(stdConffile_entry.args[curArg++].value, NULL);
+			face->extraLight = strtof(stdConffile_entry.args[curArg++].value, NULL);
+			face->extraLight = strtof(stdConffile_entry.args[curArg++].value, NULL);
+			face->extraLight = strtof(stdConffile_entry.args[curArg++].value, NULL);
+		}
+		else
+		{
+			face->extraLight = _atof(stdConffile_entry.args[curArg++].value);
+		}
+	#else
+		face->extraLight = _atof(stdConffile_entry.args[curArg++].value);
+    #endif
+		v33 = stdConffile_entry.args[curArg++].value;
         v34 = _atoi(v33);
         if ( v34 < 3 )
             return 0;
-        if ( v34 > stdConffile_entry.numArgs - 10 )
+        if ( v34 > stdConffile_entry.numArgs - curArg)
             return 0;
         if ( v34 > 0x18 )
             return 0;
@@ -302,7 +317,7 @@ int sithSurface_Load(sithWorld *world)
             if ( !face->vertexUVIdx )
                 return 0;
 
-            v61 = 10;
+            v61 = curArg;
             for (v40 = 0; v40 < v34; v40++)
             {
                 face->vertexPosIdx[v40] = _atoi(stdConffile_entry.args[v61].value);
@@ -313,7 +328,7 @@ int sithSurface_Load(sithWorld *world)
         else
         {
             face->vertexUVIdx = 0;
-            v61 = 10;
+            v61 = curArg;
             for (v43 = 0; v43 < v34; v43++)
             {
                 face->vertexPosIdx[v43] = _atoi(stdConffile_entry.args[v61].value);
