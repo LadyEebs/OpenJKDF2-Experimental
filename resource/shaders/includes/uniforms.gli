@@ -46,7 +46,7 @@ layout(location = U_BLEND_MODE) uniform int blend_mode;
 layout(location = U_INV_OVERBRIGHT) uniform float light_mult;
 layout(location = U_OVERBRIGHT) uniform float invlightMult;
 
-layout(location = U_FLAGS) uniform int aoFlags;
+layout(location = U_FLAGS) uniform uint aoFlags;
 layout(location = U_AMB_COLOR) uniform vec4 ambientColor;
 layout(location = U_AMB_CENTER) uniform vec4 ambientCenter;
 layout(location = U_AMB_NUM_SG) uniform uint ambientNumSG; // get around loop unrolling

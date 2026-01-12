@@ -6024,7 +6024,7 @@ void std3D_SetMaterialState(std3D_worldStage* pStage, std3D_DrawCallState* pStat
 void std3D_SetLightingState(std3D_worldStage* pStage, std3D_DrawCallState* pState)
 {
 	glUniform1i(U_LIGHT_MODE, pState->stateBits.lightMode);
-	glUniform1i(U_FLAGS, pState->lightingState.ambientFlags);
+	glUniform1ui(U_FLAGS, pState->lightingState.ambientFlags);
 
 //	glUniform1i(pStage->uniform_light_mode, pState->stateBits.lightMode);
 //	glUniform1i(pStage->uniform_ao_flags, pState->lightingState.ambientFlags);
