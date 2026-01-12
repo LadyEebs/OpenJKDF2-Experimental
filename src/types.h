@@ -3361,40 +3361,68 @@ typedef struct sithConstraint
 	sithThing*             constrainedThing; // the thing to be constrained
 	sithThing*             targetThing;      // the thing to constrain to
 	sithConstraintResult   result;           // jacobian/constraint error and impulses
-	struct sithConstraint* next;             // next constraint
+	//struct sithConstraint* next;             // next constraint
+
+	union
+	{
+		struct
+		{
+			rdVector3      targetAnchor;
+			rdVector3      constraintAnchor;
+		} ballSocket;
+		struct
+		{
+			rdVector3      coneAxis;
+			rdVector3      jointAxis;
+			float          coneAngle;
+			float          coneAngleCos;
+		} coneLimit;
+		struct
+		{
+			rdVector3      targetAxis;
+			rdVector3      jointAxis;
+		} hingeLimit;
+		struct
+		{
+			rdVector3      targetAxis;
+			rdVector3      jointAxis;
+			float          minAngle;
+			float          maxAngle;
+		} twistLimit;
+	};
 } sithConstraint;
 
-typedef struct sithBallSocketConstraint
-{
-	sithConstraint base;
-	rdVector3      targetAnchor;
-	rdVector3      constraintAnchor;
-} sithBallSocketConstraint;
-
-typedef struct sithConeLimitConstraint
-{
-	sithConstraint base;
-	rdVector3      coneAxis;
-	rdVector3      jointAxis;
-	float          coneAngle;
-	float          coneAngleCos;
-} sithConeLimitConstraint;
-
-typedef struct sithHingeLimitConstraint
-{
-	sithConstraint base;
-	rdVector3      targetAxis;
-	rdVector3      jointAxis;
-} sithHingeLimitConstraint;
-
-typedef struct sithTwistLimitConstraint
-{
-	sithConstraint base;
-	rdVector3      targetAxis;
-	rdVector3      jointAxis;
-	float          minAngle;
-	float          maxAngle;
-} sithTwistLimitConstraint;
+//typedef struct sithBallSocketConstraint
+//{
+//	sithConstraint base;
+//	rdVector3      targetAnchor;
+//	rdVector3      constraintAnchor;
+//} sithBallSocketConstraint;
+//
+//typedef struct sithConeLimitConstraint
+//{
+//	sithConstraint base;
+//	rdVector3      coneAxis;
+//	rdVector3      jointAxis;
+//	float          coneAngle;
+//	float          coneAngleCos;
+//} sithConeLimitConstraint;
+//
+//typedef struct sithHingeLimitConstraint
+//{
+//	sithConstraint base;
+//	rdVector3      targetAxis;
+//	rdVector3      jointAxis;
+//} sithHingeLimitConstraint;
+//
+//typedef struct sithTwistLimitConstraint
+//{
+//	sithConstraint base;
+//	rdVector3      targetAxis;
+//	rdVector3      jointAxis;
+//	float          minAngle;
+//	float          maxAngle;
+//} sithTwistLimitConstraint;
 
 #endif
 
@@ -3677,6 +3705,8 @@ typedef struct sithThing
 #endif // JKM_TYPES
 #ifdef PUPPET_PHYSICS
 	sithConstraint* constraints;      // list of constraints
+	int numTotalConstraints;
+	int numConstraints;
 	// todo: handle more than 1 chain
 	sithThing* constraintRoot;        // the root of the constraint tree we're part of
 	sithThing* constraintParent;      // thing we're constrained to

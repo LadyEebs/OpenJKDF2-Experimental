@@ -199,7 +199,7 @@ void sithTrackThing_Tick(sithThing *thing, flex_t deltaSeconds)
 		#ifdef PUPPET_PHYSICS
 			flags |= SITH_RAYCAST_IGNORE_CORPSES;
 		#endif
-            v26 = sithCollision_UpdateThingCollision(thing, &thing->trackParams.vel, deltaSecondsa, RAYCAST_40 | RAYCAST_4);
+            v26 = sithCollision_UpdateThingCollision(thing, &thing->trackParams.vel, deltaSecondsa, flags);
             a3a = v26;
             if ( v26 >= deltaSecondsa )
             {

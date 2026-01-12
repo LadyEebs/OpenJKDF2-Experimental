@@ -442,6 +442,24 @@ void sithRagdoll_AddHingeConstraint(sithThing* pThing, int joint, int target, co
 	sithConstraint_AddHingeConstraint(pThing, jointThing, targetThing, targetAxis, axis, minAngle, maxAngle);
 }
 
+void sithRagdoll_AllocConstraints(sithThing* pThing)
+{
+	pThing->numTotalConstraints = 0;
+	sithRagdollConstraint* constraints = pThing->animclass->ragdoll->constraints;
+	for (; constraints; constraints = constraints->next)
+	{
+		if (constraints->jointA < 0 || constraints->jointB < 0)
+			continue;
+		++pThing->numTotalConstraints;
+	}
+	if (pThing->constraints)
+	{
+		pSithHS->free(pThing->constraints);
+	}
+	pThing->constraints = pSithHS->alloc(sizeof(sithConstraint) * pThing->numTotalConstraints);
+	pThing->numConstraints = 0;
+}
+
 void sithRagdoll_SetupJointThing(sithThing* pThing, sithThing* pJointThing, sithRagdollPart* pBodyPart, rdHierarchyNode* pNode, int jointIdx, const rdVector3* pInitialVel)
 {
 	extern int sithThing_bInitted2;
@@ -589,6 +607,8 @@ void sithRagdoll_StartPhysics(sithThing* pThing, rdVector3* pInitialVel, flex_t 
 	}
 
 	// build constraints
+	sithRagdoll_AllocConstraints(pThing);
+
 	sithRagdollConstraint* constraints = pThing->animclass->ragdoll->constraints;
 	for (; constraints; constraints = constraints->next)
 	{
@@ -802,7 +822,7 @@ static int sithRagdoll_CheckForStillBodies(sithThing* thing, flex_t deltaSeconds
 	}
 
 	// if there wasn't substantial movement among the joints during the rest period, we can rest
-	return (maxDistSq < 0.015f && maxAngle < 15.0f);
+	return (maxDistSq < 0.025f && maxAngle < 15.0f);
 }
 
 static int sithRagdoll_CheckVelocities(sithThing* thing, flex_t deltaSeconds)
@@ -863,9 +883,11 @@ static void sithRagdoll_UpdatePhysicsParent(sithThing* thing)
 // todo: just update when root or amputatedJoints is changed?
 static void sithRagdoll_ValidateConstraints(sithThing* thing)
 {
-	sithConstraint* constraint = thing->constraints;
-	for (; constraint; constraint = constraint->next)
+	//sithConstraint* constraint = thing->constraints;	
+	//for (; constraint; constraint = constraint->next)
+	for (int i = 0; i < thing->numConstraints; ++i)
 	{
+		sithConstraint* constraint = &thing->constraints[i];
 		int idxA = constraint->targetThing->thingIdx & 0xFFFF;
 		int idxB = constraint->constrainedThing->thingIdx & 0xFFFF;
 

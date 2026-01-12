@@ -232,14 +232,18 @@ void sithThing_SetHandler(sithThing_handler_t handler)
 #ifdef PUPPET_PHYSICS
 void sithThing_FreeConstraints(sithThing* thing)
 {
-	sithConstraint* constraint = thing->constraints;
-	while (constraint)
-	{
-		sithConstraint* next = constraint->next;
-		pSithHS->free(constraint);
-		constraint = next;
-	}
+	//sithConstraint* constraint = thing->constraints;
+	//while (constraint)
+	//{
+	//	sithConstraint* next = constraint->next;
+	//	pSithHS->free(constraint);
+	//	constraint = next;
+	//}
+	if (thing->constraints)
+		pSithHS->free(thing->constraints);
 	thing->constraints = 0;
+	thing->numConstraints = 0;
+	thing->numTotalConstraints = 0;
 }
 #endif
 
@@ -2226,13 +2230,15 @@ int sithThing_GetNumConstraints(sithThing* pThing)
 {
 	// not the nicest thing in the world
 	// maybe do a dynamic array instead and keep count
-	int num = 0;
-	sithConstraint* constraint = pThing->constraints;
-	while (constraint)
-	{
-		++num;
-		constraint = constraint->next;
-	}
-	return num;
+	//int num = 0;
+	//sithConstraint* constraint = pThing->constraints;
+	//while (constraint)
+	//{
+	//	++num;
+	//	constraint = constraint->next;
+	//}
+	//return num;
+
+	return pThing->numConstraints;
 }
 #endif
