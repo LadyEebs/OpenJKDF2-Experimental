@@ -17,6 +17,10 @@ General:
 - Function profiler (use jn66 command to activate)
 - HD animated menu with music
 
+Physics/Animation:
+- Ragdolls and physics constraint
+- Named joints for puppet files with extended syntax to make editing easier
+
 Mutliplayer:
 - Steam integration
 - IP-free p2p networking and games list
@@ -67,10 +71,7 @@ Tiled Software Rasterizer:
 - Focus on being faithful to the original as a start
 - Includes classic Display menu with resolution selection and Advanced section (to select a display device and renderer, which would allow for swapping between software and D3D11)
 - Disables all of the other rendering features as it's a separate code path based on the original
-
-Physics/Animation:
-- Physics constraints and physicalized puppet animation/ragdolls
-- Named joints for puppet files with extended syntax to make editing easier
+- Early WIP of a D3D11 implementation of the same software renderer (only 2D working atm, the rasterizer is yet to be finished)
 
 Gameplay:
 - First person legs
