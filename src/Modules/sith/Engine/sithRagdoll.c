@@ -858,10 +858,12 @@ static int sithRagdoll_IsAtRest(sithThing* thing, flex_t deltaSeconds)
 		return 1;
 
 	// assume in free fall if the root joint isn't attached
-	int rootJoint = thing->animclass->ragdoll->root < 0 ? 0 : thing->animclass->ragdoll->root;
-	sithRagdollJoint* pJoint = &thing->ragdoll->joints[rootJoint];
-	if (!pJoint->thing.attach_flags)
-		return 0;
+	//int rootJoint = thing->animclass->ragdoll->root < 0 ? 0 : thing->animclass->ragdoll->root;
+	//sithRagdollJoint* pJoint = &thing->ragdoll->joints[rootJoint];
+	//if (!pJoint->thing.attach_flags)
+	//	return 0;
+	//if (!thing->attach_flags)
+		//return 0;
 
 	// if all of the joints are still, go to rest
 	if (sithRagdoll_CheckForStillBodies(thing, deltaSeconds))

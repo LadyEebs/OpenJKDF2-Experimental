@@ -11,9 +11,9 @@ void sithRagdoll_Free(sithWorld *world);
 extern int sithRagdoll_activeRagdolls;
 extern int sithRagdoll_restingRagdolls;
 
-void sithRagdoll_StartPhysics(sithThing* pThing, rdVector3* pInitialVel, float deltaSeconds);
+void sithRagdoll_StartPhysics(sithThing* pThing, rdVector3* pInitialVel, flex_t deltaSeconds);
 void sithRagdoll_StopPhysics(sithThing* pThing);
-void sithRagdoll_ThingTick(sithThing* pThing, float deltaSeconds);
+void sithRagdoll_ThingTick(sithThing* pThing, flex_t deltaSeconds);
 void sithRagdoll_DebugDrawPhysicsBodies(sithThing* pThing);
 void sithRagdoll_DebugDrawPhysicsJoints(sithThing* pThing);
 
