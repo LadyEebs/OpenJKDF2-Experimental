@@ -102,7 +102,7 @@ typedef struct std3DPresentInfo
 	int32_t SrcAddress, SrcStride;
 	int32_t SrcWidth, SrcHeight;
 	int32_t DstWidth, DstHeight;
-	int32_t Padding0, Padding1;
+	int32_t SrcHandle, Padding1;
 	int32_t DstRectX, DstRectY, DstRectW, DstRectH;
 } std3DPresentInfo;
 
@@ -650,6 +650,8 @@ void std3D_FillSurface(uint64_t dst, uint32_t fill, int dstWidth, int dstHeight,
 	fillInfo.SrcRectW = rect->width;
 	fillInfo.SrcRectH = rect->height;
 
+	fillInfo.Pad0 = (uint32_t)(dst >> 54);
+
 	fillInfo.Fill = fill;
 	ID3D11DeviceContext_UpdateSubresource(std3D_deviceContext, std3D_pFillConstants, 0, NULL, &fillInfo, 0, 0);
 
@@ -696,6 +698,8 @@ void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, con
 	presentInfo.DstRectW = dstRect->width;
 	presentInfo.DstRectH = dstRect->height;
 
+	presentInfo.SrcHandle = (uint32_t)(src >> 54);
+
 	// todo: move this to another function and call it from stdDisplay_setMasterPalette
 	rdColor24* pal_master = (rdColor24*)stdDisplay_masterPalette;
 	uint32_t* pal_write = std3D_MapGpuBuffer(&std3D_palette);
@@ -708,7 +712,7 @@ void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, con
 
 	ID3D11DeviceContext_UpdateSubresource(std3D_deviceContext, std3D_pPresentConstants, 0, NULL, &presentInfo, 0, 0);
 
-	ID3D11ShaderResourceView* srvs[] = { std3D_vram.pShaderView, std3D_palette.pShaderView, std3D_descriptors.pShaderView };
+	ID3D11ShaderResourceView* srvs[] = { std3D_vram.pShaderView, std3D_descriptors.pShaderView, std3D_palette.pShaderView };
 
 	ID3D11DeviceContext_CSSetShader(std3D_deviceContext, std3D_pPresentShader, NULL, 0);
 	ID3D11DeviceContext_CSSetConstantBuffers(std3D_deviceContext, 0, 1, &std3D_pPresentConstants);
