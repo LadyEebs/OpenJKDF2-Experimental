@@ -37,7 +37,7 @@ mul r3, r3, sv:identity
 # blend in some of the distorted diffuse
 texadd r1, t0, t0, r1[fmt:float]
 mul r1.rgb, r1.rgb, v0.rgb
-mix r3.rgb, r3.rgb, r1.rgb, 0.65
+#mix r3.rgb, r3.rgb, r1.rgb, 0.65
 
 # add the refraction to the highlights
 mad r0.rgb, r0.rgb, r0.a, r3.rgb

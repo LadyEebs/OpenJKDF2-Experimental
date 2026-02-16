@@ -9,7 +9,7 @@ tex diff, tex0, t0 # sample diffuse
 mul diff.rgb, diff.rgb, v0.rgb # multiply diffuse color with diffuse light
 
 # multiply with specular light and add to diffuse result
-mad diff.rgb, diff.a, v1.rgb, diff.rgb
+mad diff.rgb, diff.rgb[mul:4], v1.rgb, diff.rgb
 
 # sample glow and take max with diffuse
 tex glow, tex1, t0
