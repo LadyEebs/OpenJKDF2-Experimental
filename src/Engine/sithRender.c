@@ -4005,9 +4005,9 @@ void sithRender_RenderThings()
 			    rdMatrix_TransformPoint34(&thingIter->screenPos, &thingIter->position, &rdCamera_pCurCamera->view_matrix);
                 
                 //printf("%f %f %f ; %f %f %f\n", thingIter->screenPos.x, thingIter->screenPos.y, thingIter->screenPos.z, thingIter->position.x, thingIter->position.y, thingIter->position.z);
-#ifdef RENDER_DROID2
+//#ifdef RENDER_DROID2
 				int bLightSet = 0;
-#endif
+//#endif
 				rdVector3 lightColor;
 
                 if ( rdroid_curAcceleration > 0 || thingIter->rdthing.type != RD_THINGTYPE_SPRITE3 || sithRender_82F4B4 < 8 )
@@ -4257,14 +4257,14 @@ void sithRender_RenderThings()
                     if (sithRender_RenderThing(thingIter) ) // MOTS added: flag check
                         ++sithRender_nongeoThingsDrawn;
                 }
+		//#ifdef RENDER_DROID2
 			skipThing:
-		#ifdef RENDER_DROID2
 				if (bLightSet == 1)
 				{
 					--rdCamera_pCurCamera->numLights;
 					bLightSet = 0;
 				}
-		#endif
+		//#endif
             }
         }
     }
