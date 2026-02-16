@@ -1093,8 +1093,10 @@ void jkPlayer_SetPovSprite(jkPlayerInfo* info, rdSprite* sprite)
 		rdThing_NewEntry(&info->povSprite, info->actorThing);
 		if (sprite)
 		{
+		#ifdef RENDER_DROID2
 			// tmp should be in the sprite definition?
 			sprite->face.type |= RD_FF_ADDITIVE;
+		#endif
 
 			rdThing_SetSprite3(&info->povSprite, sprite);
 		}
