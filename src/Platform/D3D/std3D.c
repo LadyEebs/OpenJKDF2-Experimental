@@ -109,6 +109,18 @@ typedef struct std3DPresentInfo
 static ID3D11ComputeShader* std3D_pPresentShader = NULL;
 static ID3D11Buffer* std3D_pPresentConstants = NULL;
 
+// Raster flush
+typedef struct std3DRasterInfo
+{
+	int32_t ColorAddress, ColorStride;
+	int32_t DepthAddress, DepthStride;
+	int32_t Width, Height;
+	int32_t Padding0, Padding1;
+} std3DRasterInfo;
+
+static ID3D11ComputeShader* std3D_pRasterShader = NULL;
+static ID3D11Buffer* std3D_pRasterConstants = NULL;
+
 // Active device state
 static ID3D11Device1* std3D_device = NULL;
 static ID3D11DeviceContext1* std3D_deviceContext = NULL;
@@ -732,6 +744,45 @@ void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, con
 	std3D_Flip();
 }
 
+
+void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, uint32_t fill, int dstWidth, int dstHeight, int colorDstStride, int depthDstStride, const rdRect* rect)
+{
+	if (!std3D_deviceContext || !std3D_pBlitConstants)
+		return;
+
+	// make sure vram isn't mapped
+	if (std3D_vram.mapped.pData)
+	{
+		std3D_UnmapGpuBuffer(&std3D_vram);
+		std3D_vramMapped = 0;
+	}
+
+	std3DRasterInfo rasterInfo;
+	rasterInfo.ColorAddress = colorDst & 0xFFFFFFFF;
+	rasterInfo.ColorStride = dstWidth * colorDstStride;
+	rasterInfo.DepthAddress = depthDst & 0xFFFFFFFF;
+	rasterInfo.DepthStride = dstWidth * depthDstStride;
+	rasterInfo.Width = dstWidth;
+	rasterInfo.Height = dstHeight;
+
+	ID3D11DeviceContext_UpdateSubresource(std3D_deviceContext, std3D_pRasterConstants, 0, NULL, &rasterInfo, 0, 0);
+
+	ID3D11DeviceContext_CSSetShader(std3D_deviceContext, std3D_pRasterShader, NULL, 0);
+	ID3D11DeviceContext_CSSetConstantBuffers(std3D_deviceContext, 0, 1, &std3D_pRasterConstants);
+	ID3D11DeviceContext_CSSetShaderResources(std3D_deviceContext, 0, 1, &std3D_descriptors.pShaderView);
+	ID3D11DeviceContext_CSSetUnorderedAccessViews(std3D_deviceContext, 0, 1, &std3D_vram.pUnorderedView, 0);
+	ID3D11DeviceContext_Dispatch(std3D_deviceContext, (rect->width + 255) / 256, rect->height, 1);
+
+	ID3D11Buffer* nullBuf[] = { NULL };
+	ID3D11DeviceContext_CSSetConstantBuffers(std3D_deviceContext, 0, 1, &nullBuf);
+
+	ID3D11UnorderedAccessView* nullUAV[] = { NULL };
+	ID3D11DeviceContext_CSSetUnorderedAccessViews(std3D_deviceContext, 0, 1, &nullUAV, 0);
+
+	ID3D11ShaderResourceView* nullSRV[] = { NULL };
+	ID3D11DeviceContext_CSSetShaderResources(std3D_deviceContext, 0, 1, &nullSRV);
+}
+
 #endif
 
 // Palette
@@ -1031,6 +1082,10 @@ int std3D_CreateDeviceContext()
 		return 0;
 	if (!std3D_CreateComputeShader(&std3D_pPresentShader, "hlsl/PresentCS.cso"))
 		return 0;
+	if (!std3D_CreateConstantBuffer(&std3D_pRasterConstants, sizeof(std3DRasterInfo)))
+		return 0;
+	if (!std3D_CreateComputeShader(&std3D_pRasterShader, "hlsl/RasterCS.cso"))
+		return 0;
 
 	std3D_CreateVertexStreams();
 
@@ -1048,6 +1103,8 @@ void std3D_DestroyDeviceContext()
 	std3D_ReleaseComputeShader(&std3D_pFillShader);
 	std3D_ReleaseConstantBuffer(&std3D_pPresentConstants);
 	std3D_ReleaseComputeShader(&std3D_pPresentShader);
+	std3D_ReleaseConstantBuffer(&std3D_pRasterConstants);
+	std3D_ReleaseComputeShader(&std3D_pRasterShader);
 
 	std3D_ReleaseGpuBuffer(&std3D_descriptors);
 
