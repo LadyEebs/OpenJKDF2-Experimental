@@ -2,7 +2,6 @@
 #define STREAM_REGISTER t7
 #define DESCRIPTOR_REGISTER t9
 
-#include "Canvas.h"
 #include "VRAM.h"
 #include "Stream.h"
 #include "Descriptors.h"
@@ -12,16 +11,17 @@
 #define RDCACHE_FINE_TILE_SIZE 16
 #define RDCACHE_TILE_BINNING_STRIDE  ((RDCACHE_MAX_TRIS+31) / 32)
 
-cbuffer CanvasBuffer : register( b0 )
-{
-	CanvasData Canvas;
-};
+static const uint StateFlag_WriteZ = 1 << 0;
+static const uint StateFlag_ReadZ  = 1 << 1;
+static const uint StateFlag_ClearZ = 1 << 2;
 
-cbuffer PipelineState : register( b1 )
+cbuffer RasterInfo : register( b0 )
 {
-	bool WriteZ;
-	bool ReadZ;
-	bool ClearZ;
+    int2 ColorAddressAndStride;
+    int2 DepthAddressAndStride;
+    int2 CanvasSize;
+    uint StateFlags;
+    uint Padding;
 };
 
 Buffer<float3> aVertices : register(t0);
@@ -53,9 +53,9 @@ void main(int3 groupID : SV_GroupID, int groupIndex : SV_GroupIndex, int3 groupT
 	//int tileMinY = groupID.y * RDCACHE_FINE_TILE_SIZE;
 	//int tileMaxX = tileMinX + RDCACHE_FINE_TILE_SIZE - 1;
 	//int tileMaxY = tileMinY + RDCACHE_FINE_TILE_SIZE - 1;
-	
-	uint currentDepth = ClearZ ? 0xFFFF : Load16(coord, Canvas.DepthAddressAndStride);
-	uint currentColor = Load8(coord, Canvas.ColorAddressAndStride);
+
+	uint currentDepth = (StateFlags & StateFlag_ClearZ) ? 0xFFFF : Load16(coord, DepthAddressAndStride);
+	uint currentColor = Load8(coord, ColorAddressAndStride);
 	
 	// todo: should probably iterate the coarse bits
 	uint binOffset = groupIndex * RDCACHE_TILE_BINNING_STRIDE;
@@ -126,7 +126,7 @@ void main(int3 groupID : SV_GroupID, int groupIndex : SV_GroupIndex, int3 groupT
 					uint depthMask = 0xFFFF;
 
 					// Early Z
-					if (!header.hasDiscard && ReadZ)
+					if (!header.hasDiscard && (StateFlags & StateFlag_ReadZ))
 						depthMask = (zi <= currentDepth) ? 0xFFFF : 0;
 
 					// Texture/Color
@@ -159,13 +159,13 @@ void main(int3 groupID : SV_GroupID, int groupIndex : SV_GroupIndex, int3 groupT
 						discardMask = (index == 0) ? 0xFFFF : 0;
 
 					// Late Z
-					if (header.hasDiscard && ReadZ)
+                    if (header.hasDiscard && (StateFlags & StateFlag_ReadZ))
 						depthMask = (zi <= currentDepth) ? 0xFFFF : 0;
 
 					const uint write_mask = depthMask & ~discardMask;
 					const uint read_mask = ~write_mask;
 
-					if (WriteZ)
+                    if (StateFlags & StateFlag_WriteZ)
 					{
 						uint oldZ = currentDepth;
 						currentDepth = (write_mask & zi) | (read_mask & oldZ);
@@ -191,6 +191,6 @@ void main(int3 groupID : SV_GroupID, int groupIndex : SV_GroupIndex, int3 groupT
 		}
 	}	
 		
-	Store16(currentDepth, coord, Canvas.DepthAddressAndStride);
-	Store8(currentColor, coord, Canvas.ColorAddressAndStride);
+	Store16(currentDepth, coord, DepthAddressAndStride);
+	Store8(currentColor, coord, ColorAddressAndStride);
 }
