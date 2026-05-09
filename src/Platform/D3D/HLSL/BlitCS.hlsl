@@ -14,6 +14,8 @@ cbuffer CopyInfo : register( b0 )
 	uint SrcHandle, DstHandle;
 };
 
+static const uint Flag_Transparency = 1 << 0;
+
 [numthreads(256, 1, 1)]
 void main(int3 dispatchThreadID : SV_DispatchThreadID)
 {
@@ -30,7 +32,7 @@ void main(int3 dispatchThreadID : SV_DispatchThreadID)
 		return;
 	
 	uint bpp = GetDescriptorBits(dstDesc);
-	bool transparency = bool(Flags & 1);
+	bool transparency = bool(Flags & Flag_Transparency);
 	
 	uint2 srcAddressAndStride = uint2(srcDesc.offset, srcDesc.rowStride);
 	uint2 dstAddressAndStride = uint2(dstDesc.offset, dstDesc.rowStride);
@@ -49,7 +51,7 @@ void main(int3 dispatchThreadID : SV_DispatchThreadID)
 	case 16:
 	{
 		uint pixel = Load16(srcCoord, srcAddressAndStride);
-		if (transparency && pixel == (TransparentColor&0xFFFF))
+		if (transparency && pixel == (TransparentColor & 0xFFFF)) 
 			return;	
 		Store16(pixel, dstCoord, dstAddressAndStride);
 		return;

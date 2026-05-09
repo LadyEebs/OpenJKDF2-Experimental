@@ -6,8 +6,6 @@
 
 cbuffer FillInfo : register( b0 )
 {
-	int2 SrcAddressAndStride;
-	int2 SrcSize;
 	int4 SrcRect;
 	int  Fill;
     int SrcHandle, Pad1, Pad2;
@@ -19,27 +17,26 @@ void main(int3 dispatchThreadID : SV_DispatchThreadID)
 	if (any(dispatchThreadID.xy >= SrcRect.zw))
 		return;
 	
-    const Descriptor srcDesc = Descriptors[SrcHandle];
-   
+    const Descriptor srcDesc = Descriptors[SrcHandle];   
     uint2 srcAddressAndStride = uint2(srcDesc.offset, srcDesc.rowStride);
     
 	int2 coord = dispatchThreadID.xy + SrcRect.xy;
-    if (any(coord.xy >= srcDesc.resolution.xy))//SrcSize.xy))
+    if (any(coord.xy >= srcDesc.resolution.xy))
 		return;
 		
 	int bpp = 8;
 	switch (bpp)
 	{
 	case 8:
-        Store8(Fill & 0xFF, coord, srcAddressAndStride);//SrcAddressAndStride);
+        Store8(Fill & 0xFF, coord, srcAddressAndStride);
 		return;
 
 	case 16:
-        Store16(Fill & 0xFFFF, coord, srcAddressAndStride); //SrcAddressAndStride);
+        Store16(Fill & 0xFFFF, coord, srcAddressAndStride);
 		return;
 
 	case 32:
-        Store32(Fill, coord, srcAddressAndStride); //SrcAddressAndStride);
+        Store32(Fill, coord, srcAddressAndStride);
 		return;
 
 	default:

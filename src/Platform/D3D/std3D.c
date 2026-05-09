@@ -72,7 +72,7 @@ typedef struct std3DBlitInfo
 	int32_t SrcRectX, SrcRectY, SrcRectW, SrcRectH;
 	int32_t DstRectX, DstRectY, DstRectW, DstRectH;
 
-	int  Flags;
+	uint32_t Flags;
 	uint32_t TransparentColor;
 	uint32_t  SrcHandle, DstHandle;
 } std3DBlitInfo;
@@ -81,15 +81,12 @@ static ID3D11ComputeShader* std3D_pBlitShader = NULL;
 static ID3D11Buffer* std3D_pBlitConstants = NULL;
 
 // Surface filling
-// Todo: use descriptors
 typedef struct std3DFillInfo
 {
-	int32_t SrcAddress, SrcStride;
-	int32_t SrcWidth, SrcHeight;
 	int32_t SrcRectX, SrcRectY, SrcRectW, SrcRectH;
-
-	int  Fill;
-	int  Pad0, Pad1, Pad2;
+	uint32_t Fill;
+	uint32_t SrcHandle;
+	int Pad1, Pad2;
 } std3DFillInfo;
 
 static ID3D11ComputeShader* std3D_pFillShader = NULL;
@@ -197,8 +194,9 @@ typedef struct std3DDescriptor
 } std3DDescriptor;
 static_assert(sizeof(std3DDescriptor) == sizeof(uint32_t) * 8, "std3DDescriptor must be 32 bytes in size");
 
-#define STD3D_MAX_DESCRIPTORS 1024 // todo: what's a good max? we could maybe batch upload textures every frame (cache) to get under 128, then we can bind them as normal textures...
+#define STD3D_MAX_DESCRIPTORS 65535 // todo: what's a good max? we could maybe batch upload textures every frame (cache) to get under 128, then we can bind them as normal textures...
 static std3DGpuBuffer std3D_descriptors;
+static std3DDescriptor std3D_descriptorData[STD3D_MAX_DESCRIPTORS];
 static uint32_t std3D_numDescriptors = 0;
 static int std3D_freeDescriptors[STD3D_MAX_DESCRIPTORS];
 static uint32_t std3D_numFreeDescriptors = 0;
@@ -216,6 +214,7 @@ void std3D_UpdateDescriptor(uint32_t index, std3DDescriptor* pData)
 	box.front = 0;
 	box.back = 1;
 
+	std3D_descriptorData[index] = *pData; // CPU side buffer
 	ID3D11DeviceContext_UpdateSubresource(std3D_deviceContext, std3D_descriptors.pBuffer, 0, &box, pData, 0, 0);
 }
 
@@ -652,19 +651,14 @@ void std3D_FillSurface(uint64_t dst, uint32_t fill, int dstWidth, int dstHeight,
 	}
 
 	std3DFillInfo fillInfo;
-	fillInfo.SrcAddress = dst & 0xFFFFFFFF;
-	fillInfo.SrcStride = dstWidth * dstStride;
-	fillInfo.SrcWidth = dstWidth;
-	fillInfo.SrcHeight = dstHeight;
-
 	fillInfo.SrcRectX = rect->x;
 	fillInfo.SrcRectY = rect->y;
 	fillInfo.SrcRectW = rect->width;
 	fillInfo.SrcRectH = rect->height;
 
-	fillInfo.Pad0 = (uint32_t)(dst >> 54);
-
+	fillInfo.SrcHandle = (uint32_t)(dst >> 54);
 	fillInfo.Fill = fill;
+
 	ID3D11DeviceContext_UpdateSubresource(std3D_deviceContext, std3D_pFillConstants, 0, NULL, &fillInfo, 0, 0);
 
 	ID3D11DeviceContext_CSSetShader(std3D_deviceContext, std3D_pFillShader, NULL, 0);
@@ -743,7 +737,6 @@ void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, con
 
 	std3D_Flip();
 }
-
 
 void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, uint32_t fill, int dstWidth, int dstHeight, int colorDstStride, int depthDstStride, const rdRect* rect)
 {
