@@ -505,6 +505,12 @@ void rdCache_Reset()
 		rdCache_paTexVertices = std3D_LockVertexStream(1);
 		rdCache_paIntensities = std3D_LockVertexStream(2);
 	}
+	else
+	{
+		rdCache_paVertices = rdCache_aVertices;
+		rdCache_paTexVertices = rdCache_aTexVertices;
+		rdCache_paIntensities = rdCache_aIntensities;
+	}
 #endif
 }
 
