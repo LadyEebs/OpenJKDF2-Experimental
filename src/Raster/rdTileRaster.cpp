@@ -135,10 +135,10 @@ typedef struct rdTileTriangleHeader
 	int32_t minX, maxX;
 	int32_t minY, maxY;
 
-	// Interpolants (edge functions)
-	fixed_t w0_dx, w0_dy, w0_offset;
-	fixed_t w1_dx, w1_dy, w1_offset;
-	fixed_t w2_dx, w2_dy, w2_offset;
+	// Interpolants (edge functions), stored as fixed<24,8> raw integers
+	int32_t w0_dx, w0_dy, w0_offset;
+	int32_t w1_dx, w1_dy, w1_offset;
+	int32_t w2_dx, w2_dy, w2_offset;
 
 	flex_t z_dx, z_dy, z_offset;
 } rdTileTriangleHeader;
@@ -503,22 +503,23 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 		flex_t z1 = (pFace->vertices[tri.i2].z - z0) * invArea;
 		flex_t z2 = (pFace->vertices[tri.i3].z - z0) * invArea;
 
-		// Interpolants (edge functions)
-		pTriHeader->w0_dx = setup.A0;
-		pTriHeader->w0_dy = setup.B0;
-		pTriHeader->w0_offset = setup.C0 + 0.5f * (setup.A0 + setup.B0); // half texel offset
+		// Interpolants (edge functions), stored as fixed<24,8> raw integers
+		pTriHeader->w0_dx = setup.A0.to_raw();
+		pTriHeader->w0_dy = setup.B0.to_raw();
+		pTriHeader->w0_offset = (setup.C0 + 0.5f * (setup.A0 + setup.B0)).to_raw(); // half texel offset
 
-		pTriHeader->w1_dx = setup.A1;
-		pTriHeader->w1_dy = setup.B1;
-		pTriHeader->w1_offset = setup.C1 + 0.5f * (setup.A1 + setup.B1); // half texel offset
+		pTriHeader->w1_dx = setup.A1.to_raw();
+		pTriHeader->w1_dy = setup.B1.to_raw();
+		pTriHeader->w1_offset = (setup.C1 + 0.5f * (setup.A1 + setup.B1)).to_raw(); // half texel offset
 
-		pTriHeader->w2_dx = setup.A2;
-		pTriHeader->w2_dy = setup.B2;
-		pTriHeader->w2_offset = setup.C2 + 0.5f * (setup.A2 + setup.B2); // half texel offset
+		pTriHeader->w2_dx = setup.A2.to_raw();
+		pTriHeader->w2_dy = setup.B2.to_raw();
+		pTriHeader->w2_offset = (setup.C2 + 0.5f * (setup.A2 + setup.B2)).to_raw(); // half texel offset
 
-		pTriHeader->z_offset = z2 * (flex_t)pTriHeader->w2_offset + z1 * (flex_t)pTriHeader->w1_offset + z0;
-		pTriHeader->z_dx = z2 * (flex_t)setup.A2 + z1 * (flex_t)setup.A1;
-		pTriHeader->z_dy = z2 * (flex_t)setup.B2 + z1 * (flex_t)setup.B1;
+		static constexpr float kEdgeScale = 1.0f / (1 << 8);
+		pTriHeader->z_offset = z2 * ((flex_t)pTriHeader->w2_offset * kEdgeScale) + z1 * ((flex_t)pTriHeader->w1_offset * kEdgeScale) + z0;
+		pTriHeader->z_dx = z2 * ((flex_t)setup.A2.to_raw() * kEdgeScale) + z1 * ((flex_t)setup.A1.to_raw() * kEdgeScale);
+		pTriHeader->z_dy = z2 * ((flex_t)setup.B2.to_raw() * kEdgeScale) + z1 * ((flex_t)setup.B1.to_raw() * kEdgeScale);
 
 		if (geoMode == RD_GEOMODE_TEXTURED)
 		{
@@ -531,13 +532,13 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 			flex_t v2 = (pFace->vertexUVs[tri.i3].y - v0) * invArea;
 
 			rdTileTriangleUVs* pUVs = encoder.Advance<rdTileTriangleUVs>();
-			pUVs->u_offset = u2 * (flex_t)pTriHeader->w2_offset + u1 * (flex_t)pTriHeader->w1_offset + u0;
-			pUVs->u_dx = u2 * (flex_t)setup.A2 + u1 * (flex_t)setup.A1;
-			pUVs->u_dy = u2 * (flex_t)setup.B2 + u1 * (flex_t)setup.B1;
+			pUVs->u_offset = u2 * ((flex_t)pTriHeader->w2_offset * kEdgeScale) + u1 * ((flex_t)pTriHeader->w1_offset * kEdgeScale) + u0;
+			pUVs->u_dx = u2 * ((flex_t)setup.A2.to_raw() * kEdgeScale) + u1 * ((flex_t)setup.A1.to_raw() * kEdgeScale);
+			pUVs->u_dy = u2 * ((flex_t)setup.B2.to_raw() * kEdgeScale) + u1 * ((flex_t)setup.B1.to_raw() * kEdgeScale);
 
-			pUVs->v_offset = v2 * (flex_t)pTriHeader->w2_offset + v1 * (flex_t)pTriHeader->w1_offset + v0;
-			pUVs->v_dx = v2 * (flex_t)setup.A2 + v1 * (flex_t)setup.A1;
-			pUVs->v_dy = v2 * (flex_t)setup.B2 + v1 * (flex_t)setup.B1;
+			pUVs->v_offset = v2 * ((flex_t)pTriHeader->w2_offset * kEdgeScale) + v1 * ((flex_t)pTriHeader->w1_offset * kEdgeScale) + v0;
+			pUVs->v_dx = v2 * ((flex_t)setup.A2.to_raw() * kEdgeScale) + v1 * ((flex_t)setup.A1.to_raw() * kEdgeScale);
+			pUVs->v_dy = v2 * ((flex_t)setup.B2.to_raw() * kEdgeScale) + v1 * ((flex_t)setup.B1.to_raw() * kEdgeScale);
 		}
 
 		if (lightMode == RD_LIGHTMODE_GOURAUD)
@@ -547,9 +548,9 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 			flex_t l2 = (pFace->vertexIntensities[tri.i3] - l0) * invArea;
 
 			rdTileTriangleLights* pLights = encoder.Advance<rdTileTriangleLights>();
-			pLights->l_offset = l2 * (flex_t)pTriHeader->w2_offset + l1 * (flex_t)pTriHeader->w1_offset + l0;
-			pLights->l_dx = l2 * (flex_t)setup.A2 + l1 * (flex_t)setup.A1;
-			pLights->l_dy = l2 * (flex_t)setup.B2 + l1 * (flex_t)setup.B1;
+			pLights->l_offset = l2 * ((flex_t)pTriHeader->w2_offset * kEdgeScale) + l1 * ((flex_t)pTriHeader->w1_offset * kEdgeScale) + l0;
+			pLights->l_dx = l2 * ((flex_t)setup.A2.to_raw() * kEdgeScale) + l1 * ((flex_t)setup.A1.to_raw() * kEdgeScale);
+			pLights->l_dy = l2 * ((flex_t)setup.B2.to_raw() * kEdgeScale) + l1 * ((flex_t)setup.B1.to_raw() * kEdgeScale);
 		}
 
 		// Move to next triangle
@@ -650,7 +651,6 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 	rdRaster_PrimitiveEncoderDecoder* pDecoder = pCommand->pDecoder;
 
 	// SIMD constants
-	const __m128 eps = _mm_set1_ps(-0.1f);
 	const __m128 stride = _mm_set1_ps(4.0f);
 	const __m128 indices = _mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f);
 	const __m128 uvFixedScale =_mm_set1_ps(rdRaster_fixedScale);
@@ -734,27 +734,28 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		const __m128 x_offsets = _mm_add_ps(_mm_set1_ps((flex_t)simdStartX), indices);
 		const __m128 y_offsets = _mm_set1_ps((flex_t)minY);
 
-		// handling fixed point math here is proving to be really painful so let's just use float for now...
-		__m128 w0_dx = _mm_set1_ps(pTriHeader->w0_dx.to_float());
-		__m128 w1_dx = _mm_set1_ps(pTriHeader->w1_dx.to_float());
-		__m128 w2_dx = _mm_set1_ps(pTriHeader->w2_dx.to_float());
+		// Edge function stepping
+		const __m128i lane_offsets_i = _mm_setr_epi32(0, 1, 2, 3);
 
-		__m128 w0_dy = _mm_set1_ps(pTriHeader->w0_dy.to_float());
-		__m128 w1_dy = _mm_set1_ps(pTriHeader->w1_dy.to_float());
-		__m128 w2_dy = _mm_set1_ps(pTriHeader->w2_dy.to_float());
+		const __m128i w0_dy_i = _mm_set1_epi32(pTriHeader->w0_dy);
+		const __m128i w1_dy_i = _mm_set1_epi32(pTriHeader->w1_dy);
+		const __m128i w2_dy_i = _mm_set1_epi32(pTriHeader->w2_dy);
 
-		const __m128 w0_offset = _mm_set1_ps(pTriHeader->w0_offset.to_float());
-		const __m128 w1_offset = _mm_set1_ps(pTriHeader->w1_offset.to_float());
-		const __m128 w2_offset = _mm_set1_ps(pTriHeader->w2_offset.to_float());
+		// Row start per lane: base + dx * lane
+		__m128i w0_row = _mm_add_epi32(
+			_mm_set1_epi32(pTriHeader->w0_dx * simdStartX + pTriHeader->w0_dy * minY + pTriHeader->w0_offset),
+			_mm_mullo_epi32(_mm_set1_epi32(pTriHeader->w0_dx), lane_offsets_i));
+		__m128i w1_row = _mm_add_epi32(
+			_mm_set1_epi32(pTriHeader->w1_dx * simdStartX + pTriHeader->w1_dy * minY + pTriHeader->w1_offset),
+			_mm_mullo_epi32(_mm_set1_epi32(pTriHeader->w1_dx), lane_offsets_i));
+		__m128i w2_row = _mm_add_epi32(
+			_mm_set1_epi32(pTriHeader->w2_dx * simdStartX + pTriHeader->w2_dy * minY + pTriHeader->w2_offset),
+			_mm_mullo_epi32(_mm_set1_epi32(pTriHeader->w2_dx), lane_offsets_i));
 
-		__m128 w0_row = _mm_fmadd_ps(w0_dx, x_offsets, _mm_fmadd_ps(w0_dy, y_offsets, w0_offset));
-		__m128 w1_row = _mm_fmadd_ps(w1_dx, x_offsets, _mm_fmadd_ps(w1_dy, y_offsets, w1_offset));
-		__m128 w2_row = _mm_fmadd_ps(w2_dx, x_offsets, _mm_fmadd_ps(w2_dy, y_offsets, w2_offset));
-
-		// adjust for SIMD stride
-		w0_dx = _mm_mul_ps(w0_dx, stride);
-		w1_dx = _mm_mul_ps(w1_dx, stride);
-		w2_dx = _mm_mul_ps(w2_dx, stride);
+		// Stride step: dx * 4 (one step per 4-wide SIMD group)
+		const __m128i w0_stride = _mm_set1_epi32(pTriHeader->w0_dx * 4);
+		const __m128i w1_stride = _mm_set1_epi32(pTriHeader->w1_dx * 4);
+		const __m128i w2_stride = _mm_set1_epi32(pTriHeader->w2_dx * 4);
 
 		// Z at corner and delta
 		__m128 z_dx = _mm_set1_ps(pTriHeader->z_dx);
@@ -797,9 +798,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		for (int y = minY; y <= maxY; y++)
 		{
 			// Current barycentric weights
-			__m128 w0 = w0_row;
-			__m128 w1 = w1_row;
-			__m128 w2 = w2_row;
+			__m128i w0 = w0_row;
+			__m128i w1 = w1_row;
+			__m128i w2 = w2_row;
 
 			// Z at row start
 			__m128 z = z_row;
@@ -821,12 +822,12 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 			int offset = y * RDCACHE_FINE_TILE_SIZE + tileOffset;
 			for (int x = simdStartX; x <= simdEndX; x += 4)
 			{
-				// Barycentric test
-				// done in float with epsilon because fixed point is being a pain
-				const __m128 inside = _mm_and_ps(_mm_cmpge_ps(w0, eps),
-										   _mm_and_ps(_mm_cmpge_ps(w1, eps),
-													  _mm_cmpge_ps(w2, eps)));
-				if (_mm_movemask_ps(inside))
+				// Barycentric test: sign bit clear on all three weights means inside
+				// OR the three values per lane, if any sign bit is set, that lane is outside
+				const __m128i sign_or = _mm_or_si128(_mm_or_si128(w0, w1), w2);
+				// Broadcast sign bit to all 32 bits: 0xFFFFFFFF if negative (outside), 0 if inside
+				const __m128i coverageMask = _mm_andnot_si128(_mm_srai_epi32(sign_or, 31), _mm_set1_epi32(-1));
+				if (_mm_movemask_ps(_mm_castsi128_ps(coverageMask)))
 				{
 					int dither = 0;//rdRaster_GetDither(x, y);
 					//rdVector2 texDither0 = rdRaster_GetTexDither(x, y);
@@ -835,9 +836,6 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 					//rdVector2 texDither3 = rdRaster_GetTexDither(x+3, y);
 					//__m128 texDitherX = _mm_set_ps(texDither3.x, texDither2.x, texDither1.x, texDither0.x);
 					//__m128 texDitherY = _mm_set_ps(texDither3.y, texDither2.y, texDither1.y, texDither0.y);
-
-					// Convert float mask to integer mask (0xFFFFFFFF or 0x00000000 per lane)
-					const __m128i coverageMask = _mm_castps_si128(inside);
 
 					// Rcp division approx
 					__m128 iz = _mm_rcp_ps(z);
@@ -1011,7 +1009,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 4);
 
 						// Extract the indices and masks so we can do light/transparency lookups
-						//if constexpr (UseGouraud || UseFlatLight || UseAlpha)
+					#ifndef FOG // todo: UseFog
+						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
+					#endif
 						{
 							alignas(16) uint8_t index_arr[4];
 							_mm_storeu_si32((__m128i*)index_arr, index);
@@ -1138,9 +1138,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 				}
 
 				// Column step
-				w0 = _mm_add_ps(w0, w0_dx);
-				w1 = _mm_add_ps(w1, w1_dx);
-				w2 = _mm_add_ps(w2, w2_dx);
+				w0 = _mm_add_epi32(w0, w0_stride);
+				w1 = _mm_add_epi32(w1, w1_stride);
+				w2 = _mm_add_epi32(w2, w2_stride);
 
 				z = _mm_add_ps(z, z_dx);
 
@@ -1157,9 +1157,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 			}
 
 			// Row step
-			w0_row = _mm_add_ps(w0_row, w0_dy);
-			w1_row = _mm_add_ps(w1_row, w1_dy);
-			w2_row = _mm_add_ps(w2_row, w2_dy);
+			w0_row = _mm_add_epi32(w0_row, w0_dy_i);
+			w1_row = _mm_add_epi32(w1_row, w1_dy_i);
+			w2_row = _mm_add_epi32(w2_row, w2_dy_i);
 
 			z_row = _mm_add_ps(z_row, z_dy);
 
@@ -1220,10 +1220,10 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 		// Tile offset along X (for tile cache access)
 		int tileOffsetX = (minX - tileMinX);
 
-		// Initial edge values at top-left
-		fixed_t w0_row = pTriHeader->w0_dx * minX + (pTriHeader->w0_dy * minY + pTriHeader->w0_offset);
-		fixed_t w1_row = pTriHeader->w1_dx * minX + (pTriHeader->w1_dy * minY + pTriHeader->w1_offset);
-		fixed_t w2_row = pTriHeader->w2_dx * minX + (pTriHeader->w2_dy * minY + pTriHeader->w2_offset);
+		// Initial edge values at top-left (pure integer arithmetic, no fixed_t overhead)
+		int32_t w0_row = pTriHeader->w0_dx * minX + (pTriHeader->w0_dy * minY + pTriHeader->w0_offset);
+		int32_t w1_row = pTriHeader->w1_dx * minX + (pTriHeader->w1_dy * minY + pTriHeader->w1_offset);
+		int32_t w2_row = pTriHeader->w2_dx * minX + (pTriHeader->w2_dy * minY + pTriHeader->w2_offset);
 
 		// Initial z values at top-left
 		flex_t z_row = pTriHeader->z_dx * minX + (pTriHeader->z_dy * minY + pTriHeader->z_offset);
@@ -1250,9 +1250,9 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 		for (int y = minY; y <= maxY; y++)
 		{
 			// Current barycentric weights
-			fixed_t w0 = w0_row;
-			fixed_t w1 = w1_row;
-			fixed_t w2 = w2_row;
+			int32_t w0 = w0_row;
+			int32_t w1 = w1_row;
+			int32_t w2 = w2_row;
 
 			// Z at row start
 			flex_t z = z_row;
@@ -1274,8 +1274,8 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 			int offset = (y - tileMinY) * RDCACHE_FINE_TILE_SIZE + tileOffsetX;
 			for (int x = minX; x <= maxX; x++)
 			{
-				// Barycentric test (could be faster..)
-				if ((w0.to_raw() | w1.to_raw() | w2.to_raw()) >= 0)
+				// Barycentric test: all edge values must be non-negative (top-left rule already applied)
+				if ((w0 | w1 | w2) >= 0)
 				{
 					flex_t iz = stdMath_Rcp(z);
 
