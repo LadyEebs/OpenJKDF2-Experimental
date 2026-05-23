@@ -605,6 +605,17 @@ void rdCache_Flush()
 		std3D_UnlockVertexStream(0);
 		std3D_UnlockVertexStream(1);
 		std3D_UnlockVertexStream(2);
+	
+		stdDisplay_VBufferUnlock(rdCamera_pCurCamera->canvas->vbuffer);
+		stdDisplay_VBufferUnlock(rdCamera_pCurCamera->canvas->d3d_vbuf);
+
+		rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
+		std3D_FlushStreams(pCanvas->vbuffer->gpuHandle,
+			pCanvas->d3d_vbuf->gpuHandle,
+			pCanvas->widthMinusOne+1, pCanvas->heightMinusOne+1,
+			pCanvas->vbuffer->format.width_in_bytes,
+			pCanvas->d3d_vbuf->format.width_in_bytes, NULL);
+
 	}
 #else
 #if !defined(SDL2_RENDER) && !defined(TARGET_TWL)

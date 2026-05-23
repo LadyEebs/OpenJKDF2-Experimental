@@ -738,7 +738,7 @@ void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, con
 	std3D_Flip();
 }
 
-void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, uint32_t fill, int dstWidth, int dstHeight, int colorDstStride, int depthDstStride, const rdRect* rect)
+void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, int dstWidth, int dstHeight, int colorDstStride, int depthDstStride, const rdRect* rect)
 {
 	if (!std3D_deviceContext || !std3D_pBlitConstants)
 		return;
@@ -764,7 +764,10 @@ void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, uint32_t fill, int
 	ID3D11DeviceContext_CSSetConstantBuffers(std3D_deviceContext, 0, 1, &std3D_pRasterConstants);
 	ID3D11DeviceContext_CSSetShaderResources(std3D_deviceContext, 0, 1, &std3D_descriptors.pShaderView);
 	ID3D11DeviceContext_CSSetUnorderedAccessViews(std3D_deviceContext, 0, 1, &std3D_vram.pUnorderedView, 0);
-	ID3D11DeviceContext_Dispatch(std3D_deviceContext, (rect->width + 255) / 256, rect->height, 1);
+	if (rect)
+		ID3D11DeviceContext_Dispatch(std3D_deviceContext, (rect->width + 255) / 256, rect->height, 1);
+	else
+		ID3D11DeviceContext_Dispatch(std3D_deviceContext, (dstWidth + 255) / 256, dstHeight, 1);
 
 	ID3D11Buffer* nullBuf[] = { NULL };
 	ID3D11DeviceContext_CSSetConstantBuffers(std3D_deviceContext, 0, 1, &nullBuf);

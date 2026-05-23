@@ -147,6 +147,7 @@ void std3D_UnlockSurface(uint64_t handle);
 void std3D_BlitSurface(uint64_t dst, const rdRect* dstRect, uint64_t src, const rdRect* srcRect, uint32_t transparentColor, int flags);
 void std3D_FillSurface(uint64_t dst, uint32_t fill, int dstWidth, int dstHeight, int dstStride, const rdRect* rect);
 void std3D_Present(uint64_t src, int srcWidth, int srcHeight, int srcStride, const rdRect* dstRect);
+void std3D_FlushStreams(uint64_t colorDst, uint64_t depthDst, int dstWidth, int dstHeight, int colorDstStride, int depthDstStride, const rdRect* rect);
 #endif
 #endif
 
