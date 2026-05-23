@@ -17,6 +17,10 @@ extern "C" {
 #include "General/stdColor.h"
 #include "Win95/stdDisplay.h"
 
+#ifdef JOB_SYSTEM
+#include "Modules/std/stdJob.h"
+#endif
+
 }
 
 #ifdef TILE_SW_RASTER
@@ -29,6 +33,9 @@ rdTexformat rdRaster_32bitMode = { STDCOLOR_RGBA, 32, 8, 8, 8, 16, 8, 0, 0, 0, 0
 static int       rdRaster_numTilePrimitives = 0; // number of primitives in the stream
 static uint32_t  rdRaster_aTilePrimitiveOffsets[RDCACHE_MAX_TILE_TRIS]; // offsets per primitive into rdRaster_aTilePrimitiveStream
 static uint8_t   rdRaster_aTilePrimitiveStream[RDCACHE_MAX_TILE_TRIS * 1024]; // primitive command byte stream
+
+// Each face gets exactly this many bytes of stream space when jobs are dispatched
+#define RD_FACE_STREAM_SLOT_SIZE (sizeof(rdRaster_aTilePrimitiveStream) / RDCACHE_MAX_TILE_TRIS)
 
 // pointers to write to the command stream
 static uint8_t*  rdRaster_pTileStreamStart = &rdRaster_aTilePrimitiveStream[0];
@@ -300,9 +307,12 @@ int rdRaster_GetMipmapLevel(rdTexinfo* texinfo, flex_t z_min)
 	return mipmap_level;
 }
 
-int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
+int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData, int explicitSlot = -1)
 {
 	if (!pFace || pFace->geometryMode == 0 || !pFace->material)
+		return 0;
+
+	if (pFace->numVertices == 0 || pFace->numVertices > 32)
 		return 0;
 
 	int cel = (pFace->wallCel == 0xFFFFFFFF) ? pFace->material->celIdx : (int)pFace->wallCel;
@@ -312,7 +322,8 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 	if (!pTexinfo)
 		return 0;
 
-	rdRaster_aTilePrimitiveOffsets[rdRaster_numTilePrimitives++] = (uint8_t*)(*pData) - rdRaster_pTileStreamStart;
+	int primitiveSlot = (explicitSlot >= 0) ? explicitSlot : rdRaster_numTilePrimitives++;
+	rdRaster_aTilePrimitiveOffsets[primitiveSlot] = (uint8_t*)(*pData) - rdRaster_pTileStreamStart;
 
 	int geoMode = (int8_t)(rdroid_curGeometryMode < pFace->geometryMode ? rdroid_curGeometryMode : pFace->geometryMode);
 	int lightMode = (int8_t)(rdroid_curLightingMode < pFace->lightingMode ? rdroid_curLightingMode : pFace->lightingMode);
@@ -331,13 +342,84 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 	flex_t invFar = stdMath_Rcp(rdCamera_pCurCamera->pClipFrustum->zFar);
 
 	// precompute 1/z
+#ifdef TARGET_SSE
+	{
+		const __m128 invFarV = _mm_set1_ps(invFar);
+		const __m128 two     = _mm_set1_ps(2.0f);
+		int i = 0;
+		for (; i + 4 <= pFace->numVertices; i += 4)
+		{
+			// Gather the four z values (stride = sizeof(rdVector3) = 12 bytes)
+			__m128 z = _mm_mul_ps(invFarV, _mm_set_ps(
+				pFace->vertices[i+3].z, pFace->vertices[i+2].z,
+				pFace->vertices[i+1].z, pFace->vertices[i+0].z));
+
+			// rcp_ps + one Newton-Raphson refinement
+			__m128 rcp = _mm_rcp_ps(z);
+			rcp = _mm_mul_ps(rcp, _mm_sub_ps(two, _mm_mul_ps(z, rcp)));
+
+			// Scatter back
+			pFace->vertices[i+0].z = _mm_cvtss_f32(rcp);
+			pFace->vertices[i+1].z = _mm_cvtss_f32(_mm_shuffle_ps(rcp, rcp, _MM_SHUFFLE(1,1,1,1)));
+			pFace->vertices[i+2].z = _mm_cvtss_f32(_mm_shuffle_ps(rcp, rcp, _MM_SHUFFLE(2,2,2,2)));
+			pFace->vertices[i+3].z = _mm_cvtss_f32(_mm_shuffle_ps(rcp, rcp, _MM_SHUFFLE(3,3,3,3)));
+		}
+		for (; i < pFace->numVertices; ++i)
+			pFace->vertices[i].z = stdMath_Rcp(pFace->vertices[i].z * invFar);
+	}
+#else
 	for (int i = 0; i < pFace->numVertices; ++i)
 		pFace->vertices[i].z = stdMath_Rcp(pFace->vertices[i].z * invFar);
+#endif
 
 	// prescale/divide uvs
 	if (geoMode == RD_GEOMODE_TEXTURED)
 	{
 		flex_t mip_scale = stdMath_Rcp((flex_t)(1 << mipmap_level));
+#ifdef TARGET_SSE
+		int i = 0;
+		if (texMode == RD_TEXTUREMODE_PERSPECTIVE)
+		{
+			// scale varies per vertex: mip_scale * vertices[i].z  (z is already 1/z_world)
+			const __m128 vMipScale = _mm_set1_ps(mip_scale);
+			for (; i + 4 <= pFace->numVertices; i += 4)
+			{
+				__m128 scale = _mm_mul_ps(vMipScale, _mm_set_ps(
+					pFace->vertices[i+3].z, pFace->vertices[i+2].z,
+					pFace->vertices[i+1].z, pFace->vertices[i+0].z));
+
+				// vertexUVs is packed {x,y,x,y,...}; load 4 vertices as two __m128
+				__m128 uv01 = _mm_loadu_ps(&pFace->vertexUVs[i+0].x); // u0 v0 u1 v1
+				__m128 uv23 = _mm_loadu_ps(&pFace->vertexUVs[i+2].x); // u2 v2 u3 v3
+
+				// Broadcast each scale to both components: s0 s0 s1 s1 / s2 s2 s3 s3
+				__m128 scale01 = _mm_unpacklo_ps(scale, scale);
+				__m128 scale23 = _mm_unpackhi_ps(scale, scale);
+				_mm_storeu_ps(&pFace->vertexUVs[i+0].x, _mm_mul_ps(uv01, scale01));
+				_mm_storeu_ps(&pFace->vertexUVs[i+2].x, _mm_mul_ps(uv23, scale23));
+			}
+		}
+		else
+		{
+			// Affine: uniform scale across all vertices
+			const __m128 vScale = _mm_set1_ps(mip_scale);
+			for (; i + 4 <= pFace->numVertices; i += 4)
+			{
+				__m128 uv01 = _mm_loadu_ps(&pFace->vertexUVs[i+0].x);
+				__m128 uv23 = _mm_loadu_ps(&pFace->vertexUVs[i+2].x);
+				_mm_storeu_ps(&pFace->vertexUVs[i+0].x, _mm_mul_ps(uv01, vScale));
+				_mm_storeu_ps(&pFace->vertexUVs[i+2].x, _mm_mul_ps(uv23, vScale));
+			}
+		}
+		for (; i < pFace->numVertices; ++i)
+		{
+			flex_t scale = mip_scale;
+			if (texMode == RD_TEXTUREMODE_PERSPECTIVE)
+				scale *= pFace->vertices[i].z;
+			pFace->vertexUVs[i].x *= scale;
+			pFace->vertexUVs[i].y *= scale;
+		}
+#else
 		for (int i = 0; i < pFace->numVertices; ++i)
 		{
 			flex_t scale = mip_scale;
@@ -346,6 +428,7 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 			pFace->vertexUVs[i].x *= scale;
 			pFace->vertexUVs[i].y *= scale;
 		}
+#endif
 	}
 
 	// preapply extra/ambient light
@@ -376,16 +459,46 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData)
 	}
 	else if (lightMode == RD_LIGHTMODE_GOURAUD)
 	{
+		const bool isPal = rdCamera_pCurCamera->canvas->vbuffer->format.format.colorMode == 0;
+#ifdef TARGET_SSE
+		{
+			const __m128 extralight = _mm_set1_ps(pFace->extralight);
+			const __m128 ambient    = _mm_set1_ps(ambientLight);
+			const __m128 zero       = _mm_setzero_ps();
+			const __m128 one        = _mm_set1_ps(1.0f);
+
+			// PAL mode scales to 0-63; RGBA mode keeps 0-1 for direct channel multiply
+			const __m128 scale      = _mm_set1_ps(isPal ? 63.0f : 1.0f);
+			int i = 0;
+			for (; i + 4 <= (int)pFace->numVertices; i += 4)
+			{
+				__m128 intensity = _mm_loadu_ps(&pFace->vertexIntensities[i]);
+
+				// saturate(extralight + intensity)
+				__m128 sum = _mm_min_ps(_mm_max_ps(_mm_add_ps(extralight, intensity), zero), one);
+
+				// max(sum, ambient), then clamp to 1
+				__m128 lit = _mm_min_ps(_mm_max_ps(sum, ambient), one);
+				lit = _mm_mul_ps(lit, scale);
+				_mm_storeu_ps(&pFace->vertexIntensities[i], lit);
+			}
+			for (; i < (int)pFace->numVertices; ++i)
+			{
+				float sum = stdMath_Saturate(pFace->extralight + pFace->vertexIntensities[i]);
+				float lit = stdMath_Saturate(ambientLight < sum ? sum : ambientLight);
+				if (isPal) lit *= 63.0f;
+				pFace->vertexIntensities[i] = lit;
+			}
+		}
+#else
 		for (uint32_t i = 0; i < pFace->numVertices; ++i)
 		{
 			float sum = stdMath_Saturate(pFace->extralight + pFace->vertexIntensities[i]);
 			float lit = stdMath_Saturate(ambientLight < sum ? sum : ambientLight);
-			if (rdCamera_pCurCamera->canvas->vbuffer->format.format.colorMode == 0)
-				lit *= 63.0f;
-			//else
-				//lit *= 255.0f;
+			if (isPal) lit *= 63.0f;
 			pFace->vertexIntensities[i] = lit;
 		}
+#endif
 	}
 
 	rdRaster_PrimitiveEncoderDecoder encoder(pData);
@@ -825,6 +938,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 				// Barycentric test: sign bit clear on all three weights means inside
 				// OR the three values per lane, if any sign bit is set, that lane is outside
 				const __m128i sign_or = _mm_or_si128(_mm_or_si128(w0, w1), w2);
+
 				// Broadcast sign bit to all 32 bits: 0xFFFFFFFF if negative (outside), 0 if inside
 				const __m128i coverageMask = _mm_andnot_si128(_mm_srai_epi32(sign_or, 31), _mm_set1_epi32(-1));
 				if (_mm_movemask_ps(_mm_castsi128_ps(coverageMask)))
@@ -1619,10 +1733,149 @@ extern "C" {
 		}
 	}
 
+#ifdef JOB_SYSTEM
+	// written once before dispatch, then read-only during jobs
+	static rdProcEntry* rdRaster_pCoarseBinFaces = NULL;
+	static int         rdRaster_numCoarseBinFaces = 0;
+
+	// Coarse tile binning job, one job per face
+	//
+	// Thread-safety notes:
+	//   - Each job owns an exclusive stream region (pTileStreamStart + jobIndex * RD_FACE_STREAM_SLOT_SIZE)
+	//     so stream writes never alias
+	//   - rdRaster_aTilePrimitiveOffsets[jobIndex] is unique per job, no aliasing
+	//   - coarseTileBits words are shared when faces in the same 32-face group overlap the same
+			//     coarse tile, so we use atomic OR to set bits atomically
+	void rdRaster_BinFaceCoarseJob(uint32_t jobIndex, uint32_t groupIndex)
+	{
+		if (jobIndex >= (uint32_t)rdRaster_numCoarseBinFaces)
+			return;
+
+		rdProcEntry* face = &rdRaster_pCoarseBinFaces[jobIndex];
+		rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
+
+		if (!face || face->geometryMode == 0 || !face->material)
+			return;
+
+		// Point at this face's exclusive stream slot
+		uint8_t* pStream = rdRaster_pTileStreamStart + jobIndex * RD_FACE_STREAM_SLOT_SIZE;
+
+		const int coarseMinX = stdMath_ClampInt((int32_t)(face->x_min / RDCACHE_COARSE_TILE_SIZE), 0, pCanvas->coarseTileWidth  - 1);
+		const int coarseMaxX = stdMath_ClampInt((int32_t)(face->x_max / RDCACHE_COARSE_TILE_SIZE), 0, pCanvas->coarseTileWidth  - 1);
+		const int coarseMinY = stdMath_ClampInt((int32_t)(face->y_min / RDCACHE_COARSE_TILE_SIZE), 0, pCanvas->coarseTileHeight - 1);
+		const int coarseMaxY = stdMath_ClampInt((int32_t)(face->y_max / RDCACHE_COARSE_TILE_SIZE), 0, pCanvas->coarseTileHeight - 1);
+
+		// Setup into the exclusive slot; explicitSlot bypasses the global counter
+		const int numPrims = rdRaster_SetupTiled(face, &pStream, (int)jobIndex);
+		if (!numPrims)
+			return;
+
+		const uint32_t bin_index = (uint32_t)jobIndex / 32;
+		const long     bin_bit   = (long)(1u << ((uint32_t)jobIndex % 32));
+
+		for (int cy = coarseMinY; cy <= coarseMaxY; cy++)
+		{
+			for (int cx = coarseMinX; cx <= coarseMaxX; cx++)
+			{
+				const int linear_tile = cy * pCanvas->coarseTileWidth + cx;
+				volatile long* pWord = (volatile long*)&pCanvas->coarseTileBits[RDCACHE_TILE_BINNING_STRIDE * linear_tile + bin_index];
+				
+				// Atomic OR: multiple faces can share the same 32-face bitmask word
+#ifdef _WIN32
+				_InterlockedOr(pWord, bin_bit);
+#else
+				__sync_or_and_fetch(pWord, bin_bit);
+#endif
+			}
+		}
+	}
+#endif
+
+	void rdRaster_BinFacesCoarse(rdProcEntry* faces, int numFaces)
+	{
+#ifdef JOB_SYSTEM
+		rdRaster_pCoarseBinFaces   = faces;
+		rdRaster_numCoarseBinFaces = numFaces;
+
+		// Pre-set the counter so rdRaster_BinFaces / rdRaster_FlushBins see the right total
+		// even though individual jobs write their own slots without touching it
+		rdRaster_numTilePrimitives = numFaces;
+		stdJob_Dispatch(numFaces, 1, rdRaster_BinFaceCoarseJob);
+		stdJob_Wait();
+#else
+		for (int i = 0; i < numFaces; ++i)
+			rdRaster_BinFaceCoarse(&faces[i]);
+#endif
+	}
+
+	// Coarse tile (cx,cy) exclusively owns fine tiles at
+	// (cx * FINE_PER_COARSE + fx, cy * FINE_PER_COARSE + fy), so tileBits writes
+	// never alias across jobs and no synchronization is required
+#ifdef JOB_SYSTEM
+	void rdRaster_BinFacesJob(uint32_t jobIndex, uint32_t groupIndex)
+	{
+		rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
+		if (jobIndex >= (uint32_t)pCanvas->coarseTileCount)
+			return;
+
+		uint32_t* coarseMask = &pCanvas->coarseTileBits[jobIndex * RDCACHE_TILE_BINNING_STRIDE];
+		const int coarseTileX = (int)jobIndex % pCanvas->coarseTileWidth;
+		const int coarseTileY = (int)jobIndex / pCanvas->coarseTileWidth;
+
+		const int coarseX0 = coarseTileX * RDCACHE_COARSE_TILE_SIZE;
+		const int coarseY0 = coarseTileY * RDCACHE_COARSE_TILE_SIZE;
+		const int coarseX1 = coarseX0 + RDCACHE_COARSE_TILE_SIZE - 1;
+		const int coarseY1 = coarseY0 + RDCACHE_COARSE_TILE_SIZE - 1;
+
+		for (int triWord = 0; triWord < RDCACHE_TILE_BINNING_STRIDE; triWord++)
+		{
+			uint32_t maskWord = coarseMask[triWord];
+			while (maskWord != 0)
+			{
+				const int bitPos   = stdMath_FindLSB(maskWord);
+				const int triIndex = triWord * 32 + bitPos;
+				maskWord ^= (1u << bitPos);
+
+				rdTilePrimitiveHeader* tri = (rdTilePrimitiveHeader*)(rdRaster_pTileStreamStart + rdRaster_aTilePrimitiveOffsets[triIndex]);
+
+				// Clip primitive bounds to coarse tile
+				const int triMinX = tri->minX > coarseX0 ? tri->minX : coarseX0;
+				const int triMaxX = tri->maxX < coarseX1 ? tri->maxX : coarseX1;
+				const int triMinY = tri->minY > coarseY0 ? tri->minY : coarseY0;
+				const int triMaxY = tri->maxY < coarseY1 ? tri->maxY : coarseY1;
+
+				const int fineMinX = (triMinX - coarseX0) / RDCACHE_FINE_TILE_SIZE;
+				const int fineMaxX = (triMaxX - coarseX0) / RDCACHE_FINE_TILE_SIZE;
+				const int fineMinY = (triMinY - coarseY0) / RDCACHE_FINE_TILE_SIZE;
+				const int fineMaxY = (triMaxY - coarseY0) / RDCACHE_FINE_TILE_SIZE;
+
+				const uint32_t bin_index = (uint32_t)triIndex / 32;
+				const uint32_t bin_place = (uint32_t)triIndex % 32;
+				const uint32_t bin_bit   = 1u << bin_place;
+
+				for (int fy = fineMinY; fy <= fineMaxY; fy++)
+				{
+					for (int fx = fineMinX; fx <= fineMaxX; fx++)
+					{
+						int fineTileX = stdMath_ClampInt(coarseTileX * RDCACHE_FINE_PER_COARSE + fx, 0, pCanvas->tileWidth  - 1);
+						int fineTileY = stdMath_ClampInt(coarseTileY * RDCACHE_FINE_PER_COARSE + fy, 0, pCanvas->tileHeight - 1);
+						int fineTileIdx = fineTileY * pCanvas->tileWidth + fineTileX;
+						pCanvas->tileBits[RDCACHE_TILE_BINNING_STRIDE * fineTileIdx + bin_index] |= bin_bit;
+					}
+				}
+			}
+		}
+	}
+#endif
+
 	// Fine tile binning
 	void rdRaster_BinFaces()
 	{
 		rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
+#ifdef JOB_SYSTEM
+		stdJob_Dispatch(pCanvas->coarseTileCount, 1, rdRaster_BinFacesJob);
+		stdJob_Wait();
+#else
 		for (int coarseTileIdx = 0; coarseTileIdx < pCanvas->coarseTileCount; ++coarseTileIdx)
 		{
 			uint32_t* coarseMask = &pCanvas->coarseTileBits[coarseTileIdx * RDCACHE_TILE_BINNING_STRIDE];
@@ -1680,6 +1933,7 @@ extern "C" {
 				}
 			}
 		}
+#endif
 	}
 
 #ifdef TARGET_SSE
@@ -2185,8 +2439,6 @@ extern "C" {
 #endif
 
 #ifdef USE_JOBS
-	#include "Modules/std/stdJob.h"
-	
 	// Processes a tile
 	void rdRaster_FlushBinJob(uint32_t jobIndex, uint32_t groupIndex)
 	{

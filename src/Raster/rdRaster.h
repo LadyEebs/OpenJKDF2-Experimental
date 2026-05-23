@@ -19,6 +19,7 @@ void rdRaster_StartBinning();
 void rdRaster_EndBinning();
 void rdRaster_ClearBins();
 void rdRaster_BinFaceCoarse(rdProcEntry* face);
+void rdRaster_BinFacesCoarse(rdProcEntry* faces, int numFaces);
 void rdRaster_BinFaces();
 #endif
 
