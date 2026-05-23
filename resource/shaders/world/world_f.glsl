@@ -37,6 +37,8 @@ float calc_light()
 		fog = flex(saturate((distToCam - fogStart) * fastRcpNR1(fogEnd - fogStart)));
 	}
 
+	float dither = dither_value_float(uvec2(gl_FragCoord.xy));
+
 	if (lightMode < 2)
 	{	
 		v[0] = pack_vertex_reg( vec4(fetch_vtx_color(0)) );
@@ -86,8 +88,8 @@ float calc_light()
 		vec3 diffuse  = unpackF2x11_1x10(result.diffuse);
 		vec3 specular = unpackF2x11_1x10(result.specular);
 
-		uint v0 = pack_vertex_reg(vec4(diffuse.rgb * diffuseScale.rgb, 0));
-		uint v1 = pack_vertex_reg(vec4(specular.rgb * specularScale.rgb, 0));
+		uint v0 = pack_vertex_reg(vec4(diffuse.rgb * diffuseScale.rgb+(dither * ditherScale), 0));
+		uint v1 = pack_vertex_reg(vec4(specular.rgb * specularScale.rgb+(dither * ditherScale), 0));
 
 		v[0] = (v[0] & 0xFF000000) | (v0 & 0x00FFFFFF);
 		v[1] = (v[1] & 0xFF000000) | (v1 & 0x00FFFFFF);
