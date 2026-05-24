@@ -9,6 +9,8 @@ macro(plat_initialize)
     add_compile_definitions(ARCH_64BIT)
     add_compile_definitions(WIN32)
 	add_compile_definitions(TARGET_SSE)
+	add_compile_definitions(TARGET_AVX2)
+	add_compile_options(/arch:AVX2)
 
     include(cmake_modules/plat_feat_full_sdl2.cmake)
     set(TARGET_USE_PHYSFS FALSE)
