@@ -721,6 +721,721 @@ rdVector2 rdRaster_GetTexDither(int x, int y)
 	return rdRaster_TexDitherLUT[2 * (y & 1) + (x&1)];
 }
 
+#ifdef TARGET_AVX2
+template <int8_t ColorMode, int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode, bool UseDiscard, bool UseAlpha>
+void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* pCommand, uint8_t** ppStream, int tileX, int tileY)
+{
+	// Setup a few compile time options
+	static constexpr bool ReadZ = ZMethod == RD_ZBUFFER_READ_NOWRITE || ZMethod == RD_ZBUFFER_READ_WRITE;
+	static constexpr bool WriteZ = ZMethod == RD_ZBUFFER_NOREAD_WRITE || ZMethod == RD_ZBUFFER_READ_WRITE;
+	static constexpr bool UseFlatLight = (LightMode == RD_LIGHTMODE_NOTLIT) || (LightMode == RD_LIGHTMODE_DIFFUSE);
+	static constexpr bool UseGouraud = LightMode == RD_LIGHTMODE_GOURAUD;
+	static constexpr bool UseSolidColor = GeoMode == RD_GEOMODE_SOLIDCOLOR;
+	static constexpr bool UseTexture = GeoMode == RD_GEOMODE_TEXTURED && TextureMode >= 0;
+	static constexpr bool Perspective = TextureMode == RD_TEXTUREMODE_PERSPECTIVE;
+	static constexpr bool IsIndexedColor = std::is_same_v<TextureStorage, uint8_t>;
+	static constexpr bool IsRGBAOutput = (ColorMode != STDCOLOR_PAL);
+
+	int tileMinX = tileX * RDCACHE_FINE_TILE_SIZE;
+	int tileMinY = tileY * RDCACHE_FINE_TILE_SIZE;
+	int tileMaxX = tileMinX + RDCACHE_FINE_TILE_SIZE - 1;
+	int tileMaxY = tileMinY + RDCACHE_FINE_TILE_SIZE - 1;
+
+	rdCanvas* pCanvas = rdCamera_pCurCamera->canvas;
+	stdVBuffer* pVBuffer = pCanvas->vbuffer;
+
+	uint_maybe<IsRGBAOutput> canvas_r_mask, canvas_g_mask, canvas_b_mask;
+
+	if constexpr (IsRGBAOutput)
+	{
+		canvas_r_mask = (int8_t)((1u << pVBuffer->format.format.r_bits) - 1);
+		canvas_g_mask = (int8_t)((1u << pVBuffer->format.format.g_bits) - 1);
+		canvas_b_mask = (int8_t)((1u << pVBuffer->format.format.b_bits) - 1);
+	}
+
+	// todo: I assume this gets compiled out for permutations that don't use them?
+	rdColor24* palette = pCommand->pHeader->pColormap->colors;
+	uint8_t* transparency = ((uint8_t*)pCommand->pHeader->pColormap->transparency);
+	uint8_t* lightLevels = ((uint8_t*)pCommand->pHeader->pColormap->lightlevel);
+	uint8_t* searchTable = pCommand->pHeader->pColormap->searchTable;
+
+	rdRaster_PrimitiveEncoderDecoder* pDecoder = pCommand->pDecoder;
+
+	// SIMD constants
+	const __m256 stride = _mm256_set1_ps(8.0f);
+
+	const __m256 indices = _mm256_set_ps(
+		7.0f, 6.0f, 5.0f, 4.0f,
+		3.0f, 2.0f, 1.0f, 0.0f);
+
+	const __m256 uvFixedScale = _mm256_set1_ps(rdRaster_fixedScale);
+	const __m256i uvCenter = _mm256_set1_epi32(0x8000);
+
+	const float alpha = 90.0f / 255.0f;
+	const __m256 alpha_ps = _mm256_set1_ps(alpha);
+	const __m256 one_minus_alpha = _mm256_set1_ps(1.0f - alpha);
+
+	maybe<!UseTexture, __m256i> solidColor;
+
+	if constexpr (!UseTexture)
+	{
+		if constexpr (IsRGBAOutput)
+		{
+			rdColor24 rgb24 = palette[pCommand->solidColor & 0xFF];
+
+			solidColor = _mm256_set1_epi32(
+				stdColor_EncodeRGBA(
+					&rdRaster_32bitMode,
+					rgb24.r,
+					rgb24.g,
+					rgb24.b,
+					pCommand->solidColor > 0 ? 255 : 0));
+		}
+		else
+		{
+			solidColor = _mm256_set1_epi32(0x01010101u * (pCommand->solidColor & 0xFF));
+		}
+	}
+
+	uint_maybe<UseTexture> texRowShift;
+	maybe<UseTexture, TextureStorage*> pixels;
+	maybe<UseTexture, __m256i> uWrap, vWrap;
+
+	if constexpr (UseTexture)
+	{
+		texRowShift = pCommand->pTexData->texRowShift;
+		pixels = (TextureStorage*)pCommand->pTexData->pixels;
+
+		uWrap = _mm256_set1_epi32(pCommand->pTexData->uWrap);
+		vWrap = _mm256_set1_epi32(pCommand->pTexData->vWrap);
+	}
+
+	maybe<!IsIndexedColor, __m256i> r_mask, g_mask, b_mask, a_mask;
+	uint_maybe<!IsIndexedColor> r_shift, g_shift, b_shift, a_shift;
+	uint_maybe<!IsIndexedColor> r_loss, g_loss, b_loss, a_loss;
+
+	if constexpr (!IsIndexedColor)
+	{
+		r_mask = _mm256_set1_epi32(pCommand->pFormat->r_mask);
+		g_mask = _mm256_set1_epi32(pCommand->pFormat->g_mask);
+		b_mask = _mm256_set1_epi32(pCommand->pFormat->b_mask);
+		a_mask = _mm256_set1_epi32(pCommand->pFormat->a_mask);
+
+		r_shift = pCommand->pFormat->r_shift;
+		g_shift = pCommand->pFormat->g_shift;
+		b_shift = pCommand->pFormat->b_shift;
+		a_shift = pCommand->pFormat->a_shift;
+
+		r_loss = pCommand->pFormat->r_loss;
+		g_loss = pCommand->pFormat->g_loss;
+		b_loss = pCommand->pFormat->b_loss;
+		a_loss = pCommand->pFormat->a_loss;
+	}
+
+	maybe<UseFlatLight, __m256> flatLight;
+
+	if constexpr (UseFlatLight)
+		flatLight = _mm256_set1_ps(pCommand->flatLight / 255.0f);
+
+	// Pre-decode all triangles from the stream into a contiguous local array so that
+	// the hot rasterization loop operates on cache-friendly sequential data, rather than
+	// pointer-chasing through the encoded byte stream
+	struct rdPreDecodedTri
+	{
+		rdTileTriangleHeader hdr;
+		maybe<UseTexture, rdTileTriangleUVs> uvs;
+		maybe<UseGouraud, rdTileTriangleLights> lights;
+	};
+
+	constexpr int kMaxTris = 30;
+
+	rdPreDecodedTri decoded[kMaxTris];
+	int numDecoded = 0;
+
+	{
+		uint32_t triIdx = *pDecoder->Advance<const uint32_t>();
+
+		while ((triIdx != 0x80007FFF) &&
+			   (triIdx < pCommand->pHeader->numTris) &&
+			   (numDecoded < kMaxTris))
+		{
+			auto& t = decoded[numDecoded++];
+
+			t.hdr = *pDecoder->Advance<const rdTileTriangleHeader>();
+
+			if constexpr (UseTexture)
+				t.uvs = *pDecoder->Advance<const rdTileTriangleUVs>();
+
+			if constexpr (UseGouraud)
+				t.lights = *pDecoder->Advance<const rdTileTriangleLights>();
+
+			triIdx = *pDecoder->Advance<const uint32_t>();
+		}
+	}
+
+	// Rasterize using the pre-decoded, cache-friendly triangle array
+	for (int triNum = 0; triNum < numDecoded; triNum++)
+	{
+		const rdTileTriangleHeader* pTriHeader = &decoded[triNum].hdr;
+
+		int minX = std::min(std::max(pTriHeader->minX, tileMinX), tileMaxX);
+		int maxX = std::min(std::max(pTriHeader->maxX, tileMinX), tileMaxX);
+		int minY = std::min(std::max(pTriHeader->minY, tileMinY), tileMaxY);
+		int maxY = std::min(std::max(pTriHeader->maxY, tileMinY), tileMaxY);
+
+		int tileLocalMinX = minX - tileMinX;
+		int tileLocalMaxX = maxX - tileMinX;
+
+		// Align for 8 pixel processing
+		int simdStartX = tileMinX + (tileLocalMinX & ~0x7);
+		int simdEndX = tileMinX + (tileLocalMaxX & ~0x7);
+
+		simdEndX = std::min(simdEndX, tileMaxX - 7);
+
+		int tileOffsetX = simdStartX - tileMinX;
+		int tileOffset = tileOffsetX - tileMinY * RDCACHE_FINE_TILE_SIZE;
+
+		const __m256 x_offsets = _mm256_add_ps(_mm256_set1_ps((flex_t)simdStartX), indices);
+		const __m256 y_offsets = _mm256_set1_ps((flex_t)minY);
+
+		// Edge function stepping
+		const __m256i lane_offsets_i = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+
+		const __m256i w0_dy_i = _mm256_set1_epi32(pTriHeader->w0_dy);
+		const __m256i w1_dy_i = _mm256_set1_epi32(pTriHeader->w1_dy);
+		const __m256i w2_dy_i = _mm256_set1_epi32(pTriHeader->w2_dy);
+
+		// Row start per lane: base + dx * lane
+		__m256i w0_row = _mm256_add_epi32(
+			_mm256_set1_epi32(pTriHeader->w0_dx * simdStartX + pTriHeader->w0_dy * minY + pTriHeader->w0_offset),
+			_mm256_mullo_epi32(_mm256_set1_epi32(pTriHeader->w0_dx), lane_offsets_i));
+
+		__m256i w1_row = _mm256_add_epi32(
+			_mm256_set1_epi32(pTriHeader->w1_dx * simdStartX + pTriHeader->w1_dy * minY + pTriHeader->w1_offset),
+			_mm256_mullo_epi32(_mm256_set1_epi32(pTriHeader->w1_dx), lane_offsets_i));
+
+		__m256i w2_row = _mm256_add_epi32(
+			_mm256_set1_epi32(pTriHeader->w2_dx * simdStartX + pTriHeader->w2_dy * minY + pTriHeader->w2_offset),
+			_mm256_mullo_epi32(_mm256_set1_epi32(pTriHeader->w2_dx), lane_offsets_i));
+
+		// Stride step: dx * 8 (one step per 8-wide SIMD group)
+		const __m256i w0_stride = _mm256_set1_epi32(pTriHeader->w0_dx * 8);
+		const __m256i w1_stride = _mm256_set1_epi32(pTriHeader->w1_dx * 8);
+		const __m256i w2_stride = _mm256_set1_epi32(pTriHeader->w2_dx * 8);
+
+		// Z at corner and delta
+		__m256 z_dx = _mm256_set1_ps(pTriHeader->z_dx);
+		__m256 z_dy = _mm256_set1_ps(pTriHeader->z_dy);
+
+		const __m256 z_offset = _mm256_set1_ps(pTriHeader->z_offset);
+
+		__m256 z_row = _mm256_fmadd_ps(
+			z_dx,
+			x_offsets,
+			_mm256_fmadd_ps(z_dy, y_offsets, z_offset));
+
+		z_dx = _mm256_mul_ps(z_dx, stride);
+
+		// UV at corner and delta
+		maybe<UseTexture, __m256> u_dx, u_dy, u_row, v_dx, v_dy, v_row;
+
+		if constexpr (UseTexture)
+		{
+			const rdTileTriangleUVs* pUVS = &decoded[triNum].uvs;
+
+			u_dx = _mm256_set1_ps(pUVS->u_dx);
+			u_dy = _mm256_set1_ps(pUVS->u_dy);
+
+			const __m256 u_offset = _mm256_set1_ps(pUVS->u_offset);
+
+			u_row = _mm256_fmadd_ps(
+				u_dx,
+				x_offsets,
+				_mm256_fmadd_ps(u_dy, y_offsets, u_offset));
+
+			u_dx = _mm256_mul_ps(u_dx, stride);
+
+			v_dx = _mm256_set1_ps(pUVS->v_dx);
+			v_dy = _mm256_set1_ps(pUVS->v_dy);
+
+			const __m256 v_offset = _mm256_set1_ps(pUVS->v_offset);
+
+			v_row = _mm256_fmadd_ps(
+				v_dx,
+				x_offsets,
+				_mm256_fmadd_ps(v_dy, y_offsets, v_offset));
+
+			v_dx = _mm256_mul_ps(v_dx, stride);
+		}
+
+		// Light at corner and delta
+		maybe<UseGouraud, __m256> l_dx, l_dy, l_row;
+
+		if constexpr (UseGouraud)
+		{
+			const rdTileTriangleLights* pLights = &decoded[triNum].lights;
+
+			l_dx = _mm256_set1_ps(pLights->l_dx);
+			l_dy = _mm256_set1_ps(pLights->l_dy);
+
+			const __m256 l_offset = _mm256_set1_ps(pLights->l_offset);
+
+			l_row = _mm256_fmadd_ps(
+				l_dx,
+				x_offsets,
+				_mm256_fmadd_ps(l_dy, y_offsets, l_offset));
+
+			l_dx = _mm256_mul_ps(l_dx, stride);
+		}
+
+		for (int y = minY; y <= maxY; y++)
+		{
+			// Current barycentric weights
+			__m256i w0 = w0_row;
+			__m256i w1 = w1_row;
+			__m256i w2 = w2_row;
+
+			// Z at row start
+			__m256 z = z_row;
+
+			// UV at row start
+			maybe<UseTexture, __m256> u, v;
+
+			if constexpr (UseTexture)
+			{
+				u = u_row;
+				v = v_row;
+			}
+
+			// Light at row start
+			maybe<UseGouraud, __m256> l;
+
+			if constexpr (UseGouraud)
+				l = l_row;
+
+			// Tile coordinate at row start
+			int offset = y * RDCACHE_FINE_TILE_SIZE + tileOffset;
+
+			for (int x = simdStartX; x <= simdEndX; x += 8)
+			{
+				// Barycentric test: sign bit clear on all three weights means inside
+				// OR the three values per lane, if any sign bit is set, that lane is outside
+				const __m256i sign_or = _mm256_or_si256(_mm256_or_si256(w0, w1), w2);
+
+				// Broadcast sign bit to all 32 bits: 0xFFFFFFFF if negative (outside), 0 if inside
+				const __m256i coverageMask = _mm256_andnot_si256(
+					_mm256_srai_epi32(sign_or, 31),
+					_mm256_set1_epi32(-1));
+
+				if (_mm256_movemask_ps(_mm256_castsi256_ps(coverageMask)))
+				{
+					int dither = 0;
+
+					// Rcp division approx
+					__m256 iz = _mm256_rcp_ps(z);
+
+					iz = _mm256_mul_ps(
+						iz,
+						_mm256_sub_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(z, iz)));
+
+					const __m256 zif = _mm256_fmadd_ps(
+						iz,
+						_mm256_set1_ps(65535.0f),
+						_mm256_set1_ps(0.5f));
+
+					const __m256i zi = _mm256_cvtps_epi32(zif);
+
+					// Read depth buffer values if needed
+					__m128i depth_u16 = _mm_loadu_si128((__m128i*) & rdRaster_TileDepth[offset]);
+					__m256i depth_vals = _mm256_cvtepu16_epi32(depth_u16);
+
+					__m256i depthMask = _mm256_set1_epi32(0xFFFFFFFF);
+
+					// Early Z (try to avoid texture accesses when mask fails, not sure how helpful it is)
+					if constexpr (!UseDiscard && ReadZ)
+						depthMask = _mm256_andnot_si256(
+							_mm256_cmpgt_epi32(zi, depth_vals),
+							_mm256_set1_epi32(-1));
+
+					// Texture/Color
+					__m256i index;
+
+					if constexpr (UseSolidColor)
+					{
+						index = solidColor;
+					}
+					else if constexpr (UseTexture)
+					{
+						__m256 uz = u;
+						__m256 vz = v;
+
+						if constexpr (Perspective)
+						{
+							uz = _mm256_mul_ps(uz, iz);
+							vz = _mm256_mul_ps(vz, iz);
+						}
+
+						// Fixed point (int)(u * fixedScale)
+						const __m256 scaled_uz = _mm256_mul_ps(uz, uvFixedScale);
+						const __m256 scaled_vz = _mm256_mul_ps(vz, uvFixedScale);
+
+						__m256i x_fixed = _mm256_cvtps_epi32(scaled_uz);
+						__m256i y_fixed = _mm256_cvtps_epi32(scaled_vz);
+
+						// Center at 0x8000 for wrapping
+						x_fixed = _mm256_add_epi32(x_fixed, uvCenter);
+						y_fixed = _mm256_add_epi32(y_fixed, uvCenter);
+
+						// Coordinate wrapping
+						// x_wrapped = (x_fixed & uWrap) >> 16
+						// y_wrapped = (y_fixed >> (16 - texRowShift)) & vWrap
+						const __m256i x_wrapped = _mm256_srli_epi32(_mm256_and_si256(x_fixed, uWrap), 16);
+
+						const __m256i y_wrapped = _mm256_and_si256(
+							_mm256_srli_epi32(y_fixed, 16 - texRowShift),
+							vWrap);
+
+						const __m256i texcoords = _mm256_add_epi32(x_wrapped, y_wrapped);
+
+						if constexpr (IsIndexedColor)
+						{
+							alignas(32) uint32_t tc[8];
+							_mm256_store_si256((__m256i*)tc, texcoords);
+
+							alignas(32) uint32_t texels[8];
+
+							for (int lane = 0; lane < 8; lane++)
+								texels[lane] = pixels[tc[lane]];
+
+							if constexpr (!IsRGBAOutput)
+							{
+								index = _mm256_load_si256((__m256i*)texels);
+							}
+							else
+							{
+								alignas(32) uint32_t rgbs[8];
+
+								for (int lane = 0; lane < 8; ++lane)
+								{
+									rdColor24 rgb = palette[texels[lane]];
+
+									rgbs[lane] = stdColor_EncodeRGBA(
+										&rdRaster_32bitMode,
+										rgb.r,
+										rgb.g,
+										rgb.b,
+										texels[lane] > 0 ? 255 : 0);
+								}
+
+								index = _mm256_load_si256((__m256i*)rgbs);
+							}
+						}
+						else
+						{
+							__m256i pix = _mm256_i32gather_epi32(
+								(const int*)pixels,
+								texcoords,
+								sizeof(TextureStorage));
+
+							__m256i r = _mm256_slli_epi32(
+								_mm256_and_si256(
+									_mm256_srli_epi32(pix, r_shift),
+									r_mask),
+								r_loss);
+
+							__m256i g = _mm256_slli_epi32(
+								_mm256_and_si256(
+									_mm256_srli_epi32(pix, g_shift),
+									g_mask),
+								g_loss);
+
+							__m256i b = _mm256_slli_epi32(
+								_mm256_and_si256(
+									_mm256_srli_epi32(pix, b_shift),
+									b_mask),
+								b_loss);
+
+							__m256i a = _mm256_slli_epi32(
+								_mm256_and_si256(
+									_mm256_srli_epi32(pix, a_shift),
+									a_mask),
+								a_loss);
+
+							if constexpr (!IsRGBAOutput)
+							{
+								r = _mm256_srli_epi32(r, 2);
+								g = _mm256_srli_epi32(g, 2);
+								b = _mm256_srli_epi32(b, 2);
+
+								__m256i lutOffset = _mm256_or_si256(
+									_mm256_or_si256(
+										_mm256_slli_epi32(b, 12),
+										_mm256_slli_epi32(g, 6)),
+									r);
+
+								alignas(32) uint32_t offsets[8];
+								_mm256_store_si256((__m256i*)offsets, lutOffset);
+
+								alignas(32) uint32_t out[8];
+
+								for (int lane = 0; lane < 8; ++lane)
+									out[lane] = searchTable[offsets[lane]];
+
+								index = _mm256_load_si256((__m256i*)out);
+							}
+							else
+							{
+								index = stdColor_EncodeRGBASIMD_AVX2(
+									&rdRaster_32bitMode,
+									r,
+									g,
+									b,
+									a);
+							}
+						}
+					}
+
+					// Alpha test
+					__m256i discardMask = _mm256_setzero_si256();
+
+					if constexpr (UseDiscard)
+					{
+						if constexpr (!IsRGBAOutput)
+						{
+							discardMask = _mm256_cmpeq_epi32(index, _mm256_setzero_si256());
+						}
+						else
+						{
+							discardMask = _mm256_cmpeq_epi32(index, _mm256_setzero_si256());
+						}
+					}
+
+					// Late Z
+					if constexpr (UseDiscard && ReadZ)
+						depthMask = _mm256_andnot_si256(
+							_mm256_cmpgt_epi32(zi, depth_vals),
+							_mm256_set1_epi32(-1));
+
+					// Merge the masks and determine what we keep from src and from dst
+					__m256i srcMask = _mm256_andnot_si256(
+						discardMask,
+						_mm256_and_si256(coverageMask, depthMask));
+
+					__m256i dstMask = _mm256_xor_si256(srcMask, _mm256_set1_epi32(-1));
+
+					// Depth write
+					if constexpr (WriteZ)
+					{
+						// Blend new and old Z values
+						__m256i new_depth = _mm256_or_si256(
+							_mm256_and_si256(srcMask, zi),
+							_mm256_and_si256(dstMask, depth_vals));
+
+						// Pack down to 16-bit and write
+						__m128i lo = _mm256_castsi256_si128(new_depth);
+						__m128i hi = _mm256_extracti128_si256(new_depth, 1);
+
+						__m128i packed_depth = _mm_packus_epi32(lo, hi);
+
+						_mm_storeu_si128((__m128i*) & rdRaster_TileDepth[offset], packed_depth);
+					}
+
+					if constexpr (!IsRGBAOutput)
+					{
+						alignas(32) uint32_t index32[8];
+						_mm256_store_si256((__m256i*)index32, index);
+
+						alignas(32) uint8_t oldIndex_arr[8];
+						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 8);
+
+#ifndef FOG
+						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
+#endif
+						{
+							alignas(32) uint8_t index_arr[8];
+
+							for (int i = 0; i < 8; ++i)
+								index_arr[i] = (uint8_t)index32[i];
+
+							alignas(32) uint32_t laneMasks[8];
+							_mm256_store_si256((__m256i*)laneMasks, srcMask);
+
+							flex_maybe<UseGouraud> l_arr[8];
+
+							if constexpr (UseGouraud)
+								_mm256_store_ps(l_arr, l);
+
+							for (int lane = 0; lane < 8; lane++)
+							{
+								if constexpr (UseGouraud)
+									index_arr[lane] = laneMasks[lane]
+									? lightLevels[(stdMath_ClampInt((uint32_t)l_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]]
+									: 0;
+
+								if constexpr (UseFlatLight)
+									index_arr[lane] = laneMasks[lane]
+									? lightLevels[(stdMath_ClampInt(pCommand->flatLight + dither, 0, 63) << 8) + index_arr[lane]]
+									: 0;
+
+								if constexpr (UseAlpha)
+									index_arr[lane] = laneMasks[lane]
+									? transparency[(oldIndex_arr[lane] << 8) + index_arr[lane]]
+									: 0;
+							}
+
+							for (int i = 0; i < 8; ++i)
+								index32[i] = index_arr[i];
+
+							index = _mm256_load_si256((__m256i*)index32);
+						}
+
+						alignas(32) uint32_t src[8];
+						alignas(32) uint32_t dst[8];
+
+						_mm256_store_si256((__m256i*)src, index);
+						_mm256_store_si256((__m256i*)dst, dstMask);
+
+						for (int i = 0; i < 8; ++i)
+						{
+							if (dst[i])
+								src[i] = oldIndex_arr[i];
+						}
+
+						alignas(32) uint8_t out[8];
+
+						for (int i = 0; i < 8; ++i)
+							out[i] = (uint8_t)src[i];
+
+						memcpy(&rdRaster_TileColor[offset], out, 8);
+					}
+					else
+					{
+						// Load 8 pixels starting at offset
+						__m256i oldPixels = _mm256_loadu_si256(
+							(__m256i*)(rdRaster_TileColorRGBA + offset));
+
+						// Lighting and blending
+						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
+						{
+							// Extract color channels
+							__m256i r, g, b, a;
+
+							stdColor_DecodeRGBASIMD_AVX2(
+								index,
+								&rdRaster_32bitMode,
+								&r,
+								&g,
+								&b,
+								&a);
+
+							// Convert to float
+							__m256 rf = _mm256_cvtepi32_ps(r);
+							__m256 gf = _mm256_cvtepi32_ps(g);
+							__m256 bf = _mm256_cvtepi32_ps(b);
+
+							if constexpr (UseGouraud)
+							{
+								rf = _mm256_mul_ps(rf, l);
+								gf = _mm256_mul_ps(gf, l);
+								bf = _mm256_mul_ps(bf, l);
+							}
+
+							if constexpr (UseFlatLight)
+							{
+								rf = _mm256_mul_ps(rf, flatLight);
+								gf = _mm256_mul_ps(gf, flatLight);
+								bf = _mm256_mul_ps(bf, flatLight);
+							}
+
+							if constexpr (UseAlpha)
+							{
+								// Extract color channels from old color
+								__m256i oldr, oldg, oldb;
+
+								stdColor_DecodeRGBSIMD_AVX2(
+									oldPixels,
+									&rdRaster_32bitMode,
+									&oldr,
+									&oldg,
+									&oldb);
+
+								// Convert to float
+								__m256 oldrf = _mm256_cvtepi32_ps(oldr);
+								__m256 oldgf = _mm256_cvtepi32_ps(oldg);
+								__m256 oldbf = _mm256_cvtepi32_ps(oldb);
+
+								rf = _mm256_fmadd_ps(rf, alpha_ps, _mm256_mul_ps(oldrf, one_minus_alpha));
+								gf = _mm256_fmadd_ps(gf, alpha_ps, _mm256_mul_ps(oldgf, one_minus_alpha));
+								bf = _mm256_fmadd_ps(bf, alpha_ps, _mm256_mul_ps(oldbf, one_minus_alpha));
+							}
+
+							// Back to int
+							r = _mm256_cvtps_epi32(rf);
+							g = _mm256_cvtps_epi32(gf);
+							b = _mm256_cvtps_epi32(bf);
+
+							// Pack it back
+							index = stdColor_EncodeRGBASIMD_AVX2(
+								&rdRaster_32bitMode,
+								r,
+								g,
+								b,
+								a);
+						}
+
+						// Mask pixels
+						// blended = (srcMask & index) | (dstMask & oldPixels)
+						__m256i masked = _mm256_or_si256(
+							_mm256_and_si256(srcMask, index),
+							_mm256_and_si256(dstMask, oldPixels));
+
+						// Store the masked pixels back
+						_mm256_storeu_si256(
+							(__m256i*)(rdRaster_TileColorRGBA + offset),
+							masked);
+					}
+				}
+
+				// Column step
+				w0 = _mm256_add_epi32(w0, w0_stride);
+				w1 = _mm256_add_epi32(w1, w1_stride);
+				w2 = _mm256_add_epi32(w2, w2_stride);
+
+				z = _mm256_add_ps(z, z_dx);
+
+				if constexpr (UseTexture)
+				{
+					u = _mm256_add_ps(u, u_dx);
+					v = _mm256_add_ps(v, v_dx);
+				}
+
+				if constexpr (UseGouraud)
+					l = _mm256_add_ps(l, l_dx);
+
+				offset += 8;
+			}
+
+			// Row step
+			w0_row = _mm256_add_epi32(w0_row, w0_dy_i);
+			w1_row = _mm256_add_epi32(w1_row, w1_dy_i);
+			w2_row = _mm256_add_epi32(w2_row, w2_dy_i);
+
+			z_row = _mm256_add_ps(z_row, z_dy);
+
+			if constexpr (UseTexture)
+			{
+				u_row = _mm256_add_ps(u_row, u_dy);
+				v_row = _mm256_add_ps(v_row, v_dy);
+			}
+
+			if constexpr (UseGouraud)
+				l_row = _mm256_add_ps(l_row, l_dy);
+		}
+	}
+
+	_mm256_zeroupper();
+}
+#elif TARGET_SSE
 // Templated using constexpr branches to avoid having to duplicate a crap ton of code
 template <int8_t ColorMode, int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode, bool UseDiscard, bool UseAlpha>
 void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, uint8_t** ppStream, int tileX, int tileY)
@@ -1312,6 +2027,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		}
 	}
 }
+#endif
 
 // Templated using constexpr branches to avoid having to duplicate a crap ton of code
 template <int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode, bool UseDiscard, bool UseAlpha>
@@ -1552,11 +2268,19 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 template <int8_t ColorMode, int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode, bool UseDiscard>
 void rdRaster_DrawToTileByAlpha(rdTileDrawCommand* pCommand, uint8_t** ppStream, int tileX, int tileY)
 {
+#ifdef TARGET_AVX2
+	bool alpha = pCommand->pHeader->blend;//(face->type & 2) != 0;
+	if (alpha)
+		rdRaster_DrawToTileSIMD_AVX2<ColorMode, ZMethod, GeoMode, TextureMode, TextureStorage, LightMode, UseDiscard, true>(pCommand, ppStream, tileX, tileY);
+	else
+		rdRaster_DrawToTileSIMD_AVX2<ColorMode, ZMethod, GeoMode, TextureMode, TextureStorage, LightMode, UseDiscard, false>(pCommand, ppStream, tileX, tileY);
+#else
 	bool alpha = pCommand->pHeader->blend;//(face->type & 2) != 0;
 	if (alpha)
 		rdRaster_DrawToTileSIMD<ColorMode, ZMethod, GeoMode, TextureMode, TextureStorage, LightMode, UseDiscard, true>(pCommand, ppStream, tileX, tileY);
 	else
 		rdRaster_DrawToTileSIMD<ColorMode, ZMethod, GeoMode, TextureMode, TextureStorage, LightMode, UseDiscard, false>(pCommand, ppStream, tileX, tileY);
+#endif
 }
 
 template <int8_t ColorMode, int8_t ZMethod, int8_t GeoMode, int8_t TextureMode, typename TextureStorage, int8_t LightMode>
