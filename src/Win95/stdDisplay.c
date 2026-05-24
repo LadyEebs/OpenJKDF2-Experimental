@@ -2033,6 +2033,30 @@ void stdDisplay_VBufferCopyScaled(stdVBuffer* vbuf, stdVBuffer* vbuf2, unsigned 
 	if (width <= 0 || height <= 0)
 		return 1;
 
+	// Clamp to destination bounds
+	if (dstY < 0)
+	{
+		srcY -= dstY;
+		height += dstY; // shrink height
+		dstY = 0;
+	}
+	if (dstX < 0)
+	{
+		srcX -= dstX;
+		width += dstX; // shrink width
+		dstX = 0;
+	}
+
+	if (dstX + width > dst->format.width)
+		width = dst->format.width - dstX;
+
+	if (dstY + height > dst->format.height)
+		height = dst->format.height - dstY;
+
+	// Early out after destination clamping
+	if (width <= 0 || height <= 0)
+		return;
+
 	int blitWidth = width;
 	int blitHeight = height;
 
