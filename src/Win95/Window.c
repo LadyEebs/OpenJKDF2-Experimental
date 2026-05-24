@@ -648,6 +648,23 @@ __m128i SDL_MapRGBFastSIMD(const SDL_PixelFormat* fmt, __m128i r, __m128i g, __m
 
 #endif
 
+#ifdef TARGET_AVX2
+__m256i SDL_MapRGBFastSIMD_AVX2(const SDL_PixelFormat* fmt, __m256i r, __m256i g, __m256i b)
+{
+	r = _mm256_srli_epi32(r, fmt->Rloss);
+	g = _mm256_srli_epi32(g, fmt->Gloss);
+	b = _mm256_srli_epi32(b, fmt->Bloss);
+
+	r = _mm256_slli_epi32(r, fmt->Rshift);
+	g = _mm256_slli_epi32(g, fmt->Gshift);
+	b = _mm256_slli_epi32(b, fmt->Bshift);
+
+	__m256i rgb = _mm256_or_si256(r, _mm256_or_si256(g, b));
+	rgb = _mm256_or_si256(rgb, _mm256_set1_epi32(fmt->Amask));
+	return rgb;
+}
+#endif
+
 #ifdef USE_JOBS
 #include "Modules/std/stdJob.h"
 
@@ -699,7 +716,39 @@ static void SwapWindowJob(uint32_t jobIndex, uint32_t groupIndex)
 	if (dstRect.x > 0)
 		memset(dstRowStart, 0, dstRect.x * sizeof(uint32_t));
 
-#ifdef TARGET_SSE
+#ifdef TARGET_AVX2
+	int x = 0;
+	__m256i scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
+	__m256i x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
+	for (; x <= copyWidth - 8; x += 8)
+	{
+		__m256i x_vec = _mm256_setr_epi32(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
+		__m256i srcX_fp = _mm256_add_epi32(x_offset_vec8, _mm256_mullo_epi32(x_vec, scale_x_fp_vec8));
+		__m256i srcX = _mm256_srli_epi32(srcX_fp, fixed_shift);
+
+		int srcX_arr[8];
+		_mm256_storeu_si256((__m256i*)srcX_arr, srcX);
+
+		uint8_t indices[8] = {
+			srcRow[srcX_arr[0]], srcRow[srcX_arr[1]], srcRow[srcX_arr[2]], srcRow[srcX_arr[3]],
+			srcRow[srcX_arr[4]], srcRow[srcX_arr[5]], srcRow[srcX_arr[6]], srcRow[srcX_arr[7]]
+		};
+
+		__m256i pixels = _mm256_setr_epi32(
+			paletteCache[indices[0]], paletteCache[indices[1]],
+			paletteCache[indices[2]], paletteCache[indices[3]],
+			paletteCache[indices[4]], paletteCache[indices[5]],
+			paletteCache[indices[6]], paletteCache[indices[7]]
+		);
+		_mm256_storeu_si256((__m256i*)&dstRow[x], pixels);
+	}
+	for (; x < copyWidth; ++x)
+	{
+		int srcX = srcRect.x + (x * srcRect.w) * dstScaleW;
+		uint8_t index = srcRow[srcX];
+		dstRow[x] = paletteCache[index];
+	}
+#elif defined(TARGET_SSE)
 	int x = 0;
 	for (; x <= copyWidth - 4; x += 4)
 	{
@@ -818,7 +867,99 @@ static void SwapWindowJobRGB16(uint32_t jobIndex, uint32_t groupIndex)
 	const __m128 fade = _mm_set1_ps(stdPalEffects_state.effect.fade);
 	const int useFade = stdPalEffects_state.effect.fade < 1.0;
 
-#ifdef TARGET_SSE
+#ifdef TARGET_AVX2
+
+	__m256i step8 = _mm256_set1_epi32(scale_x_fp);
+	__m256i srcRectX_v8 = _mm256_set1_epi32(srcRect.x);
+	const __m256 mulR8 = _mm256_set1_ps(tx - (halfB + halfG));
+	const __m256 mulG8 = _mm256_set1_ps(ty - (halfR + halfB));
+	const __m256 mulB8 = _mm256_set1_ps(tz - (halfR + halfG));
+	const __m256 halfOffset8 = _mm256_set1_ps(0.5f);
+	const __m256i addR8 = _mm256_set1_epi32(ax);
+	const __m256i addG8 = _mm256_set1_epi32(ay);
+	const __m256i addB8 = _mm256_set1_epi32(az);
+	const __m256 fade8 = _mm256_set1_ps(stdPalEffects_state.effect.fade);
+
+	for (int x = 0; x < copyWidth; x += 8)
+	{
+		__m256i x_vec = _mm256_setr_epi32(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
+		__m256i scaled_fp = _mm256_mullo_epi32(x_vec, step8);
+		__m256i srcX_fp = _mm256_srai_epi32(scaled_fp, fixed_shift);
+		__m256i srcX = _mm256_add_epi32(srcX_fp, srcRectX_v8);
+
+		int srcXs[8];
+		_mm256_storeu_si256((__m256i*)srcXs, srcX);
+
+		__m256i pixels;
+		if (srcFormatIs16Bit)
+		{
+			uint16_t pix[8] = {
+				*(uint16_t*)(srcRowBase + srcXs[0] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[1] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[2] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[3] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[4] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[5] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[6] * 2),
+				*(uint16_t*)(srcRowBase + srcXs[7] * 2),
+			};
+			__m128i pixels16 = _mm_loadu_si128((__m128i*)pix); // 8x16-bit packed
+			pixels = _mm256_cvtepu16_epi32(pixels16);           // expand to 8x32-bit
+		}
+		else
+		{
+			uint32_t pix[8] = {
+				*(uint32_t*)(srcRowBase + srcXs[0] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[1] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[2] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[3] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[4] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[5] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[6] * 4),
+				*(uint32_t*)(srcRowBase + srcXs[7] * 4),
+			};
+			pixels = _mm256_loadu_si256((__m256i*)pix);
+		}
+
+		__m256i r, g, b;
+		stdColor_DecodeRGBSIMD_AVX2(pixels, srcFmt, &r, &g, &b);
+
+		if (useFilter)
+		{
+			if (!fx) r = _mm256_setzero_si256();
+			if (!fy) g = _mm256_setzero_si256();
+			if (!fz) b = _mm256_setzero_si256();
+		}
+
+		if (useTint)
+		{
+			r = _mm256_add_epi32(r, _mm256_cvtps_epi32(_mm256_fmadd_ps(_mm256_cvtepi32_ps(r), mulR8, halfOffset8)));
+			g = _mm256_add_epi32(g, _mm256_cvtps_epi32(_mm256_fmadd_ps(_mm256_cvtepi32_ps(g), mulG8, halfOffset8)));
+			b = _mm256_add_epi32(b, _mm256_cvtps_epi32(_mm256_fmadd_ps(_mm256_cvtepi32_ps(b), mulB8, halfOffset8)));
+		}
+
+		if (useAdd)
+		{
+			r = _mm256_add_epi32(r, addR8);
+			g = _mm256_add_epi32(g, addG8);
+			b = _mm256_add_epi32(b, addB8);
+		}
+
+		if (useFade)
+		{
+			r = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(r), fade8));
+			g = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(g), fade8));
+			b = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_cvtepi32_ps(b), fade8));
+		}
+
+		r = _mm256_max_epi32(_mm256_min_epi32(r, _mm256_set1_epi32(255)), _mm256_setzero_si256());
+		g = _mm256_max_epi32(_mm256_min_epi32(g, _mm256_set1_epi32(255)), _mm256_setzero_si256());
+		b = _mm256_max_epi32(_mm256_min_epi32(b, _mm256_set1_epi32(255)), _mm256_setzero_si256());
+
+		__m256i mapped = SDL_MapRGBFastSIMD_AVX2(dstFmt, r, g, b);
+		_mm256_storeu_si256((__m256i*)&dstRow[x], mapped);
+	}
+#elif defined(TARGET_SSE)
 
 	__m128i step = _mm_set1_epi32(scale_x_fp);
 	__m128i fixed_shift_v = _mm_set1_epi32(fixed_shift);
@@ -1049,7 +1190,52 @@ void SwapWindow(SDL_Window* window)
 		stdJob_Wait();
 
 	#else
-#ifdef TARGET_SSE
+#ifdef TARGET_AVX2
+		const int fixed_shift = 16;
+		const int scale_x_fp = (srcRect.w * (1 << fixed_shift)) / dstRect.w;
+		const int scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
+		const __m256i scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
+		const __m256i x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
+
+		for (int y = 0; y < copyHeight; ++y)
+		{
+			int srcY = srcRect.y + ((y * scale_y_fp) >> fixed_shift);
+			uint8_t* srcRow = srcPixels + srcY * srcPitch;
+			uint32_t* dstRow = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch + dstRect.x * 4);
+
+			int x = 0;
+			for (; x + 7 < copyWidth; x += 8)
+			{
+				__m256i x_vec = _mm256_setr_epi32(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
+				__m256i srcX_fp = _mm256_add_epi32(x_offset_vec8, _mm256_mullo_epi32(x_vec, scale_x_fp_vec8));
+				__m256i srcX = _mm256_srli_epi32(srcX_fp, fixed_shift);
+
+				int srcX_arr[8];
+				_mm256_storeu_si256((__m256i*)srcX_arr, srcX);
+
+				uint8_t indices[8] = {
+					srcRow[srcX_arr[0]], srcRow[srcX_arr[1]], srcRow[srcX_arr[2]], srcRow[srcX_arr[3]],
+					srcRow[srcX_arr[4]], srcRow[srcX_arr[5]], srcRow[srcX_arr[6]], srcRow[srcX_arr[7]]
+				};
+
+				__m256i pixel_vec = _mm256_setr_epi32(
+					paletteCache[indices[0]], paletteCache[indices[1]],
+					paletteCache[indices[2]], paletteCache[indices[3]],
+					paletteCache[indices[4]], paletteCache[indices[5]],
+					paletteCache[indices[6]], paletteCache[indices[7]]
+				);
+				_mm256_storeu_si256((__m256i*)&dstRow[x], pixel_vec);
+			}
+
+			for (; x < copyWidth; ++x)
+			{
+				int srcX = srcRect.x + (x * srcRect.w) / dstRect.w;
+				uint8_t index = srcRow[srcX];
+				rdColor24* color = &pal_master[index];
+				dstRow[x] = SDL_MapRGBFast(windowSurf->format, color->r, color->g, color->b);
+			}
+		}
+#elif defined(TARGET_SSE)
 		const int fixed_shift = 16; // Bits of fractional precision
 		const int scale_x_fp = (srcRect.w * (1 << fixed_shift)) / dstRect.w;
 		const int scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
@@ -1112,7 +1298,7 @@ void SwapWindow(SDL_Window* window)
 				dstRow[x] = SDL_MapRGBFast(windowSurf->format, color->r, color->g, color->b);
 			}
 		}
-	#else
+#else
 		for (int y = 0; y < copyHeight; ++y)
 		{
 			// Scale dst Y to src Y
