@@ -822,11 +822,35 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 	if constexpr (UseFlatLight)
 		flatLight = _mm_set1_ps(pCommand->flatLight / 255.0f);
 
-	// Process the triangle list
-	uint32_t triIdx = *pDecoder->Advance<const uint32_t>();
-	while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris))
+	// Pre-decode all triangles from the stream into a contiguous local array so that
+	// the hot rasterization loop operates on cache-friendly sequential data, rather than
+	// pointer-chasing through the encoded byte stream
+	struct rdPreDecodedTri {
+		rdTileTriangleHeader hdr;
+		maybe<UseTexture, rdTileTriangleUVs>    uvs;
+		maybe<UseGouraud, rdTileTriangleLights> lights;
+	};
+	constexpr int kMaxTris = 30;
+	rdPreDecodedTri decoded[kMaxTris];
+	int numDecoded = 0;
 	{
-		const rdTileTriangleHeader* pTriHeader = pDecoder->Advance<const rdTileTriangleHeader>();
+		uint32_t triIdx = *pDecoder->Advance<const uint32_t>();
+		while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris) && (numDecoded < kMaxTris))
+		{
+			auto& t = decoded[numDecoded++];
+			t.hdr = *pDecoder->Advance<const rdTileTriangleHeader>();
+			if constexpr (UseTexture)
+				t.uvs = *pDecoder->Advance<const rdTileTriangleUVs>();
+			if constexpr (UseGouraud)
+				t.lights = *pDecoder->Advance<const rdTileTriangleLights>();
+			triIdx = *pDecoder->Advance<const uint32_t>();
+		}
+	}
+
+	// Rasterize using the pre-decoded, cache-friendly triangle array
+	for (int triNum = 0; triNum < numDecoded; triNum++)
+	{
+		const rdTileTriangleHeader* pTriHeader = &decoded[triNum].hdr;
 
 		int minX = std::min(std::max(pTriHeader->minX, tileMinX), tileMaxX);
 		int maxX = std::min(std::max(pTriHeader->maxX, tileMinX), tileMaxX);
@@ -881,7 +905,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		maybe<UseTexture, __m128> u_dx, u_dy, u_row, v_dx, v_dy, v_row;
 		if constexpr (UseTexture)
 		{
-			const rdTileTriangleUVs* pUVS = pDecoder->Advance<const rdTileTriangleUVs>();
+			const rdTileTriangleUVs* pUVS = &decoded[triNum].uvs;
 
 			u_dx = _mm_set1_ps(pUVS->u_dx);
 			u_dy = _mm_set1_ps(pUVS->u_dy);
@@ -900,7 +924,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		maybe<UseGouraud, __m128> l_dx, l_dy, l_row;
 		if constexpr (UseGouraud)
 		{
-			const rdTileTriangleLights* pLights = pDecoder->Advance<const rdTileTriangleLights>();
+			const rdTileTriangleLights* pLights = &decoded[triNum].lights;
 			l_dx = _mm_set1_ps(pLights->l_dx);
 			l_dy = _mm_set1_ps(pLights->l_dy);
 			const __m128 l_offset = _mm_set1_ps(pLights->l_offset);
@@ -1283,12 +1307,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 				v_row = _mm_add_ps(v_row, v_dy);
 			}
 
-			if constexpr (UseGouraud)
-				l_row = _mm_add_ps(l_row, l_dy);
+		if constexpr (UseGouraud)
+			l_row = _mm_add_ps(l_row, l_dy);
 		}
-
-		// Fetch next triangle index or end of list marker
-		triIdx = *pDecoder->Advance<const uint32_t>();
 	}
 }
 
