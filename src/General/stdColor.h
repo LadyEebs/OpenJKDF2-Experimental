@@ -42,6 +42,15 @@ __m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexformat* pSrcCI, const rd
 
 #endif
 
+#ifdef TARGET_AVX2
+__m256i stdColor_ScaleColorComponentSIMD_AVX2(__m256i cc, int srcBPP, int deltaBPP);
+__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b);
+__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b, __m256i a);
+void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b);
+void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a);
+__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI);
+#endif
+
 // Added
 int stdColor_FindClosest32(rdColor32* rgb, rdColor24* pal);
 

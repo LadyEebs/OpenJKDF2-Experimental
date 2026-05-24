@@ -552,6 +552,249 @@ void stdColor_DecodeRGBASIMD(__m128i encoded, const rdTexformat* ci, __m128i* r,
 }
 #endif
 
+#ifdef TARGET_AVX2
+
+__m256i stdColor_ScaleColorComponentSIMD_AVX2(__m256i cc, int srcBPP, int deltaBPP)
+{
+	if (deltaBPP <= 0)
+	{
+		int shiftLeft = -deltaBPP;
+		int dsrcBPP = srcBPP + deltaBPP;
+
+		__m256i shiftedLeft = _mm256_slli_epi32(cc, shiftLeft);
+
+		__m256i shiftedRight;
+		if (dsrcBPP >= 0)
+		{
+			shiftedRight = _mm256_srli_epi32(cc, dsrcBPP);
+		}
+		else
+		{
+			int mulVal = (1 << shiftLeft) - 1;
+			__m256i mulVec = _mm256_set1_epi32(mulVal);
+			shiftedRight = _mm256_mullo_epi32(cc, mulVec);
+		}
+
+		return _mm256_or_si256(shiftedLeft, shiftedRight);
+	}
+	else
+	{
+		return _mm256_srli_epi32(cc, deltaBPP);
+	}
+}
+
+__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b)
+{
+	if (ci->r_bits < 8)
+		r = _mm256_srli_epi32(r, 8 - ci->r_bits);
+	if (ci->g_bits < 8)
+		g = _mm256_srli_epi32(g, 8 - ci->g_bits);
+	if (ci->b_bits < 8)
+		b = _mm256_srli_epi32(b, 8 - ci->b_bits);
+
+	if (ci->r_shift >= 0)
+		r = _mm256_slli_epi32(r, ci->r_shift);
+	else
+		r = _mm256_srli_epi32(r, ci->r_bitdiff);
+
+	if (ci->g_shift >= 0)
+		g = _mm256_slli_epi32(g, ci->g_shift);
+	else
+		g = _mm256_srli_epi32(g, ci->g_bitdiff);
+
+	if (ci->b_shift >= 0)
+		b = _mm256_slli_epi32(b, ci->b_shift);
+	else
+		b = _mm256_srli_epi32(b, ci->b_bitdiff);
+
+	return _mm256_or_si256(r, _mm256_or_si256(g, b));
+}
+
+__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b, __m256i a)
+{
+	__m256i encoded = stdColor_EncodeRGBSIMD_AVX2(ci, r, g, b);
+	if (ci->unk_40 > 0)
+	{
+		__m256i alphaScaled = a;
+		if (ci->unk_40 < 8)
+			alphaScaled = _mm256_srli_epi32(alphaScaled, 8 - ci->unk_40);
+
+		__m256i alphaPart;
+		if (ci->unk_44 >= 0)
+			alphaPart = _mm256_slli_epi32(alphaScaled, ci->unk_44);
+		else
+			alphaPart = _mm256_srli_epi32(alphaScaled, ci->unk_48);
+
+		encoded = _mm256_or_si256(encoded, alphaPart);
+	}
+	return encoded;
+}
+
+void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b)
+{
+	__m256i rMask = _mm256_set1_epi32((1u << ci->r_bits) - 1);
+	__m256i gMask = _mm256_set1_epi32((1u << ci->g_bits) - 1);
+	__m256i bMask = _mm256_set1_epi32((1u << ci->b_bits) - 1);
+
+	__m256i red, green, blue;
+
+	if (ci->r_shift >= 0)
+		red = _mm256_and_si256(_mm256_srli_epi32(encoded, ci->r_shift), rMask);
+	else
+		red = _mm256_and_si256(_mm256_slli_epi32(encoded, ci->r_bitdiff), rMask);
+
+	if (ci->g_shift >= 0)
+		green = _mm256_and_si256(_mm256_srli_epi32(encoded, ci->g_shift), gMask);
+	else
+		green = _mm256_and_si256(_mm256_slli_epi32(encoded, ci->g_bitdiff), gMask);
+
+	if (ci->b_shift >= 0)
+		blue = _mm256_and_si256(_mm256_srli_epi32(encoded, ci->b_shift), bMask);
+	else
+		blue = _mm256_and_si256(_mm256_slli_epi32(encoded, ci->b_bitdiff), bMask);
+
+	if (ci->r_bits < 8)
+	{
+		int shift = 8 - ci->r_bits;
+		int revShift = 2 * ci->r_bits - 8;
+		red = _mm256_or_si256(_mm256_slli_epi32(red, shift), _mm256_srli_epi32(red, revShift));
+	}
+
+	if (ci->g_bits < 8)
+	{
+		int shift = 8 - ci->g_bits;
+		int revShift = 2 * ci->g_bits - 8;
+		green = _mm256_or_si256(_mm256_slli_epi32(green, shift), _mm256_srli_epi32(green, revShift));
+	}
+
+	if (ci->b_bits < 8)
+	{
+		int shift = 8 - ci->b_bits;
+		int revShift = 2 * ci->b_bits - 8;
+		blue = _mm256_or_si256(_mm256_slli_epi32(blue, shift), _mm256_srli_epi32(blue, revShift));
+	}
+
+	*r = red;
+	*g = green;
+	*b = blue;
+}
+
+void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a)
+{
+	stdColor_DecodeRGBSIMD_AVX2(encoded, ci, r, g, b);
+
+	__m256i alpha;
+	if (ci->unk_40 > 0)
+	{
+		__m256i alphaMask = _mm256_set1_epi32((1u << ci->unk_40) - 1);
+
+		if (ci->unk_44 >= 0)
+			alpha = _mm256_and_si256(_mm256_srli_epi32(encoded, ci->unk_44), alphaMask);
+		else
+			alpha = _mm256_and_si256(_mm256_slli_epi32(encoded, ci->unk_48), alphaMask);
+
+		if (ci->unk_40 < 8)
+		{
+			int lshift = 8 - ci->unk_40;
+			int rshift = 2 * ci->unk_40 - 8;
+			alpha = _mm256_or_si256(_mm256_slli_epi32(alpha, lshift), _mm256_srli_epi32(alpha, rshift));
+		}
+	}
+	else
+	{
+		alpha = _mm256_set1_epi32(255);
+	}
+	*a = alpha;
+}
+
+__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI)
+{
+	unsigned int rMask = 0xFFFFFFFF >> (32 - (pSrcCI->r_bits & 0xFF));
+	unsigned int gMask = 0xFFFFFFFF >> (32 - (pSrcCI->g_bits & 0xFF));
+	unsigned int bMask = 0xFFFFFFFF >> (32 - (pSrcCI->b_bits & 0xFF));
+	unsigned int aMask = 0;
+
+	if (pSrcCI->unk_40)
+		aMask = 0xFFFFFFFF >> (32 - (pSrcCI->unk_40 & 0xFF));
+
+	int rDelta = pSrcCI->r_bits - pDestCI->r_bits;
+	int gDelta = pSrcCI->g_bits - pDestCI->g_bits;
+	int bDelta = pSrcCI->b_bits - pDestCI->b_bits;
+	int aDelta = 0;
+	if (pSrcCI->unk_40)
+		aDelta = pSrcCI->unk_40 - pDestCI->unk_40;
+
+	__m256i rMaskVec = _mm256_set1_epi32(rMask);
+	__m256i gMaskVec = _mm256_set1_epi32(gMask);
+	__m256i bMaskVec = _mm256_set1_epi32(bMask);
+	__m256i aMaskVec = _mm256_set1_epi32(aMask);
+
+	__m256i r, g, b, a;
+
+	if (pSrcCI->r_shift >= 0)
+		r = _mm256_and_si256(_mm256_srli_epi32(encoded, pSrcCI->r_shift), rMaskVec);
+	else
+		r = _mm256_and_si256(_mm256_slli_epi32(encoded, pSrcCI->r_bitdiff), rMaskVec);
+
+	if (pSrcCI->g_shift >= 0)
+		g = _mm256_and_si256(_mm256_srli_epi32(encoded, pSrcCI->g_shift), gMaskVec);
+	else
+		g = _mm256_and_si256(_mm256_slli_epi32(encoded, pSrcCI->g_bitdiff), gMaskVec);
+
+	if (pSrcCI->b_shift >= 0)
+		b = _mm256_and_si256(_mm256_srli_epi32(encoded, pSrcCI->b_shift), bMaskVec);
+	else
+		b = _mm256_and_si256(_mm256_slli_epi32(encoded, pSrcCI->b_bitdiff), bMaskVec);
+
+	if (pSrcCI->unk_40)
+	{
+		if (pSrcCI->unk_44 >= 0)
+			a = _mm256_and_si256(_mm256_srli_epi32(encoded, pSrcCI->unk_44), aMaskVec);
+		else
+			a = _mm256_and_si256(_mm256_slli_epi32(encoded, pSrcCI->unk_48), aMaskVec);
+	}
+	else
+	{
+		a = _mm256_setzero_si256();
+	}
+
+	r = stdColor_ScaleColorComponentSIMD_AVX2(r, pSrcCI->r_bits, rDelta);
+	g = stdColor_ScaleColorComponentSIMD_AVX2(g, pSrcCI->g_bits, gDelta);
+	b = stdColor_ScaleColorComponentSIMD_AVX2(b, pSrcCI->b_bits, bDelta);
+
+	if (pDestCI->b_shift >= 0)
+		b = _mm256_slli_epi32(b, pDestCI->b_shift);
+	else
+		b = _mm256_srli_epi32(b, -pDestCI->b_shift);
+
+	if (pDestCI->g_shift >= 0)
+		g = _mm256_slli_epi32(g, pDestCI->g_shift);
+	else
+		g = _mm256_srli_epi32(g, -pDestCI->g_shift);
+
+	if (pDestCI->r_shift >= 0)
+		r = _mm256_slli_epi32(r, pDestCI->r_shift);
+	else
+		r = _mm256_srli_epi32(r, -pDestCI->r_shift);
+
+	__m256i result = _mm256_or_si256(_mm256_or_si256(r, g), b);
+
+	if (pSrcCI->unk_40)
+	{
+		a = stdColor_ScaleColorComponentSIMD_AVX2(a, pSrcCI->unk_40, aDelta);
+		if (pDestCI->unk_44 >= 0)
+			a = _mm256_slli_epi32(a, pDestCI->unk_44);
+		else
+			a = _mm256_srli_epi32(a, -pDestCI->unk_44);
+
+		result = _mm256_or_si256(result, a);
+	}
+
+	return result;
+}
+
+#endif
+
 uint32_t stdColor_Recode(uint32_t encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI)
 {
 	unsigned int redMask = 0xFFFFFFFF >> (32 - (pSrcCI->r_bits & 0xFF));
