@@ -25,6 +25,8 @@ extern "C" {
 
 #ifdef TILE_SW_RASTER
 
+constexpr int MAX_TRIS = 30;
+
 typedef numeric::fixed<24, 8> fixed_t;
 
 rdTexformat rdRaster_16bitMode = { STDCOLOR_RGBA, 16, 5, 5, 5, 10, 5, 0, 3, 3, 3, 1, 15, 7 };
@@ -43,6 +45,7 @@ static uint8_t* rdRaster_pTileStream = rdRaster_pTileStreamStart;
 static uint8_t** rdRaster_ppTileStream = &rdRaster_pTileStream;
 
 // per-thread tile framebuffer cache
+// todo: this should be interleaved, so we can store both color and depth in the same cache and avoid some redundant memory accesses
 static thread_local alignas(16) uint8_t rdRaster_TileColor[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 static thread_local alignas(16) uint16_t rdRaster_TileDepth[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 //static thread_local uint16_t rdRaster_TileHiZ = 0xFFFF;
@@ -763,15 +766,8 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 
 	rdRaster_PrimitiveEncoderDecoder* pDecoder = pCommand->pDecoder;
 
-	// SIMD constants
-	// todo: we're probably eating our register budget with this
-	const __m256 stride = _mm256_set1_ps(8.0f);
-	const __m256 indices = _mm256_set_ps(7.0f, 6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f, 0.0f);
-	const __m256 uvFixedScale = _mm256_set1_ps(rdRaster_fixedScale);
-	const __m256i uvCenter = _mm256_set1_epi32(0x8000);
-	const float alpha = 90.0f / 255.0f;
-	const __m256 alpha_ps = _mm256_set1_ps(alpha);
-	const __m256 one_minus_alpha = _mm256_set1_ps(1.0f - alpha);
+	static constexpr float alpha = 90.0f / 255.0f;
+	static constexpr float oneMinusAlpha = 1.0f - alpha;
 
 	maybe<!UseTexture, __m256i> solidColor;
 	if constexpr (!UseTexture)
@@ -832,12 +828,12 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 		maybe<UseTexture, rdTileTriangleUVs>    uvs;
 		maybe<UseGouraud, rdTileTriangleLights> lights;
 	};
-	constexpr int kMaxTris = 30;
-	rdPreDecodedTri decoded[kMaxTris];
+
+	rdPreDecodedTri decoded[MAX_TRIS];
 	int numDecoded = 0;
 	{
 		uint32_t triIdx = *pDecoder->Advance<const uint32_t>();
-		while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris) && (numDecoded < kMaxTris))
+		while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris) && (numDecoded < MAX_TRIS))
 		{
 			auto& t = decoded[numDecoded++];
 			t.hdr = *pDecoder->Advance<const rdTileTriangleHeader>();
@@ -870,7 +866,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 		int tileOffsetX = simdStartX - tileMinX;
 		int tileOffset = tileOffsetX - tileMinY * RDCACHE_FINE_TILE_SIZE;
 
-		const __m256 x_offsets = _mm256_add_ps(_mm256_set1_ps((flex_t)simdStartX), indices);
+		const __m256 x_offsets = _mm256_add_ps(_mm256_set1_ps((flex_t)simdStartX), _mm256_set_ps(7.0f, 6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f, 0.0f));
 		const __m256 y_offsets = _mm256_set1_ps((flex_t)minY);
 
 		// Edge function stepping
@@ -900,7 +896,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 		__m256 z_dy = _mm256_set1_ps(pTriHeader->z_dy);
 		const __m256 z_offset = _mm256_set1_ps(pTriHeader->z_offset);
 		__m256 z_row = _mm256_fmadd_ps(z_dx, x_offsets, _mm256_fmadd_ps(z_dy, y_offsets, z_offset));
-		z_dx = _mm256_mul_ps(z_dx, stride);
+		z_dx = _mm256_mul_ps(z_dx, _mm256_set1_ps(8.0f));
 
 		// UV at corner and delta
 		maybe<UseTexture, __m256> u_dx, u_dy, u_row, v_dx, v_dy, v_row;
@@ -912,12 +908,12 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 			u_dy = _mm256_set1_ps(pUVS->u_dy);
 			const __m256 u_offset = _mm256_set1_ps(pUVS->u_offset);
 			u_row = _mm256_fmadd_ps(u_dx, x_offsets, _mm256_fmadd_ps(u_dy, y_offsets, u_offset));
-			u_dx = _mm256_mul_ps(u_dx, stride);
+			u_dx = _mm256_mul_ps(u_dx, _mm256_set1_ps(8.0f));
 			v_dx = _mm256_set1_ps(pUVS->v_dx);
 			v_dy = _mm256_set1_ps(pUVS->v_dy);
 			const __m256 v_offset = _mm256_set1_ps(pUVS->v_offset);
 			v_row = _mm256_fmadd_ps(v_dx, x_offsets, _mm256_fmadd_ps(v_dy, y_offsets, v_offset));
-			v_dx = _mm256_mul_ps(v_dx, stride);
+			v_dx = _mm256_mul_ps(v_dx, _mm256_set1_ps(8.0f));
 		}
 
 		// Light at corner and delta
@@ -929,7 +925,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 			l_dy = _mm256_set1_ps(pLights->l_dy);
 			const __m256 l_offset = _mm256_set1_ps(pLights->l_offset);
 			l_row = _mm256_fmadd_ps(l_dx, x_offsets, _mm256_fmadd_ps(l_dy, y_offsets, l_offset));
-			l_dx = _mm256_mul_ps(l_dx, stride);
+			l_dx = _mm256_mul_ps(l_dx, _mm256_set1_ps(8.0f));
 		}
 
 		for (int y = minY; y <= maxY; y++)
@@ -1013,14 +1009,14 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						//vz = _mm256_add_ps(vz, texDitherY);
 
 						// Fixed point (int)(u * fixedScale)
-						const __m256 scaled_uz = _mm256_mul_ps(uz, uvFixedScale);
-						const __m256 scaled_vz = _mm256_mul_ps(vz, uvFixedScale);
+						const __m256 scaled_uz = _mm256_mul_ps(uz, _mm256_set1_ps(rdRaster_fixedScale));
+						const __m256 scaled_vz = _mm256_mul_ps(vz, _mm256_set1_ps(rdRaster_fixedScale));
 						__m256i x_fixed = _mm256_cvtps_epi32(scaled_uz);
 						__m256i y_fixed = _mm256_cvtps_epi32(scaled_vz);
 
 						// Center at 0x8000 for wrapping
-						x_fixed = _mm256_add_epi32(x_fixed, uvCenter);
-						y_fixed = _mm256_add_epi32(y_fixed, uvCenter);
+						x_fixed = _mm256_add_epi32(x_fixed, _mm256_set1_epi32(0x8000));
+						y_fixed = _mm256_add_epi32(y_fixed, _mm256_set1_epi32(0x8000));
 
 						// Coordinate wrapping
 						// x_wrapped = (x_fixed & uWrap) >> 16
@@ -1250,9 +1246,9 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 								__m256 oldgf = _mm256_cvtepi32_ps(oldg);
 								__m256 oldbf = _mm256_cvtepi32_ps(oldb);
 
-								rf = _mm256_fmadd_ps(rf, alpha_ps, _mm256_mul_ps(oldrf, one_minus_alpha));
-								gf = _mm256_fmadd_ps(gf, alpha_ps, _mm256_mul_ps(oldgf, one_minus_alpha));
-								bf = _mm256_fmadd_ps(bf, alpha_ps, _mm256_mul_ps(oldbf, one_minus_alpha));
+								rf = _mm256_fmadd_ps(rf, _mm256_set1_ps(alpha), _mm256_mul_ps(oldrf, _mm256_set1_ps(oneMinusAlpha)));
+								gf = _mm256_fmadd_ps(gf, _mm256_set1_ps(alpha), _mm256_mul_ps(oldgf, _mm256_set1_ps(oneMinusAlpha)));
+								bf = _mm256_fmadd_ps(bf, _mm256_set1_ps(alpha), _mm256_mul_ps(oldbf, _mm256_set1_ps(oneMinusAlpha)));
 							}
 
 							// Back to int
@@ -1357,15 +1353,8 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 
 	rdRaster_PrimitiveEncoderDecoder* pDecoder = pCommand->pDecoder;
 
-	// SIMD constants
-	// todo: we're probably eating our register budget with this
-	const __m128 stride = _mm_set1_ps(4.0f);
-	const __m128 indices = _mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f);
-	const __m128 uvFixedScale = _mm_set1_ps(rdRaster_fixedScale);
-	const __m128i uvCenter = _mm_set1_epi32(0x8000);
-	const float alpha = 90.0f / 255.0f;
-	const __m128 alpha_ps = _mm_set1_ps(alpha);
-	const __m128 one_minus_alpha = _mm_set1_ps(1.0f - alpha);
+	static constexpr float alpha = 90.0f / 255.0f;
+	static constexpr float oneMinusAlpha = 1.0f - alpha;
 
 	maybe<!UseTexture, __m128i> solidColor;
 	if constexpr (!UseTexture)
@@ -1426,12 +1415,12 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		maybe<UseTexture, rdTileTriangleUVs>    uvs;
 		maybe<UseGouraud, rdTileTriangleLights> lights;
 	};
-	constexpr int kMaxTris = 30;
-	rdPreDecodedTri decoded[kMaxTris];
+
+	rdPreDecodedTri decoded[MAX_TRIS];
 	int numDecoded = 0;
 	{
 		uint32_t triIdx = *pDecoder->Advance<const uint32_t>();
-		while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris) && (numDecoded < kMaxTris))
+		while ((triIdx != 0x80007FFF) && (triIdx < pCommand->pHeader->numTris) && (numDecoded < MAX_TRIS))
 		{
 			auto& t = decoded[numDecoded++];
 			t.hdr = *pDecoder->Advance<const rdTileTriangleHeader>();
@@ -1464,7 +1453,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		int tileOffsetX = simdStartX - tileMinX;
 		int tileOffset = tileOffsetX - tileMinY * RDCACHE_FINE_TILE_SIZE;
 
-		const __m128 x_offsets = _mm_add_ps(_mm_set1_ps((flex_t)simdStartX), indices);
+		const __m128 x_offsets = _mm_add_ps(_mm_set1_ps((flex_t)simdStartX), _mm_set_ps(3.0f, 2.0f, 1.0f, 0.0f));
 		const __m128 y_offsets = _mm_set1_ps((flex_t)minY);
 
 		// Edge function stepping
@@ -1495,7 +1484,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 		__m128 z_dy = _mm_set1_ps(pTriHeader->z_dy);
 		const __m128 z_offset = _mm_set1_ps(pTriHeader->z_offset);
 		__m128 z_row = _mm_fmadd_ps(z_dx, x_offsets, _mm_fmadd_ps(z_dy, y_offsets, z_offset));
-		z_dx = _mm_mul_ps(z_dx, stride);
+		z_dx = _mm_mul_ps(z_dx, _mm_set1_ps(4.0f));
 
 		// UV at corner and delta
 		maybe<UseTexture, __m128> u_dx, u_dy, u_row, v_dx, v_dy, v_row;
@@ -1507,13 +1496,13 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 			u_dy = _mm_set1_ps(pUVS->u_dy);
 			const __m128 u_offset = _mm_set1_ps(pUVS->u_offset);
 			u_row = _mm_fmadd_ps(u_dx, x_offsets, _mm_fmadd_ps(u_dy, y_offsets, u_offset));
-			u_dx = _mm_mul_ps(u_dx, stride);
+			u_dx = _mm_mul_ps(u_dx, _mm_set1_ps(4.0f));
 
 			v_dx = _mm_set1_ps(pUVS->v_dx);
 			v_dy = _mm_set1_ps(pUVS->v_dy);
 			const __m128 v_offset = _mm_set1_ps(pUVS->v_offset);
 			v_row = _mm_fmadd_ps(v_dx, x_offsets, _mm_fmadd_ps(v_dy, y_offsets, v_offset));
-			v_dx = _mm_mul_ps(v_dx, stride);
+			v_dx = _mm_mul_ps(v_dx, _mm_set1_ps(4.0f));
 		}
 
 		// Light at corner and delta
@@ -1525,7 +1514,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 			l_dy = _mm_set1_ps(pLights->l_dy);
 			const __m128 l_offset = _mm_set1_ps(pLights->l_offset);
 			l_row = _mm_fmadd_ps(l_dx, x_offsets, _mm_fmadd_ps(l_dy, y_offsets, l_offset));
-			l_dx = _mm_mul_ps(l_dx, stride);
+			l_dx = _mm_mul_ps(l_dx, _mm_set1_ps(4.0f));
 		}
 
 		for (int y = minY; y <= maxY; y++)
@@ -1609,14 +1598,14 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						//vz = _mm_add_ps(vz, texDitherY);
 
 						// Fixed point (int)(u * fixedScale)
-						const __m128 scaled_uz = _mm_mul_ps(uz, uvFixedScale);
-						const __m128 scaled_vz = _mm_mul_ps(vz, uvFixedScale);
+						const __m128 scaled_uz = _mm_mul_ps(uz, _mm_set1_ps(rdRaster_fixedScale));
+						const __m128 scaled_vz = _mm_mul_ps(vz, _mm_set1_ps(rdRaster_fixedScale));
 						__m128i x_fixed = _mm_cvtps_epi32(scaled_uz);
 						__m128i y_fixed = _mm_cvtps_epi32(scaled_vz);
 
 						// Center at 0x8000 for wrapping
-						x_fixed = _mm_add_epi32(x_fixed, uvCenter);
-						y_fixed = _mm_add_epi32(y_fixed, uvCenter);
+						x_fixed = _mm_add_epi32(x_fixed, _mm_set1_epi32(0x8000));
+						y_fixed = _mm_add_epi32(y_fixed, _mm_set1_epi32(0x8000));
 
 						// Coordinate wrapping
 						// x_wrapped = (x_fixed & uWrap) >> 16
@@ -1844,9 +1833,9 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 								__m128 oldgf = _mm_cvtepi32_ps(oldg);
 								__m128 oldbf = _mm_cvtepi32_ps(oldb);
 
-								rf = _mm_fmadd_ps(rf, alpha_ps, _mm_mul_ps(oldrf, one_minus_alpha));
-								gf = _mm_fmadd_ps(gf, alpha_ps, _mm_mul_ps(oldgf, one_minus_alpha));
-								bf = _mm_fmadd_ps(bf, alpha_ps, _mm_mul_ps(oldbf, one_minus_alpha));
+								rf = _mm_fmadd_ps(rf, _mm_set1_ps(alpha), _mm_mul_ps(oldrf, _mm_set1_ps(oneMinusAlpha)));
+								gf = _mm_fmadd_ps(gf, _mm_set1_ps(alpha), _mm_mul_ps(oldgf, _mm_set1_ps(oneMinusAlpha)));
+								bf = _mm_fmadd_ps(bf, _mm_set1_ps(alpha), _mm_mul_ps(oldbf, _mm_set1_ps(oneMinusAlpha)));
 							}
 
 							// Back to int
