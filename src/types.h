@@ -23,6 +23,10 @@
 #include <smmintrin.h> // SSE4.1
 #endif
 
+#ifdef TARGET_AVX2
+#include <immintrin.h> // AVX2
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
