@@ -1,8 +1,7 @@
 // common vertex attribute layout
 //
-// wanted to use things like GL_AMD_shader_explicit_vertex_parameter but they're fucking unstable as all fuck
-// crashing during shader compilation galore, and GL_EXT_fragment_shader_barycentric doesn't even work properly (always returns vertex 0)
-// maybe I'd have better luck on nvidia but whatever
+// wanted to use things like GL_AMD_shader_explicit_vertex_parameter but they crash on AMD during shader compilation
+// and GL_EXT_fragment_shader_barycentric doesn't work properly (always returns vertex 0)
 
 import "defines.gli"
 
