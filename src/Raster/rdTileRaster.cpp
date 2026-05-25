@@ -27,6 +27,12 @@ extern "C" {
 
 constexpr int MAX_TRIS = 30;
 
+#ifdef TARGET_AVX2
+#define SIMD_ALIGN alignas(32)
+#else
+#define SIMD_ALIGN alignas(16)
+#endif
+
 typedef numeric::fixed<24, 8> fixed_t;
 
 rdTexformat rdRaster_16bitMode = { STDCOLOR_RGBA, 16, 5, 5, 5, 10, 5, 0, 3, 3, 3, 1, 15, 7 };
@@ -46,10 +52,10 @@ static uint8_t** rdRaster_ppTileStream = &rdRaster_pTileStream;
 
 // per-thread tile framebuffer cache
 // todo: this should be interleaved, so we can store both color and depth in the same cache and avoid some redundant memory accesses
-static thread_local alignas(16) uint8_t rdRaster_TileColor[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
-static thread_local alignas(16) uint16_t rdRaster_TileDepth[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
+static thread_local SIMD_ALIGN uint8_t rdRaster_TileColor[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
+static thread_local SIMD_ALIGN uint16_t rdRaster_TileDepth[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 //static thread_local uint16_t rdRaster_TileHiZ = 0xFFFF;
-static thread_local alignas(16) uint32_t rdRaster_TileColorRGBA[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
+static thread_local SIMD_ALIGN uint32_t rdRaster_TileColorRGBA[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 
 static flex_t rdRaster_fogOffset = 0.0f;
 static flex_t rdRaster_fogScale = 1.0f;
@@ -1032,7 +1038,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						_mm256_storeu_si256((__m256i*)tcs, texcoords);
 
 						// Read the texture for each texcoord
-						alignas(32) TextureStorage texels[8];
+						SIMD_ALIGN TextureStorage texels[8];
 						for (int lane = 0; lane < 8; lane++)
 							texels[lane] = depthMasks[lane] ? pixels[tcs[lane]] : 0;
 
@@ -1076,10 +1082,10 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 								__m256i offset = _mm256_or_si256(_mm256_or_si256(_mm256_slli_epi32(b, 12), _mm256_slli_epi32(g, 6)), r);
 
 								// Extract the offsets and read the lUT
-								alignas(32) uint32_t offsets[8];
+								SIMD_ALIGN uint32_t offsets[8];
 								_mm256_store_si256((__m256i*)offsets, offset);
 								
-								alignas(32) uint8_t indices_arr[8];
+								SIMD_ALIGN uint8_t indices_arr[8];
 								for (int lane = 0; lane < 8; ++lane)
 									indices_arr[lane] = depthMasks[lane] ? searchTable[offsets[lane]] : 0;
 
@@ -1138,7 +1144,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 					if constexpr (!IsRGBAOutput)
 					{
 						// Read the previous index/color
-						alignas(32) uint8_t oldIndex_arr[8];
+						SIMD_ALIGN uint8_t oldIndex_arr[8];
 						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 8);
 
 						// Extract the indices and masks so we can do light/transparency lookups
@@ -1146,10 +1152,10 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
 #endif
 						{
-							alignas(32) uint8_t index_arr[8];
+							SIMD_ALIGN uint8_t index_arr[8];
 							// indices live in the low 8 bytes of index — use _mm_storel_epi64, not a 32-byte store
 							_mm_storel_epi64((__m128i*)index_arr, _mm256_castsi256_si128(index));
-							alignas(32) uint32_t laneMasks[8];
+							SIMD_ALIGN uint32_t laneMasks[8];
 							_mm256_storeu_si256((__m256i*)laneMasks, srcMask);
 
 							flex_maybe<UseGouraud> l_arr[8];
@@ -1159,7 +1165,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 							__m256 fog = _mm256_fmadd_ps(iz, _mm256_set1_ps(rdRaster_fogScale), _mm256_set1_ps(rdRaster_fogOffset));
 							__m256i fogi = _mm256_cvtps_epi32(fog);
 
-							alignas(32) uint32_t fog_arr[8];
+							SIMD_ALIGN uint32_t fog_arr[8];
 							_mm256_storeu_si256((__m256i*)fog_arr, fogi);
 #endif
 
@@ -1622,7 +1628,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						_mm_storeu_si128((__m128i*)tcs, texcoords);
 
 						// Read the texture for each texcoord
-						alignas(16) TextureStorage texels[4];
+						SIMD_ALIGN TextureStorage texels[4];
 						for (int lane = 0; lane < 4; lane++)
 							texels[lane] = depthMasks[lane] ? pixels[tcs[lane]] : 0;
 
@@ -1665,10 +1671,10 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 								__m128i offset = _mm_or_si128(_mm_or_si128(_mm_slli_epi32(b, 12), _mm_slli_epi32(g, 6)), r);
 
 								// Extract the offsets and read the lUT
-								alignas(16) uint32_t offsets[4];
+								SIMD_ALIGN uint32_t offsets[4];
 								_mm_store_si128((__m128i*)offsets, offset);
 
-								alignas(16) uint8_t indices_arr[4];
+								SIMD_ALIGN uint8_t indices_arr[4];
 								for (int lane = 0; lane < 4; ++lane)
 									indices_arr[lane] = depthMasks[lane] ? searchTable[offsets[lane]] : 0;
 
@@ -1728,7 +1734,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 					if constexpr (!IsRGBAOutput)
 					{
 						// Read the previous index/color
-						alignas(16) uint8_t oldIndex_arr[4];
+						SIMD_ALIGN uint8_t oldIndex_arr[4];
 						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 4);
 
 						// Extract the indices and masks so we can do light/transparency lookups
@@ -1736,10 +1742,10 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
 #endif
 						{
-							alignas(16) uint8_t index_arr[4];
+							SIMD_ALIGN uint8_t index_arr[4];
 							_mm_storeu_si32((__m128i*)index_arr, index);
 
-							alignas(16) uint32_t laneMasks[4];
+							SIMD_ALIGN uint32_t laneMasks[4];
 							_mm_storeu_si128((__m128i*)laneMasks, srcMask);
 
 							flex_maybe<UseGouraud> l_arr[4];
@@ -1750,7 +1756,7 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 							__m128 fog = _mm_fmadd_ps(iz, _mm_set_ps1(rdRaster_fogScale), _mm_set_ps1(rdRaster_fogOffset));
 							__m128i fogi = _mm_cvtps_epi32(fog);
 
-							alignas(16) uint32_t fog_arr[4];
+							SIMD_ALIGN uint32_t fog_arr[4];
 							_mm_storeu_si128((__m128i*)fog_arr, fogi);
 #endif
 
