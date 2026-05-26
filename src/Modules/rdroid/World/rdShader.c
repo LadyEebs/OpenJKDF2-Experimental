@@ -113,6 +113,8 @@ typedef struct
 	int             labelCount;
 	rdShader_Fixup  fixups[RD_SHADER_MAX_FIXUPS];
 	int             fixupCount;
+	uint8_t         currentCallDepth;
+	uint8_t         maxCallDepth;
 } rdShader_Assembler;
 
 rdShader_Assembler* rdShader_pCurrentAssembler = NULL;
@@ -1424,6 +1426,10 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 					int idx = shader->byteCode.instructionCount;
 					rdShader_EmitCall(labelName, &shader->byteCode.instructions[idx], idx);
 					shader->byteCode.instructionCount++;
+
+					++assembler.currentCallDepth;
+					if (assembler.currentCallDepth > assembler.maxCallDepth)
+						assembler.maxCallDepth = assembler.currentCallDepth;
 				}
 			}
 			else if (strnicmp(ln, "ret", 3) == 0 && (ln[3] == '\0' || isspace((unsigned char)ln[3])))
@@ -1436,6 +1442,9 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_RET, 0, 0,
 															RD_SWIZZLE_XYZW, 0, RD_WRITE_RGBA, 0, 0, 0, 0);
 					shader->byteCode.instructionCount++;
+
+					if (assembler.currentCallDepth > 0)
+						--assembler.currentCallDepth;
 				}
 			}
 			else
@@ -1450,11 +1459,13 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 			break;
 	}
 
+	shader->callDepth = assembler.maxCallDepth;
+
 	// resolve any forward-referenced call targets
 	rdShader_ResolveFixups(shader);
 
 	if (shader->regcount >= 8)
-	//todo error
+		//todo error
 		goto cleanup;
 
 	std3D_UploadShader(shader);

@@ -399,13 +399,32 @@ typedef enum STD3D_WORLD_REG_POOL
 	WORLD_REG_COUNT
 } STD3D_WORLD_REG_POOL;
 
+typedef enum STD3D_WORLD_CALL_POOL
+{
+	WORLD_CALL_NONE,    // no call/ret instructions, call stack omitted entirely
+	WORLD_CALL_DEPTH_2, // max depth 2
+	WORLD_CALL_DEPTH_4, // max depth 4
+
+	WORLD_CALL_COUNT
+} STD3D_WORLD_CALL_POOL;
+
 typedef struct std3D_worldStage
 {
 	GLuint program;
 	GLuint vao[STD3D_STAGING_COUNT];
 } std3D_worldStage;
 
-std3D_worldStage worldStages[WORLD_STAGE_COUNT][WORLD_REG_COUNT][RD_NUM_TEXCOORDS];
+std3D_worldStage worldStages[WORLD_STAGE_COUNT][WORLD_REG_COUNT][WORLD_CALL_COUNT][RD_NUM_TEXCOORDS];
+
+#define FOR_EACH_STAGE(FUNC) for (int i = 0; i < RD_NUM_TEXCOORDS; ++i) \
+	for (int j = 0; j < WORLD_CALL_COUNT; ++j) \
+	for (int k = 0; k < WORLD_REG_COUNT; ++k) \
+	for (int l = 0; l < WORLD_STAGE_COUNT; ++l) \
+	{ \
+		std3D_worldStage* pStage = &worldStages[l][k][j][i]; \
+		FUNC; \
+	}
+		
 
 GLint programMenu_attribute_coord3d, programMenu_attribute_v_color, programMenu_attribute_v_uv;
 GLint programMenu_uniform_mvp, programMenu_uniform_tex, programMenu_uniform_displayPalette;
@@ -1675,7 +1694,8 @@ bool std3D_loadSimpleTexProgram(const char* fpath_base, const char* defines, std
 
 int std3D_loadWorldStage(std3D_worldStage* pStage, int isZPass, const char* defines)
 {
-	if ((pStage->program = std3D_loadProgram(isZPass ? "shaders/world/depth" : "shaders/world/world", defines)) == 0) return 0;
+	if ((pStage->program = std3D_loadProgram(isZPass ? "shaders/world/depth" : "shaders/world/world", defines)) == 0)
+		return 0;
 
 //	pStage->attribute_coord3d = std3D_tryFindAttribute(pStage->program, "coord3d");
 //	pStage->attribute_v_color = std3D_tryFindAttribute(pStage->program, "v_color");
@@ -1919,20 +1939,36 @@ int init_resources()
     std3D_generateFramebuffer(tex_w, tex_h, &std3D_framebuffer);
 	std3D_generateExtraFramebuffers(tex_w, tex_h);
 
-    if ((programMenu = std3D_loadProgram("shaders/menu", "")) == 0) return false;
+    if ((programMenu = std3D_loadProgram("shaders/menu", "")) == 0)
+		return false;
 
-	for (int j = 0; j < RD_NUM_TEXCOORDS; ++j)
+	static const int callDepths[WORLD_CALL_COUNT] = { 0, 2, 4 };
+
+	for (int i = 0; i < RD_NUM_TEXCOORDS; ++i)
 	{
-		for (int i = 0; i < WORLD_REG_COUNT; ++i)
+		for (int j = 0; j < WORLD_CALL_COUNT; ++j)
 		{
-			char tmp[64];
-			sprintf_s(tmp, 64, "WORLD;REG_COUNT %d;UV_SETS %d", 2 << i, j + 1);
+			for (int k = 0; k < WORLD_REG_COUNT; ++k)
+			{
+				char tmp[96];
 
-			if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR][i][j], 0, tmp)) return false;
+				if (callDepths[j] > 0)
+					sprintf_s(tmp, 96, "WORLD;REG_COUNT %d;UV_SETS %d;VM_CALL_STACK_DEPTH %d", 2 << k, i + 1, callDepths[j]);
+				else
+					sprintf_s(tmp, 96, "WORLD;REG_COUNT %d;UV_SETS %d", 2 << k, i + 1);
 
-			sprintf_s(tmp, 64, "ALPHA_DISCARD;WORLD;REG_COUNT %d;UV_SETS %d", 2 << i, j + 1);
+				if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR][k][j][i], 0, tmp))
+					return false;
 
-			if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR_ALPHATEST][i][j], 0, tmp)) return false;
+				char alphatmp[96];
+				if (callDepths[j] > 0)
+					sprintf_s(alphatmp, 96, "ALPHA_DISCARD;WORLD;REG_COUNT %d;UV_SETS %d;VM_CALL_STACK_DEPTH %d", 2 << k, i + 1, callDepths[j]);
+				else
+					sprintf_s(alphatmp, 96, "ALPHA_DISCARD;WORLD;REG_COUNT %d;UV_SETS %d", 2 << k, i + 1);
+
+				if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR_ALPHATEST][k][j][i], 0, alphatmp))
+					return false;
+			}
 		}
 	}
 
@@ -2214,17 +2250,11 @@ int init_resources()
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
 	std3D_setupUBOs();
-	for (int k = 0; k < RD_NUM_TEXCOORDS; ++k)
-	{
-		for (int j = 0; j < WORLD_REG_COUNT; ++j)
-		{
-			for (int i = 0; i < WORLD_STAGE_COUNT; ++i)
-			{
-				std3D_setupDrawCallVAO(&worldStages[i][j][k]);
-				std3D_setupLightingUBO(&worldStages[i][j][k]);
-			}
-		}
-	}
+	FOR_EACH_STAGE
+	(
+		std3D_setupDrawCallVAO(pStage);
+		std3D_setupLightingUBO(pStage);
+	);
 
 	std3D_initDefaultShader();
 
@@ -2397,17 +2427,12 @@ void std3D_FreeResources()
 
     glDeleteBuffers(1, &menu_vbo_all);
 
-	for (int k = 0; k < RD_NUM_TEXCOORDS; ++k)
-	{
-		for (int i = 0; i < WORLD_STAGE_COUNT; ++i)
-		{
-			for (int j = 0; j < WORLD_REG_COUNT; ++j)
-			{
-				glDeleteProgram(worldStages[i][j][k].program);
-				glDeleteVertexArrays(3, worldStages[i][j][k].vao);
-			}
-		}
-	}
+	FOR_EACH_STAGE
+	(
+		glDeleteProgram(pStage->program);
+		glDeleteVertexArrays(3, pStage->vao);
+	)
+
 	glDeleteBuffers(1, &tex_ubo);
 	glDeleteBuffers(1, &material_ubo);
 	glDeleteBuffers(1, &shared_ubo);
@@ -6164,9 +6189,12 @@ void std3D_SetState(std3D_DrawCallState* pState, uint32_t updateBits)
 	uint32_t reg_index = pState->shaderState.shader ? pState->shaderState.shader->regcount : 2;
 	reg_index = (reg_index > 4) ? 2 : (reg_index > 2) ? 1 : 0;
 
+	uint32_t call_depth = pState->shaderState.shader ? pState->shaderState.shader->callDepth : 0;
+	uint32_t call_index = (call_depth >= 4) ? WORLD_CALL_DEPTH_4 : (call_depth >= 1) ? WORLD_CALL_DEPTH_2 : WORLD_CALL_NONE;
+
 	uint32_t uvindex = pState->textureState.maxTexcoord;
 
-	std3D_worldStage* pStage = &worldStages[stage][reg_index][uvindex]; // todo: fixme
+	std3D_worldStage* pStage = &worldStages[stage][reg_index][call_index][uvindex]; // todo: fixme
 
 	//if(updateBits & RD_CACHE_SHADER)
 	//if (updateBits & RD_CACHE_STATEBITS)
