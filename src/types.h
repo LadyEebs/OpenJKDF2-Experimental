@@ -672,6 +672,7 @@ typedef struct rdShader
 	uint8_t           regcount;
 	uint8_t           callDepth;
 	uint8_t           repDepth;
+	int               bUsesAlphaTest; // set if shader contains texkill instruction, forces WORLD_STAGE_COLOR_ALPHATEST
 	char              name[32];
 	uint8_t           overrideConstantBits;
 	rdShaderConstants overrideConstants;

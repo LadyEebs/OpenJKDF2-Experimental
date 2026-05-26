@@ -5592,7 +5592,7 @@ GLuint std3D_PrimitiveForGeoMode(rdGeoMode_t geoMode)
 
 int std3D_GetStageIndex(std3D_DrawCallState* pState)
 {
-	int alphaTest = pState->stateBits.alphaTest & 1;
+	int alphaTest = pState->stateBits.alphaTest & 1 || pState->shaderState.shader->bUsesAlphaTest;
 	int blending  = pState->stateBits.blend & 1;
 
 	if (alphaTest || blending)
@@ -5633,13 +5633,14 @@ void std3D_UpdateSharedUniforms()
 		sharedUniforms.mipDistances.w -= 2.0; // bias
 
 	// todo: move me
-	sharedUniforms.scale_bias[0] = (rdVector4){ 1.0f, 0.0f,0,0};
-	sharedUniforms.scale_bias[1] = (rdVector4){ 2.0f, 0.0f,0,0 };
-	sharedUniforms.scale_bias[2] = (rdVector4){ 4.0f, 0.0f,0,0 };
-	sharedUniforms.scale_bias[3] = (rdVector4){ 0.5f, 0.0f,0,0 };
-	sharedUniforms.scale_bias[4] = (rdVector4){ 0.25f, 0.0f,0,0 };
-	sharedUniforms.scale_bias[5] = (rdVector4){ 1.0f, -0.5f,0,0 };
-	sharedUniforms.scale_bias[6] = (rdVector4){ 2.0f, -1.0f,0,0 };
+	sharedUniforms.scale_bias[0] = (rdVector4){ 1.0f,  0.0f, 0, 0 };
+	sharedUniforms.scale_bias[1] = (rdVector4){ 2.0f,  0.0f, 0, 0 };
+	sharedUniforms.scale_bias[2] = (rdVector4){ 4.0f,  0.0f, 0, 0 };
+	sharedUniforms.scale_bias[3] = (rdVector4){ 0.5f,  0.0f, 0, 0 };
+	sharedUniforms.scale_bias[4] = (rdVector4){ 0.25f, 0.0f, 0, 0 };
+	sharedUniforms.scale_bias[5] = (rdVector4){ 1.0f, -0.5f, 0, 0 };
+	sharedUniforms.scale_bias[6] = (rdVector4){ 2.0f, -1.0f, 0, 0 };
+	sharedUniforms.scale_bias[7] = (rdVector4){ 0.5f,  0.5f, 0, 0 };
 
 	glBindBuffer(GL_UNIFORM_BUFFER, shared_ubo);
 	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(std3D_SharedUniforms), &sharedUniforms);

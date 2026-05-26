@@ -230,16 +230,19 @@ static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* o
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
 	uint8_t fmt    = inst->dest.reg.fmt;
+	// b-a is in [-1,1] for LDR inputs, S8 gives 4 signed channels at that range
+	// for HDR inputs the intermediate will clip, might need a real opcode
+	const uint8_t tmpFmt = fmt == RD_SHADER_U8 ? RD_SHADER_S8 : fmt;
 
 	// instruction 0: add tmp, b, -a  (b - a)
 	rdShader_Instruction sub;
 	memset(&sub, 0, sizeof(rdShader_Instruction));
 	sub.opcode   = RD_SHADER_OP_ADD;
 	sub.srcCount = 2;
-	rdShader_MakeTmpDest(&sub.dest, tmpReg, fmt);
-	sub.src[0]              = inst->src[1]; // b
-	sub.src[1]              = inst->src[0]; // a
-	sub.src[1].reg.unary    = RD_SHADER_NEGATE; // -a
+	rdShader_MakeTmpDest(&sub.dest, tmpReg, tmpFmt);
+	sub.src[0]           = inst->src[1]; // b
+	sub.src[1]           = inst->src[0]; // a
+	sub.src[1].reg.unary = RD_SHADER_NEGATE; // -a
 
 	if (!rdShader_AssembleInstruction(&out[0], &sub))
 		return 0;
@@ -250,7 +253,7 @@ static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* o
 	mad.opcode   = RD_SHADER_OP_MAD;
 	mad.srcCount = 3;
 	mad.dest     = inst->dest;
-	rdShader_MakeTmpSrc(&mad.src[0], tmpReg, 0, fmt);
+	rdShader_MakeTmpSrc(&mad.src[0], tmpReg, 0, tmpFmt);
 	mad.src[1]   = inst->src[2]; // t
 	mad.src[2]   = inst->src[0]; // a
 	rdShader_ApplyOutputModifiers(&mad, inst);
@@ -262,42 +265,15 @@ static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* o
 	return 2;
 }
 
-// sqrt dst, a  ->  rsqrt tmp, a
-//                  mov   dst, 1/tmp
+// sqrt dst, a  ->  rsqrt dst, a  (with dst_unary=rcp: 1 / (1/sqrt(a)) = sqrt(a), no temp needed)
 static int rdShader_MacroExpandSQRT(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
-	if (maxOut < 2)
+	if (maxOut < 1)
 		return 0;
 
-	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
-	uint8_t fmt    = inst->dest.reg.fmt;
-
-	// instruction 0: rsqrt tmp, a
-	rdShader_Instruction rsqrt;
-	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
-	rsqrt.opcode   = RD_SHADER_OP_RSQRT;
-	rsqrt.srcCount = 1;
-	rdShader_MakeTmpDest(&rsqrt.dest, tmpReg, fmt);
-	rsqrt.src[0]   = inst->src[0];
-
-	if (!rdShader_AssembleInstruction(&out[0], &rsqrt))
-		return 0;
-
-	// instruction 1: mov dst, 1/tmp  (final: carry all output modifiers)
-	rdShader_Instruction rcp;
-	memset(&rcp, 0, sizeof(rdShader_Instruction));
-	rcp.opcode   = RD_SHADER_OP_MOV;
-	rcp.srcCount = 1;
-	rcp.dest     = inst->dest;
-	rdShader_MakeTmpSrc(&rcp.src[0], tmpReg, 0, fmt);
-	rcp.src[0].reg.unary = RD_SHADER_RCP;
-	rdShader_ApplyOutputModifiers(&rcp, inst);
-
-	if (!rdShader_AssembleInstruction(&out[1], &rcp))
-		return 0;
-
-	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
-	return 2;
+	inst->opcode = RD_SHADER_OP_RSQRT;
+	inst->dest.reg.unary = RD_SHADER_RCP; // rcp applied to rsqrt result in the write path
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
 }
 
 // clamp dst, a, lo, hi  ->  max tmp, a,   lo
@@ -339,73 +315,6 @@ static int rdShader_MacroExpandCLAMP(rdShader_Instruction* inst, rdShaderInstr* 
 	return 2;
 }
 
-// pow dst, a, b  ->  max  tmp, a, 0     (clamp base >=0 before log2; src[0] modifier applied here)
-//                    log2 tmp, tmp
-//                    mul  tmp, tmp, b
-//                    exp2 dst, tmp
-static int rdShader_MacroExpandPOW(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
-{
-	if (maxOut < 4)
-		return 0;
-
-	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
-	uint8_t fmt    = inst->dest.reg.fmt;
-
-	// instruction 0: max tmp, a, 0  (applies src[0] modifier e.g. 1-r1, then clamps to >=0)
-	// max(x,0): log2(0)=-inf, exp2(-inf)=0, so pow(0,b)=0 is correct for b>0
-	rdShader_Instruction maxInst;
-	memset(&maxInst, 0, sizeof(rdShader_Instruction));
-	maxInst.opcode             = RD_SHADER_OP_MAX;
-	maxInst.srcCount           = 2;
-	rdShader_MakeTmpDest(&maxInst.dest, tmpReg, fmt);
-	maxInst.src[0]             = inst->src[0]; // a (with any user modifier, e.g. 1-r1)
-	rdShader_MakeTmpSrc(&maxInst.src[1], 0, 1, fmt);
-	maxInst.src[1].reg.type          = RD_SHADER_IMM8;
-	maxInst.src[1].reg.address       = 0; // stdMath_FloatToMini8(0.0f)
-	maxInst.src[1].reg.immediate.x   = 0.0f;
-
-	if (!rdShader_AssembleInstruction(&out[0], &maxInst))
-		return 0;
-
-	// instruction 1: log2 tmp, tmp
-	rdShader_Instruction log2inst;
-	memset(&log2inst, 0, sizeof(rdShader_Instruction));
-	log2inst.opcode   = RD_SHADER_OP_LOG2;
-	log2inst.srcCount = 1;
-	rdShader_MakeTmpDest(&log2inst.dest, tmpReg, fmt);
-	rdShader_MakeTmpSrc(&log2inst.src[0], tmpReg, 0, fmt);
-
-	if (!rdShader_AssembleInstruction(&out[1], &log2inst))
-		return 0;
-
-	// instruction 2: mul tmp, tmp, b
-	rdShader_Instruction mul;
-	memset(&mul, 0, sizeof(rdShader_Instruction));
-	mul.opcode   = RD_SHADER_OP_MUL;
-	mul.srcCount = 2;
-	rdShader_MakeTmpDest(&mul.dest, tmpReg, fmt);
-	rdShader_MakeTmpSrc(&mul.src[0], tmpReg, 0, fmt);
-	mul.src[1]   = inst->src[1]; // b (with any user modifier)
-
-	if (!rdShader_AssembleInstruction(&out[2], &mul))
-		return 0;
-
-	// instruction 3: exp2 dst, tmp  (final: carry all output modifiers)
-	rdShader_Instruction exp2inst;
-	memset(&exp2inst, 0, sizeof(rdShader_Instruction));
-	exp2inst.opcode   = RD_SHADER_OP_EXP2;
-	exp2inst.srcCount = 1;
-	exp2inst.dest     = inst->dest;
-	rdShader_MakeTmpSrc(&exp2inst.src[0], tmpReg, 0, fmt);
-	rdShader_ApplyOutputModifiers(&exp2inst, inst);
-
-	if (!rdShader_AssembleInstruction(&out[3], &exp2inst))
-		return 0;
-
-	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
-	return 4;
-}
-
 // crs dst, a, b  ->  mul tmp, a.yzxw, b.zxyw
 //                    mad dst, a.zxyw, -b.yzxw, tmp
 // 
@@ -423,18 +332,21 @@ static int rdShader_MacroExpandCROSS(rdShader_Instruction* inst, rdShaderInstr* 
 	const uint8_t swizzle_zxyw = (2) | (0 << 2) | (1 << 4) | (3 << 6);
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
-	uint8_t fmt    = inst->dest.reg.fmt;
+
+	// products of unit vector components are in [-1,1]; S8 gives 4 signed channels
+	// for non-unit vectors with magnitude > 1 the intermediate can clip
+	const uint8_t tmpFmt = RD_SHADER_S8;
 
 	// instruction 0: mul tmp, a.yzxw, b.zxyw
 	rdShader_Instruction mul;
 	memset(&mul, 0, sizeof(rdShader_Instruction));
 	mul.opcode   = RD_SHADER_OP_MUL;
 	mul.srcCount = 2;
-	rdShader_MakeTmpDest(&mul.dest, tmpReg, fmt);
-	mul.src[0]              = inst->src[0];
-	mul.src[0].reg.swizzle  = swizzle_yzxw; // a.yzxw
-	mul.src[1]              = inst->src[1];
-	mul.src[1].reg.swizzle  = swizzle_zxyw; // b.zxyw
+	rdShader_MakeTmpDest(&mul.dest, tmpReg, tmpFmt);
+	mul.src[0]             = inst->src[0];
+	mul.src[0].reg.swizzle = swizzle_yzxw; // a.yzxw
+	mul.src[1]             = inst->src[1];
+	mul.src[1].reg.swizzle = swizzle_zxyw; // b.zxyw
 
 	if (!rdShader_AssembleInstruction(&out[0], &mul))
 		return 0;
@@ -445,12 +357,12 @@ static int rdShader_MacroExpandCROSS(rdShader_Instruction* inst, rdShaderInstr* 
 	mad.opcode   = RD_SHADER_OP_MAD;
 	mad.srcCount = 3;
 	mad.dest     = inst->dest;
-	mad.src[0]              = inst->src[0];
-	mad.src[0].reg.swizzle  = swizzle_zxyw;      // a.zxyw
-	mad.src[1]              = inst->src[1];
-	mad.src[1].reg.swizzle  = swizzle_yzxw;      // b.yzxw
-	mad.src[1].reg.unary    = RD_SHADER_NEGATE;  // -b.yzxw
-	rdShader_MakeTmpSrc(&mad.src[2], tmpReg, 2, fmt);
+	mad.src[0]             = inst->src[0];
+	mad.src[0].reg.swizzle = swizzle_zxyw;     // a.zxyw
+	mad.src[1]             = inst->src[1];
+	mad.src[1].reg.swizzle = swizzle_yzxw;     // b.yzxw
+	mad.src[1].reg.unary   = RD_SHADER_NEGATE; // -b.yzxw
+	rdShader_MakeTmpSrc(&mad.src[2], tmpReg, 2, tmpFmt);
 	rdShader_ApplyOutputModifiers(&mad, inst);
 
 	if (!rdShader_AssembleInstruction(&out[1], &mad))
@@ -468,15 +380,22 @@ static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* ou
 	if (maxOut < 3)
 		return 0;
 
-	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
-	uint8_t fmt    = inst->dest.reg.fmt;
+	uint8_t tmpReg  = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt     = inst->dest.reg.fmt;
+
+	// dp3 result is magnitude-squared (can exceed 1)
+	// rsqrt is in [1,inf)
+	// F32 is required for both, F32 decode broadcasts x to all channels,
+	// F32 is required for both, F32 decode broadcasts x to all channels,
+	// so mul dst, a, tmp correctly scales every channel by the scalar 1/|a|
+	const uint8_t tmpFmt = RD_SHADER_F32;
 
 	// instruction 0: dp3 tmp, a, a
 	rdShader_Instruction dp3;
 	memset(&dp3, 0, sizeof(rdShader_Instruction));
 	dp3.opcode   = RD_SHADER_OP_DP3;
 	dp3.srcCount = 2;
-	rdShader_MakeTmpDest(&dp3.dest, tmpReg, fmt);
+	rdShader_MakeTmpDest(&dp3.dest, tmpReg, tmpFmt);
 	dp3.src[0]   = inst->src[0]; // a
 	dp3.src[1]   = inst->src[0]; // a
 
@@ -488,8 +407,8 @@ static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* ou
 	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
 	rsqrt.opcode   = RD_SHADER_OP_RSQRT;
 	rsqrt.srcCount = 1;
-	rdShader_MakeTmpDest(&rsqrt.dest, tmpReg, fmt);
-	rdShader_MakeTmpSrc(&rsqrt.src[0], tmpReg, 0, fmt);
+	rdShader_MakeTmpDest(&rsqrt.dest, tmpReg, tmpFmt);
+	rdShader_MakeTmpSrc(&rsqrt.src[0], tmpReg, 0, tmpFmt);
 
 	if (!rdShader_AssembleInstruction(&out[1], &rsqrt))
 		return 0;
@@ -501,7 +420,7 @@ static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* ou
 	mul.srcCount = 2;
 	mul.dest     = inst->dest;
 	mul.src[0]   = inst->src[0]; // a
-	rdShader_MakeTmpSrc(&mul.src[1], tmpReg, 1, fmt);
+	rdShader_MakeTmpSrc(&mul.src[1], tmpReg, 1, tmpFmt);
 	rdShader_ApplyOutputModifiers(&mul, inst);
 
 	if (!rdShader_AssembleInstruction(&out[2], &mul))
@@ -522,7 +441,6 @@ static const rdShader_Macro rdShader_macros[] =
 	{ "lrp",   3, rdShader_MacroExpandLERP  },
 	{ "sqrt",  1, rdShader_MacroExpandSQRT  },
 	{ "clamp", 3, rdShader_MacroExpandCLAMP },
-	{ "pow",   2, rdShader_MacroExpandPOW   },
 	{ "crs",   2, rdShader_MacroExpandCROSS },
 	{ "nrm",   1, rdShader_MacroExpandNRM   },
 };
@@ -585,7 +503,16 @@ static uint8_t rdShader_ParseMultiplier(const char* token)
 
 	if (strncmp(token, "bias", 4) == 0) return RD_SHADER_BIAS;
 	if (strncmp(token, "expand", 6) == 0) return RD_SHADER_EXPAND;
+	if (strncmp(token, "compress", 8) == 0) return RD_SHADER_COMPRESS;
 
+	return 0;
+}
+
+static uint8_t rdShader_ParseDestUnary(const char* token)
+{
+	if (strnicmp(token, "negate", 6) == 0) return RD_SHADER_NEGATE;
+	if (strnicmp(token, "invert", 6) == 0) return RD_SHADER_INVERT;
+	if (strnicmp(token, "rcp", 3) == 0) return RD_SHADER_RCP;
 	return 0;
 }
 
@@ -823,15 +750,17 @@ static void rdShader_ParseSourceOperandExpression(char* token, rdShader_SrcOpera
 			// try to parse multipliers first
 			uint8_t mult = rdShader_ParseMultiplier(modifier);
 			if (mult)
+			{
 				op->mult = mult;
-			else if (strnicmp(modifier, "negate", 6) == 0)
-				op->reg.unary = RD_SHADER_NEGATE;
-			else if (strnicmp(modifier, "invert", 6) == 0)
-				op->reg.unary = RD_SHADER_INVERT;
-			else if (strnicmp(modifier, "rcp", 3) == 0)
-				op->reg.unary = RD_SHADER_RCP;
+			}
 			else
-				op->reg.fmt = rdShader_ParseFormat(modifier);
+			{
+				uint8_t unary = rdShader_ParseDestUnary(modifier);
+				if (unary)
+					op->reg.unary = unary;
+				else
+					op->reg.fmt = rdShader_ParseFormat(modifier);
+			}
 
 			if (next_comma)
 				modifier = next_comma + 1;
@@ -871,8 +800,8 @@ uint32_t rdShader_AssembleSrc(
 }
 
 // operation + destination layout
-// |31         29|  28 |27          25|24       17|16     10|    9    |8      7|    6    |5       0|
-// | write mask  | abs |  multiplier  |  swizzle  |  index  |  negate | format | precise | op code |
+// |31    28| 27  |26   24|23     16|15    11| 10  |9         8|7   6|   5   |4  0|
+// |  mask  | abs |  mul  |  swizz  |  addr  | sat | dst_unary | fmt | prec  | op |
 uint32_t rdShader_AssembleOpAndDst(
 	uint8_t opcode,
 	uint8_t fmt,
@@ -882,26 +811,30 @@ uint32_t rdShader_AssembleOpAndDst(
 	uint8_t write_mask,
 	uint8_t precise,
 	uint8_t abs,
-	uint8_t neg,
+	uint8_t dst_unary,
 	uint8_t clamp
 )
 {
 	uint32_t result;
-	result  = (opcode & 0x1F);
-	result |= (precise & 0x1) << 5;
-	result |= (fmt & 0x3) << 6;
-	result |= (neg & 0x1) << 8;
-	result |= (clamp & 0x1) << 9;
-	result |= (addr & 0x3F) << 10;
-	result |= (swizzle & 0xFF) << 16;
-	result |= (multiplier & 0x7) << 24;
-	result |= (abs & 0x1) << 27;
-	result |= (write_mask & 0xF) << 28;
+	result  = (opcode     & 0x1F);
+	result |= (precise    & 0x01) <<  5;
+	result |= (fmt        & 0x03) <<  6;
+	result |= (dst_unary  & 0x03) <<  8;
+	result |= (clamp      & 0x01) << 10;
+	result |= (addr       & 0x1F) << 11;
+	result |= (swizzle    & 0xFF) << 16;
+	result |= (multiplier & 0x07) << 24;
+	result |= (abs        & 0x01) << 27;
+	result |= (write_mask & 0x0F) << 28;
 	return result;
 }
 
 static int rdShader_AssembleInstruction(rdShaderInstr* result, rdShader_Instruction* inst)
 {
+	// texkill forces the alphatest world stage at draw time
+	if (inst->opcode == RD_SHADER_OP_TEXKILL)
+		rdShader_pCurrentAssembler->shader->bUsesAlphaTest = 1;
+
 	result->op_dst = rdShader_AssembleOpAndDst(inst->opcode,
 											   inst->dest.reg.fmt,
 											   inst->dest.reg.address,
@@ -1144,6 +1077,8 @@ void rdShader_ParseInstructionModifiers(const char* modifierStart, rdShader_Inst
 			inst->dest.reg.abs = 1;
 		else if (strnicmp(token, "negate", 6) == 0)
 			inst->dest.reg.unary = RD_SHADER_NEGATE;
+		else if (strnicmp(token, "rcp", 3) == 0)
+			inst->dest.reg.unary = RD_SHADER_RCP;
 		else
 			inst->dest.reg.fmt = rdShader_ParseFormat(token);
 
@@ -1485,7 +1420,7 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 					rdShaderInstr* out = &shader->byteCode.instructions[shader->byteCode.instructionCount];
 					memset(out, 0, sizeof(rdShaderInstr));
 					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_RET, 0, 0,
-															RD_SWIZZLE_XYZW, 0, RD_WRITE_RGBA, 0, 0, 0, 0);
+													RD_SWIZZLE_XYZW, 0, RD_WRITE_RGBA, 0, 0, 0, 0);
 					shader->byteCode.instructionCount++;
 
 					if (assembler.currentCallDepth > 0)
@@ -1512,7 +1447,7 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 					rdShaderInstr* out = &shader->byteCode.instructions[shader->byteCode.instructionCount];
 					memset(out, 0, sizeof(rdShaderInstr));
 					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_REP, 0, 0,
-															RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
+													RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
 					out->src0 = rdShader_AssembleSrc(0,
 													 countOp.reg.type, countOp.reg.fmt,
 													 countOp.reg.address, countOp.reg.abs,
@@ -1541,7 +1476,7 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 					memset(out, 0, sizeof(rdShaderInstr));
 					// body-start PC stored in addr field so the VM can branch back
 					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_ENDREP, 0, bodyStart,
-															RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
+													RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
 					shader->byteCode.instructionCount++;
 				}
 			}

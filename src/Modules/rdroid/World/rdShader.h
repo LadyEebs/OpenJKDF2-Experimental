@@ -128,6 +128,7 @@ typedef enum
 
 	RD_SHADER_BIAS,		// x - 0.5
 	RD_SHADER_EXPAND,   // x * 2 - 1
+	RD_SHADER_COMPRESS,	// x * 0.5 + 0.5
 
 	RD_SHADER_MUL_COUNT
 } rdShader_Multipliers;
@@ -194,7 +195,7 @@ uint32_t rdShader_AssembleSrc(uint8_t idx, uint8_t type, uint8_t fmt, uint8_t ad
 	uint8_t abs, uint8_t swizzle, uint8_t negate_or_invert, uint8_t scale_bias, uint8_t reduction);
 
 uint32_t rdShader_AssembleOpAndDst(uint8_t opcode, uint8_t fmt, uint8_t addr, uint8_t swizzle,
-	uint8_t multiplier, uint8_t write_mask, uint8_t precise, uint8_t abs, uint8_t neg, uint8_t clamp);
+	uint8_t multiplier, uint8_t write_mask, uint8_t precise, uint8_t abs, uint8_t dst_unary, uint8_t clamp);
 
 #endif
 

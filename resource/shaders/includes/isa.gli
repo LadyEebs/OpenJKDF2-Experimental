@@ -30,13 +30,15 @@ import "uniforms.gli"
 #define OP_MIN		17	// minimum
 #define OP_MOV		18	// move
 #define OP_MUL		19	// multiply
-#define OP_POM		20	// parallax
-#define OP_RSQRT	21	// reciprocal square root
-#define OP_SIN		22	// sine
-#define OP_TEX		23	// texture
-#define OP_TEXLOD	24	// texture lod
-#define OP_TEXADD	25	// texture + offset
-#define OP_TEXINFO	26	// texture info (size, mips)
+#define OP_POW      20  // pow
+#define OP_POM		21	// parallax
+#define OP_RSQRT	22	// reciprocal square root
+#define OP_SIN		23	// sine
+#define OP_TEX		24	// texture
+#define OP_TEXLOD	25	// texture lod
+#define OP_TEXADD	26	// texture + offset
+#define OP_TEXINFO	27	// texture info (size, mips)
+#define OP_TEXKILL	28	// texkill (discard if src.a < threshold, forces alphatest stage)
 
 // register types
 #define REG_TYPE_GPR     0	// register
@@ -61,13 +63,16 @@ import "uniforms.gli"
 #define SRC_UNARY_RCP  3    // rcp: 1 / x
 
 // source scale and bias
-#define SRC_SCALE_BIAS_NONE   0	
-#define SRC_SCALE_BIAS_2X	  1	// x * 2
-#define SRC_SCALE_BIAS_4X	  2	// x * 4
-#define SRC_SCALE_BIAS_D2	  3	// x / 2
-#define SRC_SCALE_BIAS_D4	  4	// x / 4
-#define SRC_SCALE_BIAS_BIAS   5	// x - 0.5
-#define SRC_SCALE_BIAS_EXPAND 6	// x * 2 - 1
+// these aren't directly used (the scale/bias is stored in a constant array)
+// but the defines are here for documentation purposes just in case someone wants to use them directly in the shader for some reason
+#define SRC_SCALE_BIAS_NONE     0	
+#define SRC_SCALE_BIAS_2X	    1	// x * 2
+#define SRC_SCALE_BIAS_4X	    2	// x * 4
+#define SRC_SCALE_BIAS_D2	    3	// x / 2
+#define SRC_SCALE_BIAS_D4	    4	// x / 4
+#define SRC_SCALE_BIAS_BIAS     5	// x - 0.5
+#define SRC_SCALE_BIAS_EXPAND   6	// x * 2 - 1
+#define SRC_SCALE_BIAS_COMPRESS 7	// x * 0.5 + 0.5
 
 // source reduction operations
 #define SRC_RED_NONE 0
@@ -113,8 +118,8 @@ struct vm_dst
 	uint dest;
 	uint swizzle;
 	uint multiplier;
+	uint unary;      // 0=none 1=negate 2=invert 3=rcp
 	bool absolute;
-	bool negate;
 };
 
 struct vm_src
@@ -178,14 +183,14 @@ void s_decode_precision(out bool s_precision, uint s_ir)
 
 void s_decode_sat(out bool s_sat, uint s_ir)
 {
-	s_sat = bool((s_ir >>  9) &  0x1);
+	s_sat = bool((s_ir >> 10) &  0x1);
 }
 
 void s_decode_dst_operand(out vm_dst s_dst, uint s_ir)
 {
 	s_dst.fmt        = (s_ir >>  6) &  0x3;
-	s_dst.negate     = bool((s_ir >>  8) &  0x1);
-	s_dst.addr       = (s_ir >> 10) & 0x3F;
+	s_dst.unary      = (s_ir >>  8) &  0x3;
+	s_dst.addr       = (s_ir >> 11) & 0x1F;
 	s_dst.swizzle    = (s_ir >> 16) & 0xFF;
 	s_dst.multiplier = (s_ir >> 24) &  0x7;
 	s_dst.absolute   = bool((s_ir >> 27) &  0x1);

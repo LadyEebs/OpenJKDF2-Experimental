@@ -142,6 +142,10 @@ void run_vm()
 			result = mix( s2, s1, greaterThan( s0, vec4(0.5) ));
 			break;
 
+		case OP_POW:
+			result = s_ir.prec ? pow( s0, s1 ) : fastPow( s0, s1 );
+			break;
+
 		case OP_EXP2:
 			result = s_ir.prec ? exp2( s0 ) : fastExp2( s0 );
 			break;
@@ -186,6 +190,17 @@ void run_vm()
 		case OP_TEXINFO:
 			result = vec4(textureSize(textures[s_ir.src0.addr], int(s1.x)).xy, 1.0, textureQueryLevels(textures[s_ir.src0.addr]));
 			break;
+
+	#ifdef ALPHA_DISCARD
+		case OP_TEXKILL:
+			if (tex_mode != TEX_MODE_TEST)
+			{
+				if (s0.a < 1e-3) // todo: alpha test value
+					discard;
+			}
+			s_skip_write = true;
+			break;
+	#endif
 
 		case OP_POM:
 			if (tex_mode != TEX_MODE_TEST)
