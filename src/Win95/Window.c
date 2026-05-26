@@ -690,63 +690,46 @@ int scale_x_fp;
 int scale_y_fp;
 __m128i scale_x_fp_vec;
 __m128i x_offset_vec;
+#ifdef TARGET_AVX2
+__m256i scale_x_fp_vec8;
+__m256i x_offset_vec8;
+#endif
 
 static void SwapWindowJob(uint32_t jobIndex, uint32_t groupIndex)
 {
-	if (jobIndex >= copyHeight)
-		return;
-
-	// Row outside vertical copy area, fill entire destination row with black
-	if (jobIndex < dstRect.y || jobIndex >= dstRect.y + copyHeight)
-	{
-		int dstRowWidth = dstRect.w + dstRect.x;
-		uint32_t* dstRow = (uint32_t*)(dstPixels + jobIndex * dstPitch);
-		memset(dstRow, 0, dstRowWidth * sizeof(uint32_t));
-		return;
-	}
-
-	int y = jobIndex;
-
-	int srcY = srcRect.y + ((y * scale_y_fp) >> fixed_shift);
+	int srcY = srcRect.y + ((jobIndex * scale_y_fp) >> fixed_shift);
 	uint8_t* srcRow = srcPixels + srcY * srcPitch;
 
-	uint32_t* dstRowStart = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch);
+	uint32_t* dstRowStart = (uint32_t*)(dstPixels + (dstRect.y + jobIndex) * dstPitch);
 	uint32_t* dstRow = dstRowStart + dstRect.x;
 
 	if (dstRect.x > 0)
 		memset(dstRowStart, 0, dstRect.x * sizeof(uint32_t));
 
 #ifdef TARGET_AVX2
+	const __m128i byte_mask = _mm_set1_epi32(0xFF);
 	int x = 0;
-	__m256i scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
-	__m256i x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
 	for (; x <= copyWidth - 8; x += 8)
 	{
-		__m256i x_vec = _mm256_setr_epi32(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
-		__m256i srcX_fp = _mm256_add_epi32(x_offset_vec8, _mm256_mullo_epi32(x_vec, scale_x_fp_vec8));
-		__m256i srcX = _mm256_srli_epi32(srcX_fp, fixed_shift);
+		__m128i x_vec_lo = _mm_setr_epi32(x, x+1, x+2, x+3);
+		__m128i x_vec_hi = _mm_add_epi32(x_vec_lo, _mm_set1_epi32(4));
 
-		int srcX_arr[8];
-		_mm256_storeu_si256((__m256i*)srcX_arr, srcX);
+		__m128i srcX_lo = _mm_srli_epi32(_mm_add_epi32(x_offset_vec, _mm_mullo_epi32(x_vec_lo, scale_x_fp_vec)), fixed_shift);
+		__m128i srcX_hi = _mm_srli_epi32(_mm_add_epi32(x_offset_vec, _mm_mullo_epi32(x_vec_hi, scale_x_fp_vec)), fixed_shift);
 
-		uint8_t indices[8] = {
-			srcRow[srcX_arr[0]], srcRow[srcX_arr[1]], srcRow[srcX_arr[2]], srcRow[srcX_arr[3]],
-			srcRow[srcX_arr[4]], srcRow[srcX_arr[5]], srcRow[srcX_arr[6]], srcRow[srcX_arr[7]]
-		};
+		__m128i idx_lo = _mm_and_si128(_mm_i32gather_epi32((const int*)srcRow, srcX_lo, 1), byte_mask);
+		__m128i idx_hi = _mm_and_si128(_mm_i32gather_epi32((const int*)srcRow, srcX_hi, 1), byte_mask);
 
-		__m256i pixels = _mm256_setr_epi32(
-			paletteCache[indices[0]], paletteCache[indices[1]],
-			paletteCache[indices[2]], paletteCache[indices[3]],
-			paletteCache[indices[4]], paletteCache[indices[5]],
-			paletteCache[indices[6]], paletteCache[indices[7]]
-		);
-		_mm256_storeu_si256((__m256i*)&dstRow[x], pixels);
+		__m128i pixels_lo = _mm_i32gather_epi32((const int*)paletteCache, idx_lo, 4);
+		__m128i pixels_hi = _mm_i32gather_epi32((const int*)paletteCache, idx_hi, 4);
+
+		_mm_storeu_si128((__m128i*)&dstRow[x],   pixels_lo);
+		_mm_storeu_si128((__m128i*)&dstRow[x+4], pixels_hi);
 	}
 	for (; x < copyWidth; ++x)
 	{
-		int srcX = srcRect.x + (x * srcRect.w) * dstScaleW;
-		uint8_t index = srcRow[srcX];
-		dstRow[x] = paletteCache[index];
+		int srcX = (((srcRect.x << fixed_shift) + x * scale_x_fp) >> fixed_shift);
+		dstRow[x] = paletteCache[srcRow[srcX]];
 	}
 #elif defined(TARGET_SSE)
 	int x = 0;
@@ -768,40 +751,28 @@ static void SwapWindowJob(uint32_t jobIndex, uint32_t groupIndex)
 		int srcX_arr[4];
 		_mm_store_si128((__m128i*)srcX_arr, srcX);
 
-		uint8_t indices[4] = {
-			srcRow[srcX_arr[0]],
-			srcRow[srcX_arr[1]],
-			srcRow[srcX_arr[2]],
-			srcRow[srcX_arr[3]]
-		};
-
-		// is this really the best way to do this? would writing directly be faster?
 		__m128i pixels = _mm_setr_epi32(
-			paletteCache[indices[0]],
-			paletteCache[indices[1]],
-			paletteCache[indices[2]],
-			paletteCache[indices[3]]
+			paletteCache[srcRow[srcX_arr[0]]],
+			paletteCache[srcRow[srcX_arr[1]]],
+			paletteCache[srcRow[srcX_arr[2]]],
+			paletteCache[srcRow[srcX_arr[3]]]
 		);
 		_mm_storeu_si128((__m128i*)&dstRow[x], pixels);
 	}
 
 	for (; x < copyWidth; ++x)
 	{
-		int srcX = srcRect.x + (x * srcRect.w) * dstScaleW;
-		uint8_t index = srcRow[srcX];
-		dstRow[x] = paletteCache[index];
-	}	
+		int srcX = (((srcRect.x << fixed_shift) + x * scale_x_fp) >> fixed_shift);
+		dstRow[x] = paletteCache[srcRow[srcX]];
+	}
 #else
 	for (int x = 0; x < copyWidth; ++x)
 	{
-		// Scale dst X to src X
-		int srcX = srcRect.x + (x * srcRect.w) * dstScaleW;
-		uint8_t index = srcRow[srcX];
-		dstRow[x] = paletteCache[index];
+		int srcX = (((srcRect.x << fixed_shift) + x * scale_x_fp) >> fixed_shift);
+		dstRow[x] = paletteCache[srcRow[srcX]];
 	}
 #endif
 
-	int fullRowWidth = dstPitch / 4;  // full row pixel count
 	int suffixLength = windowSurf->w - (dstRect.x + copyWidth);
 	if (suffixLength > 0)
 		memset(dstRow + copyWidth, 0, suffixLength * sizeof(uint32_t));
@@ -1181,6 +1152,10 @@ void SwapWindow(SDL_Window* window)
 		scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
 		scale_x_fp_vec = _mm_set1_epi32(scale_x_fp);
 		x_offset_vec = _mm_set1_epi32(srcRect.x << fixed_shift);
+#ifdef TARGET_AVX2
+		scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
+		x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
+#endif
 
 		// eebs: tried tiling but it seems that dispatching by row seems to be the fastest option?
 		if (buffer->format.format.colorMode)
