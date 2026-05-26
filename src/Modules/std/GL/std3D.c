@@ -399,39 +399,20 @@ typedef enum STD3D_WORLD_REG_POOL
 	WORLD_REG_COUNT
 } STD3D_WORLD_REG_POOL;
 
-typedef enum STD3D_WORLD_CALL_POOL
-{
-	WORLD_CALL_NONE,    // no call/ret instructions, call stack omitted entirely
-	WORLD_CALL_DEPTH_2, // max depth 2
-	WORLD_CALL_DEPTH_4, // max depth 4
-
-	WORLD_CALL_COUNT
-} STD3D_WORLD_CALL_POOL;
-
-typedef enum STD3D_WORLD_LOOP_POOL
-{
-	WORLD_LOOP_NONE,    // no rep/endrep, loop stack omitted entirely
-	WORLD_LOOP_DEPTH_2, // max nesting depth 2
-	WORLD_LOOP_DEPTH_4, // max nesting depth 4
-
-	WORLD_LOOP_COUNT
-} STD3D_WORLD_LOOP_POOL;
-
 typedef struct std3D_worldStage
 {
 	GLuint program;
 	GLuint vao[STD3D_STAGING_COUNT];
 } std3D_worldStage;
 
-std3D_worldStage worldStages[WORLD_STAGE_COUNT][WORLD_REG_COUNT][WORLD_CALL_COUNT][WORLD_LOOP_COUNT][RD_NUM_TEXCOORDS];
+std3D_worldStage worldStages[WORLD_STAGE_COUNT][WORLD_REG_COUNT][RD_NUM_TEXCOORDS];
 
-#define FOR_EACH_STAGE(FUNC) for (int i = 0; i < RD_NUM_TEXCOORDS; ++i) \
-	for (int j = 0; j < WORLD_LOOP_COUNT; ++j) \
-	for (int k = 0; k < WORLD_CALL_COUNT; ++k) \
-	for (int l = 0; l < WORLD_REG_COUNT; ++l) \
-	for (int m = 0; m < WORLD_STAGE_COUNT; ++m) \
+#define FOR_EACH_STAGE(FUNC) \
+	for (int i = 0; i < RD_NUM_TEXCOORDS; ++i) \
+	for (int j = 0; j < WORLD_REG_COUNT; ++j) \
+	for (int k = 0; k < WORLD_STAGE_COUNT; ++k) \
 	{ \
-		std3D_worldStage* pStage = &worldStages[m][l][k][j][i]; \
+		std3D_worldStage* pStage = &worldStages[k][j][i]; \
 		FUNC; \
 	}
 		
@@ -1952,32 +1933,21 @@ int init_resources()
     if ((programMenu = std3D_loadProgram("shaders/menu", "")) == 0)
 		return false;
 
-	static const int callDepths[WORLD_CALL_COUNT] = { 0, 2, 4 };
-	static const int loopDepths[WORLD_LOOP_COUNT] = { 0, 2, 4 };
-
 	for (int j = 0; j < RD_NUM_TEXCOORDS; ++j)
 	{
 		for (int i = 0; i < WORLD_REG_COUNT; ++i)
 		{
-			for (int k = 0; k < WORLD_CALL_COUNT; ++k)
-			{
-				for (int l = 0; l < WORLD_LOOP_COUNT; ++l)
-				{
-					char tmp[256];
-					int  pos = sprintf_s(tmp, 256, "WORLD;REG_COUNT %d;UV_SETS %d", 2 << i, j + 1);
-					if (callDepths[k] > 0) pos += sprintf_s(tmp + pos, 256 - pos, ";VM_CALL_STACK_DEPTH %d", callDepths[k]);
-					if (loopDepths[l] > 0) pos += sprintf_s(tmp + pos, 256 - pos, ";VM_LOOP_STACK_DEPTH %d", loopDepths[l]);
+			char tmp[128];
+			sprintf_s(tmp, 128, "WORLD;REG_COUNT %d;UV_SETS %d",
+					  2 << i, j + 1);
 
-					if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR][i][k][l][j], 0, tmp)) return false;
+			if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR][i][j], 0, tmp)) return false;
 
-					char alphatmp[256];
-					pos = sprintf_s(alphatmp, 256, "ALPHA_DISCARD;WORLD;REG_COUNT %d;UV_SETS %d", 2 << i, j + 1);
-					if (callDepths[k] > 0) pos += sprintf_s(alphatmp + pos, 256 - pos, ";VM_CALL_STACK_DEPTH %d", callDepths[k]);
-					if (loopDepths[l] > 0) pos += sprintf_s(alphatmp + pos, 256 - pos, ";VM_LOOP_STACK_DEPTH %d", loopDepths[l]);
+			char alphatmp[128];
+			sprintf_s(alphatmp, 128, "ALPHA_DISCARD;WORLD;REG_COUNT %d;UV_SETS %d",
+					  2 << i, j + 1);
 
-					if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR_ALPHATEST][i][k][l][j], 0, alphatmp)) return false;
-				}
-			}
+			if (!std3D_loadWorldStage(&worldStages[WORLD_STAGE_COLOR_ALPHATEST][i][j], 0, alphatmp)) return false;
 		}
 	}
 
@@ -6198,15 +6168,9 @@ void std3D_SetState(std3D_DrawCallState* pState, uint32_t updateBits)
 	uint32_t reg_index = pState->shaderState.shader ? pState->shaderState.shader->regcount : 2;
 	reg_index = (reg_index > 4) ? 2 : (reg_index > 2) ? 1 : 0;
 
-	uint32_t call_depth = pState->shaderState.shader ? pState->shaderState.shader->callDepth : 0;
-	uint32_t call_index = (call_depth >= 4) ? WORLD_CALL_DEPTH_4 : (call_depth >= 1) ? WORLD_CALL_DEPTH_2 : WORLD_CALL_NONE;
-
-	uint32_t loop_depth = pState->shaderState.shader ? pState->shaderState.shader->repDepth : 0;
-	uint32_t loop_index = (loop_depth >= 4) ? WORLD_LOOP_DEPTH_4 : (loop_depth >= 1) ? WORLD_LOOP_DEPTH_2 : WORLD_LOOP_NONE;
-
 	uint32_t uvindex = pState->textureState.maxTexcoord;
 
-	std3D_worldStage* pStage = &worldStages[stage][reg_index][call_index][loop_index][uvindex]; // todo: fixme
+	std3D_worldStage* pStage = &worldStages[stage][reg_index][uvindex]; // todo: fixme
 
 	//if(updateBits & RD_CACHE_SHADER)
 	//if (updateBits & RD_CACHE_STATEBITS)

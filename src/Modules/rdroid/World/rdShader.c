@@ -14,6 +14,8 @@
 
 #define RD_SHADER_MAX_LABELS 16
 #define RD_SHADER_MAX_FIXUPS 16
+
+#define RD_SHADER_MAX_CALL_DEPTH 4
 #define RD_SHADER_MAX_REP_DEPTH 4
 
 #define RD_SHADER_OPCODE(name, value) \
@@ -1519,6 +1521,13 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 
 	shader->callDepth = assembler.maxCallDepth;
 	shader->repDepth = assembler.maxRepDepth;
+
+	if (shader->callDepth > RD_SHADER_MAX_CALL_DEPTH)
+		stdPlatform_Printf("rdShader: '%s' requires call depth %d but RD_SHADER_MAX_CALL_DEPTH is %d\n",
+						   shader->name, shader->callDepth, RD_SHADER_MAX_CALL_DEPTH);
+	if (shader->repDepth > RD_SHADER_MAX_REP_DEPTH)
+		stdPlatform_Printf("rdShader: '%s' requires loop depth %d but RD_SHADER_MAX_REP_DEPTH is %d\n",
+						   shader->name, shader->repDepth, RD_SHADER_MAX_REP_DEPTH);
 
 	// resolve any forward-referenced call targets
 	rdShader_ResolveFixups(shader);

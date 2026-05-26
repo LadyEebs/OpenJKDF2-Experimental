@@ -17,23 +17,22 @@ import "attr.gli"
 
 #ifdef FRAGMENT_SHADER
 
+#define VM_CALL_STACK_DEPTH 4
+#define VM_LOOP_STACK_DEPTH 4
+
 void run_vm()
 {
 	for (uint i = 0; i < REG_COUNT; ++i)
 		r[i] = 0;
 
-#ifdef VM_CALL_STACK_DEPTH
 	// fixed-depth call stack for subroutine support
 	uint s_callstack[VM_CALL_STACK_DEPTH];
 	uint s_callstack_top = 0u;
-#endif
 
-#ifdef VM_LOOP_STACK_DEPTH
 	// per-loop iteration counters
 	// body-start PC is stored in each OP_ENDREP instruction
 	uint s_loopcounts[VM_LOOP_STACK_DEPTH];
 	uint s_loopstack_top = 0u;
-#endif
 
 	uint s_pc = 0u;
 	while (s_pc < shaderInstructionCount)
@@ -56,7 +55,6 @@ void run_vm()
 		case OP_NOP:
 			return;
 
-#ifdef VM_CALL_STACK_DEPTH
 		case OP_CALL:
 			// push return address and jump to target
 			if (s_callstack_top < uint(VM_CALL_STACK_DEPTH))
@@ -74,9 +72,7 @@ void run_vm()
 				return;
 			s_skip_write = true;
 			break;
-#endif
 
-#ifdef VM_LOOP_STACK_DEPTH
 		case OP_REP:
 			// push the iteration count; body follows immediately
 			if (s_loopstack_top < uint(VM_LOOP_STACK_DEPTH))
@@ -97,7 +93,6 @@ void run_vm()
 			}
 			s_skip_write = true;
 			break;
-#endif // VM_LOOP_STACK_DEPTH
 
 		case OP_MOV:
 			result = s0;
