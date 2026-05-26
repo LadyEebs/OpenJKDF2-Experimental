@@ -183,7 +183,7 @@ layout(binding = UBO_SLOT_OCCLUDERS, std140) uniform occluderBlock
 	occluder occluders[CLUSTER_MAX_OCCLUDERS];
 };
 
-// Global deceal buffer
+// Global decal buffer
 struct decal
 {
 	mat4  decalMatrix;
