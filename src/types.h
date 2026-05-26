@@ -671,6 +671,7 @@ typedef struct rdShader
 	int               hasReadback;
 	uint8_t           regcount;
 	uint8_t           callDepth;
+	uint8_t           repDepth;
 	char              name[32];
 	uint8_t           overrideConstantBits;
 	rdShaderConstants overrideConstants;

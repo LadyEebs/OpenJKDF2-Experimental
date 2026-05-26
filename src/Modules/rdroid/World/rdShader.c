@@ -12,6 +12,10 @@
 
 #include "Modules/std/std3D.h"
 
+#define RD_SHADER_MAX_LABELS 16
+#define RD_SHADER_MAX_FIXUPS 16
+#define RD_SHADER_MAX_REP_DEPTH 4
+
 #define RD_SHADER_OPCODE(name, value) \
     { #name, value },
 
@@ -88,9 +92,6 @@ typedef struct rdShader_Macro
 } rdShader_Macro;
 
 // label defined in the shader source (name:)
-#define RD_SHADER_MAX_LABELS 16
-#define RD_SHADER_MAX_FIXUPS 16
-
 typedef struct
 {
 	char    name[32];
@@ -115,6 +116,9 @@ typedef struct
 	int             fixupCount;
 	uint8_t         currentCallDepth;
 	uint8_t         maxCallDepth;
+	uint8_t         repStack[RD_SHADER_MAX_REP_DEPTH]; // PC of each open rep body start
+	uint8_t         repDepth;                          // current nesting level
+	uint8_t         maxRepDepth;                       // high-water mark -> shader->repDepth
 } rdShader_Assembler;
 
 rdShader_Assembler* rdShader_pCurrentAssembler = NULL;
@@ -1447,6 +1451,59 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 						--assembler.currentCallDepth;
 				}
 			}
+			else if (strnicmp(ln, "rep", 3) == 0 && (ln[3] == '\0' || isspace((unsigned char)ln[3])))
+			{
+				// rep <count>: push iteration count, body starts at the next instruction
+				if (assembler.repDepth >= RD_SHADER_MAX_REP_DEPTH)
+					goto next_line; // todo: error, loop nesting too deep
+
+				if (shader->byteCode.instructionCount < (int)ARRAY_SIZE(shader->byteCode.instructions))
+				{
+					char* countSrc = ln + 3;
+					while (isspace((unsigned char)*countSrc))
+						++countSrc;
+
+					// parse the count as a plain source operand (must be constant or immediate)
+					rdShader_SrcOperand countOp;
+					memset(&countOp, 0, sizeof(rdShader_SrcOperand));
+					rdShader_ParseSourceOperand(countSrc, &countOp);
+
+					rdShaderInstr* out = &shader->byteCode.instructions[shader->byteCode.instructionCount];
+					memset(out, 0, sizeof(rdShaderInstr));
+					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_REP, 0, 0,
+															RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
+					out->src0 = rdShader_AssembleSrc(0,
+													 countOp.reg.type, countOp.reg.fmt,
+													 countOp.reg.address, countOp.reg.abs,
+													 countOp.reg.swizzle, countOp.reg.unary,
+													 countOp.mult, countOp.reduction);
+
+					// record body-start PC (instruction immediately after this rep)
+					assembler.repStack[assembler.repDepth++] = (uint8_t)(shader->byteCode.instructionCount + 1);
+					if (assembler.repDepth > assembler.maxRepDepth)
+						assembler.maxRepDepth = assembler.repDepth;
+
+					shader->byteCode.instructionCount++;
+				}
+			}
+			else if (strnicmp(ln, "endrep", 6) == 0 && (ln[6] == '\0' || isspace((unsigned char)ln[6])))
+			{
+				// endrep: jump back to body start if counter not exhausted
+				if (assembler.repDepth == 0)
+					goto next_line; // todo: error, unmatched endrep
+
+				if (shader->byteCode.instructionCount < (int)ARRAY_SIZE(shader->byteCode.instructions))
+				{
+					uint8_t bodyStart = assembler.repStack[--assembler.repDepth];
+
+					rdShaderInstr* out = &shader->byteCode.instructions[shader->byteCode.instructionCount];
+					memset(out, 0, sizeof(rdShaderInstr));
+					// body-start PC stored in addr field so the VM can branch back
+					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_ENDREP, 0, bodyStart,
+															RD_SWIZZLE_XYZW, 0, 0, 0, 0, 0, 0);
+					shader->byteCode.instructionCount++;
+				}
+			}
 			else
 			{
 				int remaining = (int)ARRAY_SIZE(shader->byteCode.instructions) - (int)shader->byteCode.instructionCount;
@@ -1455,11 +1512,13 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 			}
 		}
 
+	next_line:;
 		if (shader->byteCode.instructionCount >= ARRAY_SIZE(shader->byteCode.instructions))
 			break;
 	}
 
 	shader->callDepth = assembler.maxCallDepth;
+	shader->repDepth = assembler.maxRepDepth;
 
 	// resolve any forward-referenced call targets
 	rdShader_ResolveFixups(shader);

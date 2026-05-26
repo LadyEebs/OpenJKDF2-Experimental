@@ -28,6 +28,13 @@ void run_vm()
 	uint s_callstack_top = 0u;
 #endif
 
+#ifdef VM_LOOP_STACK_DEPTH
+	// per-loop iteration counters
+	// body-start PC is stored in each OP_ENDREP instruction
+	uint s_loopcounts[VM_LOOP_STACK_DEPTH];
+	uint s_loopstack_top = 0u;
+#endif
+
 	uint s_pc = 0u;
 	while (s_pc < shaderInstructionCount)
 	{
@@ -68,6 +75,29 @@ void run_vm()
 			s_skip_write = true;
 			break;
 #endif
+
+#ifdef VM_LOOP_STACK_DEPTH
+		case OP_REP:
+			// push the iteration count; body follows immediately
+			if (s_loopstack_top < uint(VM_LOOP_STACK_DEPTH))
+				s_loopcounts[s_loopstack_top++] = uint(s0.x);
+			s_skip_write = true;
+			break;
+
+		case OP_ENDREP:
+			// decrement top counter
+			// jump back if still iterating, otherwise pop
+			if (s_loopstack_top > 0u)
+			{
+				s_loopcounts[s_loopstack_top - 1u]--;
+				if (s_loopcounts[s_loopstack_top - 1u] > 0u)
+					s_pc = s_ir.dst.addr; // dst.addr = body-start PC baked in by assembler
+				else
+					s_loopstack_top--;
+			}
+			s_skip_write = true;
+			break;
+#endif // VM_LOOP_STACK_DEPTH
 
 		case OP_MOV:
 			result = s0;
