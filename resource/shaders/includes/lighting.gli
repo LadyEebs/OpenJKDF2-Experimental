@@ -31,8 +31,10 @@ struct light_result
 	uint diffuse;
 	uint specular;
 
+#ifdef LIGHTING_DEBUG
 	// debug
 	float cost;
+#endif
 };
 
 uint calc_spec_c(float a)
@@ -104,7 +106,6 @@ bool broadcast(bool value)
 struct light_data
 {
 	vec3   lvec;
-	float  rcpLen;
 	float  len;
 	float  lenSq;
 };
@@ -115,9 +116,10 @@ light_data calc_light_data(vec3 light, vec3 pos)
 	light_data data;
 	data.lvec   = light.xyz - pos.xyz;
 	data.lenSq  = dot(data.lvec, data.lvec);
-	data.rcpLen = fastRcpSqrtNR1(data.lenSq);
-	data.len    = data.rcpLen * data.lenSq;
-	data.lvec   = data.lvec * data.rcpLen;
+	
+	float rcpLen = fastRcpSqrtNR1(data.lenSq);
+	data.len     = rcpLen * data.lenSq;
+	data.lvec    = data.lvec * rcpLen;
 	return data;
 }
 
@@ -250,8 +252,11 @@ float calc_default_atten(uint light_index, light_data data)
 
 void calc_point_light(inout light_result result, uint light_index, light_input params)
 {
+	const uint lightType     = lights[light_index].type;
+	const uint lightFalloff  = lights[light_index].falloffType;
+
 	light_data data;
-	switch (lights[light_index].type)
+	switch (lightType)
 	{
 	case RD_LIGHT_RECTANGLE:
 		data = calc_rect_light_data(light_index, params);
@@ -277,7 +282,7 @@ void calc_point_light(inout light_result result, uint light_index, light_input p
 		return;
 
 	// attenuation
-	switch(lights[light_index].falloffType)
+	switch(lightFalloff)
 	{
 	case RD_FALLOFF_QUADRATIC:
 		intensity *= calc_quadratic_atten(light_index, data);
@@ -297,7 +302,7 @@ void calc_point_light(inout light_result result, uint light_index, light_input p
 	//float signedMagnitude = lightMagnitude;
 	//lightMagnitude = max(lightMagnitude, float(0.0)) * intensity;
 
-	vec3 cd = vec3(lightMagnitude);
+	//vec3 cd = vec3(lightMagnitude);
 	//if (lightMode == 5)
 	//{
 	//	// https://www.shadertoy.com/view/dltGWl
@@ -312,9 +317,10 @@ void calc_point_light(inout light_result result, uint light_index, light_input p
 	//}
 
 	vec3 lightColor = lights[light_index].color.rgb;
-	if (lights[light_index].type > 0)
+	if (lightType > 0)
 	{
-	 	result.diffuse = packF2x11_1x10(cd.rgb * lightColor.rgb + (unpackF2x11_1x10(result.diffuse)));
+		result.diffuse = packF2x11_1x10(lightMagnitude * lightColor.rgb + (unpackF2x11_1x10(result.diffuse)));
+	 	//result.diffuse = packF2x11_1x10(cd.rgb * lightColor.rgb + (unpackF2x11_1x10(result.diffuse)));
 		//result.diffuse = cd.rgb * lightColor.rgb + result.diffuse;
 	}
 	else
@@ -322,7 +328,9 @@ void calc_point_light(inout light_result result, uint light_index, light_input p
 		lightColor *= unpackUnorm4x8(params.tint).rgb;
 	}
 
+#ifdef LIGHTING_DEBUG
 	result.cost += 1.0;
+#endif
 
 #ifdef WORLD
 	if (lightMode > 3)
@@ -358,7 +366,9 @@ void calc_point_light(inout light_result result, uint light_index, light_input p
 
 		result.specular = packF2x11_1x10((lightMagnitude * d) * lightColor.rgb + (unpackF2x11_1x10(result.specular)));
 		//result.specular = lightColor.rgb * vec3(lightMagnitude * d) + result.specular;
+	#ifdef LIGHTING_DEBUG
 		result.cost += 0.25;
+	#endif
 	}
 }
 

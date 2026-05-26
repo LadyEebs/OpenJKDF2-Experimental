@@ -94,7 +94,11 @@ float calc_light()
 		v[0] = (v[0] & 0xFF000000) | (v0 & 0x00FFFFFF);
 		v[1] = (v[1] & 0xFF000000) | (v1 & 0x00FFFFFF);
 		
+	#ifdef LIGHTING_DEBUG
 		return result.cost;
+	#else
+		return 1.0f;
+	#endif
 	} // lightMode < 2
 
 	return 0.0;
