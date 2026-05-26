@@ -79,6 +79,14 @@ typedef struct rdShader_Alias
 	struct rdShader_Alias* next;
 } rdShader_Alias;
 
+typedef int (*rdShader_MacroFn)(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut);
+typedef struct rdShader_Macro
+{
+	const char*      name;
+	uint8_t          srcCount;
+	rdShader_MacroFn expand;
+} rdShader_Macro;
+
 typedef struct
 {
 	stdHashTable*   aliasHash;
@@ -87,6 +95,379 @@ typedef struct
 } rdShader_Assembler;
 
 rdShader_Assembler* rdShader_pCurrentAssembler = NULL;
+
+// sub dst, a, b  ->  add dst, a, -b
+static int rdShader_MacroExpandSUB(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+
+	inst->opcode = RD_SHADER_OP_ADD;
+	inst->src[1].reg.unary = RD_SHADER_NEGATE;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// neg dst, a  ->  mov dst, -a
+static int rdShader_MacroExpandNEG(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+
+	inst->opcode = RD_SHADER_OP_MOV;
+	inst->src[0].reg.unary = RD_SHADER_NEGATE;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// sat dst, a  ->  mov dst, a  [clamp]
+static int rdShader_MacroExpandSAT(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+
+	inst->opcode = RD_SHADER_OP_MOV;
+	inst->clamp = 1;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// abs dst, a  ->  mov dst, abs(a)
+static int rdShader_MacroExpandABS(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+	inst->opcode = RD_SHADER_OP_MOV;
+	inst->src[0].reg.abs = 1;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// lerp dst, a, b, t -> sub tmp, b, a   (add tmp, b, -a)
+//                      mad dst, tmp, t, a
+static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 2)
+		return 0;
+
+	// find a free temp register for the intermediate result
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	// instruction 0: add tmp, src[1], -src[0]  (b - a)
+	rdShader_Instruction sub;
+	memset(&sub, 0, sizeof(rdShader_Instruction));
+	sub.opcode = RD_SHADER_OP_ADD;
+	sub.srcCount = 2;
+	sub.dest.reg.type = RD_SHADER_GPR;
+	sub.dest.reg.address = tmpReg;
+	sub.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	sub.dest.reg.mask = RD_WRITE_RGBA;
+	sub.src[0] = inst->src[1];            // b
+	sub.src[1] = inst->src[0];            // a
+	sub.src[1].reg.unary = RD_SHADER_NEGATE; // -a
+
+	if (!rdShader_AssembleInstruction(&out[0], &sub))
+		return 0;
+
+	// instruction 1: mad dst, tmp, t, a
+	rdShader_Instruction mad;
+	memset(&mad, 0, sizeof(rdShader_Instruction));
+	mad.opcode = RD_SHADER_OP_MAD;
+	mad.srcCount = 3;
+	mad.dest = inst->dest;
+	mad.src[0].reg.type = RD_SHADER_GPR;
+	mad.src[0].reg.address = tmpReg;
+	mad.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	mad.src[0].reg.mask = RD_WRITE_RGBA;
+	mad.src[1] = inst->src[2]; // t
+	mad.src[2] = inst->src[0]; // a
+
+	if (!rdShader_AssembleInstruction(&out[1], &mad))
+		return 0;
+
+	// consume the temp register
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 2;
+}
+
+// sqrt dst, a  ->  rsqrt tmp, a
+//                  rcp   dst, tmp
+static int rdShader_MacroExpandSQRT(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 2)
+		return 0;
+
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	rdShader_Instruction rsqrt;
+	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
+	rsqrt.opcode = RD_SHADER_OP_RSQRT;
+	rsqrt.srcCount = 1;
+	rsqrt.dest.reg.type = RD_SHADER_GPR;
+	rsqrt.dest.reg.address = tmpReg;
+	rsqrt.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	rsqrt.dest.reg.mask = RD_WRITE_RGBA;
+	rsqrt.src[0] = inst->src[0];
+
+	if (!rdShader_AssembleInstruction(&out[0], &rsqrt))
+		return 0;
+
+	rdShader_Instruction rcp;
+	memset(&rcp, 0, sizeof(rdShader_Instruction));
+	rcp.opcode = RD_SHADER_OP_RCP;
+	rcp.srcCount = 1;
+	rcp.dest = inst->dest;
+	rcp.src[0].reg.type = RD_SHADER_GPR;
+	rcp.src[0].reg.address = tmpReg;
+	rcp.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	rcp.src[0].reg.mask = RD_WRITE_RGBA;
+
+	if (!rdShader_AssembleInstruction(&out[1], &rcp))
+		return 0;
+
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 2;
+}
+
+// clamp dst, a, lo, hi  ->  max tmp, a,   lo
+//                           min dst, tmp, hi
+static int rdShader_MacroExpandCLAMP(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 2)
+		return 0;
+
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	rdShader_Instruction maxInst;
+	memset(&maxInst, 0, sizeof(rdShader_Instruction));
+	maxInst.opcode = RD_SHADER_OP_MAX;
+	maxInst.srcCount = 2;
+	maxInst.dest.reg.type = RD_SHADER_GPR;
+	maxInst.dest.reg.address = tmpReg;
+	maxInst.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	maxInst.dest.reg.mask = RD_WRITE_RGBA;
+	maxInst.src[0] = inst->src[0]; // a
+	maxInst.src[1] = inst->src[1]; // lo
+
+	if (!rdShader_AssembleInstruction(&out[0], &maxInst))
+		return 0;
+
+	rdShader_Instruction minInst;
+	memset(&minInst, 0, sizeof(rdShader_Instruction));
+	minInst.opcode = RD_SHADER_OP_MIN;
+	minInst.srcCount = 2;
+	minInst.dest = inst->dest;
+	minInst.src[0].reg.type = RD_SHADER_GPR;
+	minInst.src[0].reg.address = tmpReg;
+	minInst.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	minInst.src[0].reg.mask = RD_WRITE_RGBA;
+	minInst.src[1] = inst->src[2]; // hi
+
+	if (!rdShader_AssembleInstruction(&out[1], &minInst))
+		return 0;
+
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 2;
+}
+
+// pow dst, a, b  ->  log2 tmp, a
+//                    mul  tmp, tmp, b
+//                    exp2 dst, tmp
+static int rdShader_MacroExpandPOW(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 3)
+		return 0;
+
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	// instruction 0: log2 tmp, a
+	rdShader_Instruction log2inst;
+	memset(&log2inst, 0, sizeof(rdShader_Instruction));
+	log2inst.opcode = RD_SHADER_OP_LOG2;
+	log2inst.srcCount = 1;
+	log2inst.dest.reg.type = RD_SHADER_GPR;
+	log2inst.dest.reg.address = tmpReg;
+	log2inst.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	log2inst.dest.reg.mask = RD_WRITE_RGBA;
+	log2inst.src[0] = inst->src[0]; // a
+
+	if (!rdShader_AssembleInstruction(&out[0], &log2inst))
+		return 0;
+
+	// instruction 1: MUL tmp, tmp, b
+	rdShader_Instruction mul;
+	memset(&mul, 0, sizeof(rdShader_Instruction));
+	mul.opcode = RD_SHADER_OP_MUL;
+	mul.srcCount = 2;
+	mul.dest.reg.type = RD_SHADER_GPR;
+	mul.dest.reg.address = tmpReg;
+	mul.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	mul.dest.reg.mask = RD_WRITE_RGBA;
+	mul.src[0].reg.type = RD_SHADER_GPR;
+	mul.src[0].reg.address = tmpReg;
+	mul.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	mul.src[0].reg.mask = RD_WRITE_RGBA;
+	mul.src[1] = inst->src[1]; // b
+
+	if (!rdShader_AssembleInstruction(&out[1], &mul))
+		return 0;
+
+	// instruction 2: exp2 dst, tmp
+	rdShader_Instruction exp2inst;
+	memset(&exp2inst, 0, sizeof(rdShader_Instruction));
+	exp2inst.opcode = RD_SHADER_OP_EXP2;
+	exp2inst.srcCount = 1;
+	exp2inst.dest = inst->dest;
+	exp2inst.src[0].reg.type = RD_SHADER_GPR;
+	exp2inst.src[0].reg.address = tmpReg;
+	exp2inst.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	exp2inst.src[0].reg.mask = RD_WRITE_RGBA;
+
+	if (!rdShader_AssembleInstruction(&out[2], &exp2inst))
+		return 0;
+
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 3;
+}
+
+// crs dst, a, b  ->  mul tmp, a.yzxw, b.zxyw
+//                    mad dst, a.zxyw, -b.yzxw, tmp
+// 
+// expands to:  dst.x = a.y*b.z - a.z*b.y
+//              dst.y = a.z*b.x - a.x*b.z
+//              dst.z = a.x*b.y - a.y*b.x
+static int rdShader_MacroExpandCROSS(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 2)
+		return 0;
+
+	// yzxw: (y = 1) | (z = 2) << 2 | (x = 0) << 4 | (w = 3) << 6
+	const uint8_t swizzle_yzxw = (1) | (2 << 2) | (0 << 4) | (3 << 6);
+	// zxyw: (z = 2) | (x = 0) << 2 | (y = 1) << 4 | (w = 3) << 6
+	const uint8_t swizzle_zxyw = (2) | (0 << 2) | (1 << 4) | (3 << 6);
+
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	// instruction 0: mul tmp, a.yzxw, b.zxyw
+	rdShader_Instruction mul;
+	memset(&mul, 0, sizeof(rdShader_Instruction));
+	mul.opcode = RD_SHADER_OP_MUL;
+	mul.srcCount = 2;
+	mul.dest.reg.type = RD_SHADER_GPR;
+	mul.dest.reg.address = tmpReg;
+	mul.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	mul.dest.reg.mask = RD_WRITE_RGBA;
+	mul.src[0] = inst->src[0];
+	mul.src[0].reg.swizzle = swizzle_yzxw; // a.yzxw
+	mul.src[1] = inst->src[1];
+	mul.src[1].reg.swizzle = swizzle_zxyw; // b.zxyw
+
+	if (!rdShader_AssembleInstruction(&out[0], &mul))
+		return 0;
+
+	// instruction 1: mad dst, a.zxyw, -b.yzxw, tmp
+	rdShader_Instruction mad;
+	memset(&mad, 0, sizeof(rdShader_Instruction));
+	mad.opcode = RD_SHADER_OP_MAD;
+	mad.srcCount = 3;
+	mad.dest = inst->dest;
+	mad.src[0] = inst->src[0];
+	mad.src[0].reg.swizzle = swizzle_zxyw;   // a.zxyw
+	mad.src[1] = inst->src[1];
+	mad.src[1].reg.swizzle = swizzle_yzxw;   // b.yzxw
+	mad.src[1].reg.unary = RD_SHADER_NEGATE; // -b.yzxw
+	mad.src[2].reg.type = RD_SHADER_GPR;
+	mad.src[2].reg.address = tmpReg;
+	mad.src[2].reg.swizzle = RD_SWIZZLE_XYZW;
+	mad.src[2].reg.mask = RD_WRITE_RGBA;
+
+	if (!rdShader_AssembleInstruction(&out[1], &mad))
+		return 0;
+
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 2;
+}
+
+// nrm dst, a  ->  dp3   tmp, a, a       (|a|^2)
+//                 rsqrt tmp, tmp         (1/|a|)
+//                 mul   dst, a, tmp      (a / |a|)
+static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 3)
+		return 0;
+
+	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+
+	// instruction 0: dp3 tmp, a, a
+	rdShader_Instruction dp3;
+	memset(&dp3, 0, sizeof(rdShader_Instruction));
+	dp3.opcode = RD_SHADER_OP_DP3;
+	dp3.srcCount = 2;
+	dp3.dest.reg.type = RD_SHADER_GPR;
+	dp3.dest.reg.address = tmpReg;
+	dp3.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	dp3.dest.reg.mask = RD_WRITE_RGBA;
+	dp3.src[0] = inst->src[0]; // a
+	dp3.src[1] = inst->src[0]; // a
+
+	if (!rdShader_AssembleInstruction(&out[0], &dp3))
+		return 0;
+
+	// instruction 1: rsqrt tmp, tmp
+	rdShader_Instruction rsqrt;
+	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
+	rsqrt.opcode = RD_SHADER_OP_RSQRT;
+	rsqrt.srcCount = 1;
+	rsqrt.dest.reg.type = RD_SHADER_GPR;
+	rsqrt.dest.reg.address = tmpReg;
+	rsqrt.dest.reg.swizzle = RD_SWIZZLE_XYZW;
+	rsqrt.dest.reg.mask = RD_WRITE_RGBA;
+	rsqrt.src[0].reg.type = RD_SHADER_GPR;
+	rsqrt.src[0].reg.address = tmpReg;
+	rsqrt.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
+	rsqrt.src[0].reg.mask = RD_WRITE_RGBA;
+
+	if (!rdShader_AssembleInstruction(&out[1], &rsqrt))
+		return 0;
+
+	// instruction 2: mul dst, a, tmp
+	rdShader_Instruction mul;
+	memset(&mul, 0, sizeof(rdShader_Instruction));
+	mul.opcode = RD_SHADER_OP_MUL;
+	mul.srcCount = 2;
+	mul.dest = inst->dest;
+	mul.src[0] = inst->src[0]; // a
+	mul.src[1].reg.type = RD_SHADER_GPR;
+	mul.src[1].reg.address = tmpReg;
+	mul.src[1].reg.swizzle = RD_SWIZZLE_XYZW;
+	mul.src[1].reg.mask = RD_WRITE_RGBA;
+
+	if (!rdShader_AssembleInstruction(&out[2], &mul))
+		return 0;
+
+	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
+	return 3;
+}
+
+static const rdShader_Macro rdShader_macros[] =
+{
+	{ "sub",   2, rdShader_MacroExpandSUB   },
+	{ "neg",   1, rdShader_MacroExpandNEG   },
+	{ "sat",   1, rdShader_MacroExpandSAT   },
+	{ "abs",   1, rdShader_MacroExpandABS   },
+	{ "lrp",   3, rdShader_MacroExpandLERP  },
+	{ "sqrt",  1, rdShader_MacroExpandSQRT  },
+	{ "clamp", 3, rdShader_MacroExpandCLAMP },
+	{ "pow",   2, rdShader_MacroExpandPOW   },
+	{ "crs",   2, rdShader_MacroExpandCROSS },
+	{ "nrm",   1, rdShader_MacroExpandNRM   },
+};
+
+static const rdShader_Macro* rdShader_FindMacro(const char* name)
+{
+	for (int i = 0; i < ARRAY_SIZE(rdShader_macros); ++i)
+	{
+		if (stricmp(name, rdShader_macros[i].name) == 0)
+			return &rdShader_macros[i];
+	}
+	return NULL;
+}
 
 static uint8_t rdShader_ParseOpCode(const char* name)
 {
@@ -103,8 +484,10 @@ static uint8_t rdShader_ParseOpCode(const char* name)
 			return rdShader_opcodeNames[i].token;
 		}
 	}
+
 	if (swizzle)
 		*swizzle = '.';
+
 	return RD_SHADER_OP_NOP;
 }
 
@@ -700,7 +1083,7 @@ void rdShader_ParseInstructionModifiers(const char* modifierStart, rdShader_Inst
 	}
 }
 
-int rdShader_ParseInstruction(char* line, rdShaderInstr* result)
+int rdShader_ParseInstruction(char* line, rdShaderInstr* result, int maxOut)
 {
 	rdShader_Instruction inst;
 	memset(&inst, 0, sizeof(rdShader_Instruction));
@@ -715,10 +1098,17 @@ int rdShader_ParseInstruction(char* line, rdShaderInstr* result)
 	if (!token)
 		return 0;
 
-	// parse the opcode
+	// try real opcode first
 	inst.opcode = rdShader_ParseOpCode(token);
+
+	// fallback to macro lookup
+	const rdShader_Macro* macro = NULL;
 	if (inst.opcode == RD_SHADER_OP_NOP)
-		return 0;
+	{
+		macro = rdShader_FindMacro(token);
+		if (!macro)
+			return 0;
+	}
 
 	if (inst.src[0].reg.type == RD_SHADER_TEX && inst.src[0].reg.address == 4)
 		rdShader_pCurrentAssembler->shader->hasReadback = 1;
@@ -731,7 +1121,7 @@ int rdShader_ParseInstruction(char* line, rdShaderInstr* result)
 	rdShader_ParseDestinationOperand(token, &inst.dest);
 
 	// parse the source operands
-	inst.srcCount = rdShader_OperandCount(inst.opcode);
+	inst.srcCount = macro ? macro->srcCount : rdShader_OperandCount(inst.opcode);
 	for (int i = 0; i < inst.srcCount; ++i)
 	{
 		token = strtok(NULL, ",");
@@ -784,6 +1174,10 @@ int rdShader_ParseInstruction(char* line, rdShaderInstr* result)
 		if (modifiers)
 			rdShader_ParseInstructionModifiers(modifiers + 1, &inst);
 	}
+
+	// expand macro or assemble single instruction
+	if (macro)
+		return macro->expand(&inst, result, maxOut);
 
 	return rdShader_AssembleInstruction(result, &inst);
 }
@@ -908,9 +1302,15 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 		if (ln && *ln)
 		{
 			if (strnicmp(ln, "alias", 5) == 0)
+			{
 				rdShader_ParseAlias(ln + 5);
-			else if (rdShader_ParseInstruction(stdConffile_aLine, &shader->byteCode.instructions[shader->byteCode.instructionCount]))
-				++shader->byteCode.instructionCount;
+			}
+			else
+			{
+				int remaining = (int)ARRAY_SIZE(shader->byteCode.instructions) - (int)shader->byteCode.instructionCount;
+				int emitted = rdShader_ParseInstruction(stdConffile_aLine, &shader->byteCode.instructions[shader->byteCode.instructionCount], remaining);
+				shader->byteCode.instructionCount += emitted;
+			}
 		}
 
 		if (shader->byteCode.instructionCount >= ARRAY_SIZE(shader->byteCode.instructions))

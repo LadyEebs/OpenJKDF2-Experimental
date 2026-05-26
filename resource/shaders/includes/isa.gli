@@ -25,20 +25,16 @@ import "uniforms.gli"
 #define OP_MAD		12	// multiply add
 #define OP_MAX		13	// maximum
 #define OP_MIN		14	// minimum
-#define OP_MIX		15	// mix/interpolate
-#define OP_MOV		16	// move
-#define OP_MUL		17	// multiply
-#define OP_POM		18	// parallax
-#define OP_POW		19	// power
-#define OP_RCP		20	// reciprocal
-#define OP_RSQRT	21	// reciprocal square root
-#define OP_SIN		22	// sine
-#define OP_SQRT		23	// square root
-#define OP_SUB		24	// subtract
-#define OP_TEX		25	// texture
-#define OP_TEXLOD	26	// texture lod
-#define OP_TEXADD	27	// texture + offset
-#define OP_TEXINFO	28	// texture info (size, mips)
+#define OP_MOV		15	// move
+#define OP_MUL		16	// multiply
+#define OP_POM		17	// parallax
+#define OP_RCP		18	// reciprocal
+#define OP_RSQRT	19	// reciprocal square root
+#define OP_SIN		20	// sine
+#define OP_TEX		21	// texture
+#define OP_TEXLOD	22	// texture lod
+#define OP_TEXADD	23	// texture + offset
+#define OP_TEXINFO	24	// texture info (size, mips)
 
 // register types
 #define REG_TYPE_GPR     0	// register
