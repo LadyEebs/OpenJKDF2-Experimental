@@ -87,11 +87,32 @@ typedef struct rdShader_Macro
 	rdShader_MacroFn expand;
 } rdShader_Macro;
 
+// label defined in the shader source (name:)
+#define RD_SHADER_MAX_LABELS 16
+#define RD_SHADER_MAX_FIXUPS 16
+
+typedef struct
+{
+	char    name[32];
+	uint8_t pc;
+} rdShader_Label;
+
+// forward-reference fixup: patch the call target once all labels are resolved
+typedef struct
+{
+	char     name[32];
+	uint16_t instrIdx;
+} rdShader_Fixup;
+
 typedef struct
 {
 	stdHashTable*   aliasHash;
 	rdShader_Alias* firstAlias;
 	rdShader*       shader;
+	rdShader_Label  labels[RD_SHADER_MAX_LABELS];
+	int             labelCount;
+	rdShader_Fixup  fixups[RD_SHADER_MAX_FIXUPS];
+	int             fixupCount;
 } rdShader_Assembler;
 
 rdShader_Assembler* rdShader_pCurrentAssembler = NULL;
@@ -1182,6 +1203,87 @@ int rdShader_ParseInstruction(char* line, rdShaderInstr* result, int maxOut)
 	return rdShader_AssembleInstruction(result, &inst);
 }
 
+// returns 1 if the line is a label definition ("label:")
+static int rdShader_IsLabelDefinition(const char* ln)
+{
+	const char* p = ln;
+	while (*p && (isalnum((unsigned char)*p) || *p == '_'))
+		++p;
+	return (*p == ':' && p > ln);
+}
+
+static void rdShader_DefineLabel(const char* ln, uint8_t pc)
+{
+	const char* colon = _strchr(ln, ':');
+	if (!colon || colon == ln)
+		return;
+
+	rdShader_Assembler* asmblr = rdShader_pCurrentAssembler;
+	if (asmblr->labelCount >= RD_SHADER_MAX_LABELS)
+		return; // todo: error
+
+	rdShader_Label* label = &asmblr->labels[asmblr->labelCount++];
+	int len = (int)(colon - ln);
+	if (len >= (int)sizeof(label->name))
+		len = (int)sizeof(label->name) - 1;
+
+	memcpy(label->name, ln, len);
+	label->name[len] = '\0';
+	label->pc = pc;
+}
+
+static int rdShader_LookupLabel(const char* name)
+{
+	rdShader_Assembler* asmblr = rdShader_pCurrentAssembler;
+	for (int i = 0; i < asmblr->labelCount; ++i)
+	{
+		if (stricmp(asmblr->labels[i].name, name) == 0)
+			return (int)asmblr->labels[i].pc;
+	}
+	return -1;
+}
+
+// emit a call instruction
+// registers a fixup if the label isn't defined yet
+static void rdShader_EmitCall(const char* labelName, rdShaderInstr* out, int instrIdx)
+{
+	memset(out, 0, sizeof(rdShaderInstr));
+
+	int targetPc = rdShader_LookupLabel(labelName);
+	if (targetPc < 0)
+	{
+		// forward reference: record a fixup and emit with a placeholder address
+		rdShader_Assembler* asmblr = rdShader_pCurrentAssembler;
+		if (asmblr->fixupCount < RD_SHADER_MAX_FIXUPS)
+		{
+			rdShader_Fixup* fixup = &asmblr->fixups[asmblr->fixupCount++];
+			stdString_SafeStrCopy(fixup->name, labelName, sizeof(fixup->name));
+			fixup->instrIdx = (uint16_t)instrIdx;
+		}
+		targetPc = 0; // placeholder, patched by rdShader_ResolveFixups
+	}
+
+	out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_CALL, 0, (uint8_t)targetPc,
+											RD_SWIZZLE_XYZW, 0, RD_WRITE_RGBA, 0, 0, 0, 0);
+}
+
+// patch any forward-referenced call targets after all labels are known
+static void rdShader_ResolveFixups(rdShader* shader)
+{
+	rdShader_Assembler* asmblr = rdShader_pCurrentAssembler;
+	for (int i = 0; i < asmblr->fixupCount; ++i)
+	{
+		rdShader_Fixup* fixup = &asmblr->fixups[i];
+		int pc = rdShader_LookupLabel(fixup->name);
+		if (pc < 0)
+			continue; // unresolved label, leave as placeholder
+
+		// patch the addr field (bits 10-15) in op_dst
+		rdShaderInstr* instr = &shader->byteCode.instructions[fixup->instrIdx];
+		instr->op_dst = (instr->op_dst & ~(0x3Fu << 10)) | (((uint32_t)pc & 0x3Fu) << 10);
+	}
+}
+
 static void rdShader_InitAliasHash(rdShader_Assembler* assembler)
 {
 	assembler->aliasHash = stdHashTable_New(64);
@@ -1305,6 +1407,37 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 			{
 				rdShader_ParseAlias(ln + 5);
 			}
+			else if (rdShader_IsLabelDefinition(ln))
+			{
+				// label definition: record the current PC for this name
+				rdShader_DefineLabel(ln, (uint8_t)shader->byteCode.instructionCount);
+			}
+			else if (strnicmp(ln, "call", 4) == 0 && (ln[4] == '\0' || isspace((unsigned char)ln[4])))
+			{
+				// call <label>
+				char* labelName = ln + 4;
+				while (isspace((unsigned char)*labelName))
+					++labelName;
+
+				if (*labelName && shader->byteCode.instructionCount < (int)ARRAY_SIZE(shader->byteCode.instructions))
+				{
+					int idx = shader->byteCode.instructionCount;
+					rdShader_EmitCall(labelName, &shader->byteCode.instructions[idx], idx);
+					shader->byteCode.instructionCount++;
+				}
+			}
+			else if (strnicmp(ln, "ret", 3) == 0 && (ln[3] == '\0' || isspace((unsigned char)ln[3])))
+			{
+				// return from subroutine
+				if (shader->byteCode.instructionCount < (int)ARRAY_SIZE(shader->byteCode.instructions))
+				{
+					rdShaderInstr* out = &shader->byteCode.instructions[shader->byteCode.instructionCount];
+					memset(out, 0, sizeof(rdShaderInstr));
+					out->op_dst = rdShader_AssembleOpAndDst(RD_SHADER_OP_RET, 0, 0,
+															RD_SWIZZLE_XYZW, 0, RD_WRITE_RGBA, 0, 0, 0, 0);
+					shader->byteCode.instructionCount++;
+				}
+			}
 			else
 			{
 				int remaining = (int)ARRAY_SIZE(shader->byteCode.instructions) - (int)shader->byteCode.instructionCount;
@@ -1316,6 +1449,9 @@ int rdShader_LoadEntry(char* fpath, rdShader* shader)
 		if (shader->byteCode.instructionCount >= ARRAY_SIZE(shader->byteCode.instructions))
 			break;
 	}
+
+	// resolve any forward-referenced call targets
+	rdShader_ResolveFixups(shader);
 
 	if (shader->regcount >= 8)
 	//todo error

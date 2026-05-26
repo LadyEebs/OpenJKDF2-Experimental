@@ -11,30 +11,32 @@ import "uniforms.gli"
 
 // op codes, must match rdShader_OpCodes
 #define OP_NOP		 0	// no op
-#define OP_ADD		 1	// addition
-#define OP_CMP		 2	// compare
-#define OP_CND		 3	// condition
-#define OP_COS		 4	// cosine
-#define OP_DIV		 5	// division
-#define OP_DP2		 6	// dot2
-#define OP_DP3		 7	// dot3
-#define OP_DP4		 8	// dot4
-#define OP_EXP2		 9	// base 2 exponential
-#define OP_FRC		10	// fractional
-#define OP_LOG2		11	// base 2 logarithm
-#define OP_MAD		12	// multiply add
-#define OP_MAX		13	// maximum
-#define OP_MIN		14	// minimum
-#define OP_MOV		15	// move
-#define OP_MUL		16	// multiply
-#define OP_POM		17	// parallax
-#define OP_RCP		18	// reciprocal
-#define OP_RSQRT	19	// reciprocal square root
-#define OP_SIN		20	// sine
-#define OP_TEX		21	// texture
-#define OP_TEXLOD	22	// texture lod
-#define OP_TEXADD	23	// texture + offset
-#define OP_TEXINFO	24	// texture info (size, mips)
+#define OP_CALL		 1	// call subroutine
+#define OP_RET		 2	// return from subroutine
+#define OP_ADD		 3	// addition
+#define OP_CMP		 4	// compare
+#define OP_CND		 5	// condition
+#define OP_COS		 6	// cosine
+#define OP_DIV		 7	// division
+#define OP_DP2		 8	// dot2
+#define OP_DP3		 9	// dot3
+#define OP_DP4		10	// dot4
+#define OP_EXP2		11	// base 2 exponential
+#define OP_FRC		12	// fractional
+#define OP_LOG2		13	// base 2 logarithm
+#define OP_MAD		14	// multiply add
+#define OP_MAX		15	// maximum
+#define OP_MIN		16	// minimum
+#define OP_MOV		17	// move
+#define OP_MUL		18	// multiply
+#define OP_POM		19	// parallax
+#define OP_RCP		20	// reciprocal
+#define OP_RSQRT	21	// reciprocal square root
+#define OP_SIN		22	// sine
+#define OP_TEX		23	// texture
+#define OP_TEXLOD	24	// texture lod
+#define OP_TEXADD	25	// texture + offset
+#define OP_TEXINFO	26	// texture info (size, mips)
 
 // register types
 #define REG_TYPE_GPR     0	// register

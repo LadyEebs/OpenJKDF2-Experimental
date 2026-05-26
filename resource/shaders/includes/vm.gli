@@ -17,21 +17,30 @@ import "attr.gli"
 
 #ifdef FRAGMENT_SHADER
 
+#define VM_CALL_STACK_DEPTH 4
+
 void run_vm()
 {
 	for (uint i = 0; i < REG_COUNT; ++i)
 		r[i] = 0;
 
-	for (uint s_pc = 0; s_pc < shaderInstructionCount; ++s_pc)
+	// fixed-depth call stack for subroutine support
+	uint s_callstack[VM_CALL_STACK_DEPTH];
+	uint s_callstack_top = 0u;
+
+	uint s_pc = 0u;
+	while (s_pc < shaderInstructionCount)
 	{
 		vm_instr s_ir;
 		s_decode_instr(s_ir, shaderInstructions[s_pc]);
+		s_pc++;
 
 		// read source operands upfront (or else the compile times crawl)
 		vec4 s0 = read_src0(s_ir);
 		vec4 s1 = read_src1(s_ir);
 		vec4 s2 = read_src2(s_ir);
 
+		bool s_skip_write = false;
 		vec4 result;// = read_dest(s_ir);
 
 		switch(s_ir.opcode)
@@ -39,6 +48,24 @@ void run_vm()
 		default:
 		case OP_NOP:
 			return;
+
+		case OP_CALL:
+			// push return address and jump to target
+			if (s_callstack_top < uint(VM_CALL_STACK_DEPTH))
+				s_callstack[s_callstack_top++] = s_pc;
+			s_pc = s_ir.dst.addr;
+			s_skip_write = true;
+			break;
+
+		case OP_RET:
+			// pop return address
+			// an unbalanced ret exits the shader
+			if (s_callstack_top > 0u)
+				s_pc = s_callstack[--s_callstack_top];
+			else
+				return;
+			s_skip_write = true;
+			break;
 
 		case OP_MOV:
 			result = s0;
@@ -163,7 +190,8 @@ void run_vm()
 			break;
 		}
 
-		write_reg(s_ir, result);
+		if (!s_skip_write)
+			write_reg(s_ir, result);
 	}
 }
 
