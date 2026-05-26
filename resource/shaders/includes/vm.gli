@@ -143,19 +143,11 @@ void run_vm()
 			break;
 
 		case OP_EXP2:
-			result = s_ir.prec ? exp2( s0 ) : fastExp2( s1 );
+			result = s_ir.prec ? exp2( s0 ) : fastExp2( s0 );
 			break;
 
 		case OP_LOG2:
-			result = s_ir.prec ? log2( s0 ) : fastLog2( s1 );
-			break;
-
-		case OP_DIV:
-			result = s_ir.prec ? s0 * rcpSafe(s1) : s0 * fastRcpNR0(s1);
-			break;
-
-		case OP_RCP:
-			result = s_ir.prec ? rcpSafe(s0) : fastRcpNR0(s0);
+			result = s_ir.prec ? log2( s0 ) : fastLog2( s0 );
 			break;
 
 		case OP_RSQRT:

@@ -125,6 +125,39 @@ typedef struct
 
 rdShader_Assembler* rdShader_pCurrentAssembler = NULL;
 
+// build a clean intermediate destination writing to tmpReg (full xyzw)
+// fmt should match the final output destination so intermediate values are not truncated
+static void rdShader_MakeTmpDest(rdShader_DestOperand* dest, uint8_t tmpReg, uint8_t fmt)
+{
+	memset(dest, 0, sizeof(rdShader_DestOperand));
+	dest->reg.type    = RD_SHADER_GPR;
+	dest->reg.address = tmpReg;
+	dest->reg.swizzle = RD_SWIZZLE_XYZW;
+	dest->reg.mask    = RD_WRITE_RGBA;
+	dest->reg.fmt     = fmt;
+}
+
+// build a clean source reading from tmpReg (full xyzw, no modifiers)
+// fmt must match the fmt used when the value was written so the VM decodes it correctly
+static void rdShader_MakeTmpSrc(rdShader_SrcOperand* src, uint8_t tmpReg, uint8_t idx, uint8_t fmt)
+{
+	memset(src, 0, sizeof(rdShader_SrcOperand));
+	src->reg.type    = RD_SHADER_GPR;
+	src->reg.address = tmpReg;
+	src->reg.swizzle = RD_SWIZZLE_XYZW;
+	src->reg.mask    = RD_WRITE_RGBA;
+	src->reg.idx     = idx;
+	src->reg.fmt     = fmt;
+}
+
+// apply instruction level output modifiers (clamp, precise) to the last instruction of a macro expansion
+// dest is already copied from inst->dest by the caller, this only fills in the fields that live on the instruction itself
+static void rdShader_ApplyOutputModifiers(rdShader_Instruction* last, const rdShader_Instruction* inst)
+{
+	last->clamp = inst->clamp;
+	last->precise = inst->precise;
+}
+
 // sub dst, a, b  ->  add dst, a, -b
 static int rdShader_MacroExpandSUB(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
@@ -168,84 +201,97 @@ static int rdShader_MacroExpandABS(rdShader_Instruction* inst, rdShaderInstr* ou
 	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
 }
 
-// lerp dst, a, b, t -> sub tmp, b, a   (add tmp, b, -a)
+// rcp dst, a  ->  mov dst, 1/a
+static int rdShader_MacroExpandRCP(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+	inst->opcode = RD_SHADER_OP_MOV;
+	inst->src[0].reg.unary = RD_SHADER_RCP;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// div dst, a, b  ->  mul dst, a, 1/b
+static int rdShader_MacroExpandDIV(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
+{
+	if (maxOut < 1)
+		return 0;
+	inst->opcode = RD_SHADER_OP_MUL;
+	inst->src[1].reg.unary = RD_SHADER_RCP;
+	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
+}
+
+// lerp dst, a, b, t -> add tmp, b, -a
 //                      mad dst, tmp, t, a
 static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
 	if (maxOut < 2)
 		return 0;
 
-	// find a free temp register for the intermediate result
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
-	// instruction 0: add tmp, src[1], -src[0]  (b - a)
+	// instruction 0: add tmp, b, -a  (b - a)
 	rdShader_Instruction sub;
 	memset(&sub, 0, sizeof(rdShader_Instruction));
-	sub.opcode = RD_SHADER_OP_ADD;
+	sub.opcode   = RD_SHADER_OP_ADD;
 	sub.srcCount = 2;
-	sub.dest.reg.type = RD_SHADER_GPR;
-	sub.dest.reg.address = tmpReg;
-	sub.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	sub.dest.reg.mask = RD_WRITE_RGBA;
-	sub.src[0] = inst->src[1];            // b
-	sub.src[1] = inst->src[0];            // a
-	sub.src[1].reg.unary = RD_SHADER_NEGATE; // -a
+	rdShader_MakeTmpDest(&sub.dest, tmpReg, fmt);
+	sub.src[0]              = inst->src[1]; // b
+	sub.src[1]              = inst->src[0]; // a
+	sub.src[1].reg.unary    = RD_SHADER_NEGATE; // -a
 
 	if (!rdShader_AssembleInstruction(&out[0], &sub))
 		return 0;
 
-	// instruction 1: mad dst, tmp, t, a
+	// instruction 1: mad dst, tmp, t, a  (final: carry all output modifiers)
 	rdShader_Instruction mad;
 	memset(&mad, 0, sizeof(rdShader_Instruction));
-	mad.opcode = RD_SHADER_OP_MAD;
+	mad.opcode   = RD_SHADER_OP_MAD;
 	mad.srcCount = 3;
-	mad.dest = inst->dest;
-	mad.src[0].reg.type = RD_SHADER_GPR;
-	mad.src[0].reg.address = tmpReg;
-	mad.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	mad.src[0].reg.mask = RD_WRITE_RGBA;
-	mad.src[1] = inst->src[2]; // t
-	mad.src[2] = inst->src[0]; // a
+	mad.dest     = inst->dest;
+	rdShader_MakeTmpSrc(&mad.src[0], tmpReg, 0, fmt);
+	mad.src[1]   = inst->src[2]; // t
+	mad.src[2]   = inst->src[0]; // a
+	rdShader_ApplyOutputModifiers(&mad, inst);
 
 	if (!rdShader_AssembleInstruction(&out[1], &mad))
 		return 0;
 
-	// consume the temp register
 	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
 	return 2;
 }
 
 // sqrt dst, a  ->  rsqrt tmp, a
-//                  rcp   dst, tmp
+//                  mov   dst, 1/tmp
 static int rdShader_MacroExpandSQRT(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
 	if (maxOut < 2)
 		return 0;
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
+	// instruction 0: rsqrt tmp, a
 	rdShader_Instruction rsqrt;
 	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
-	rsqrt.opcode = RD_SHADER_OP_RSQRT;
+	rsqrt.opcode   = RD_SHADER_OP_RSQRT;
 	rsqrt.srcCount = 1;
-	rsqrt.dest.reg.type = RD_SHADER_GPR;
-	rsqrt.dest.reg.address = tmpReg;
-	rsqrt.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	rsqrt.dest.reg.mask = RD_WRITE_RGBA;
-	rsqrt.src[0] = inst->src[0];
+	rdShader_MakeTmpDest(&rsqrt.dest, tmpReg, fmt);
+	rsqrt.src[0]   = inst->src[0];
 
 	if (!rdShader_AssembleInstruction(&out[0], &rsqrt))
 		return 0;
 
+	// instruction 1: mov dst, 1/tmp  (final: carry all output modifiers)
 	rdShader_Instruction rcp;
 	memset(&rcp, 0, sizeof(rdShader_Instruction));
-	rcp.opcode = RD_SHADER_OP_RCP;
+	rcp.opcode   = RD_SHADER_OP_MOV;
 	rcp.srcCount = 1;
-	rcp.dest = inst->dest;
-	rcp.src[0].reg.type = RD_SHADER_GPR;
-	rcp.src[0].reg.address = tmpReg;
-	rcp.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	rcp.src[0].reg.mask = RD_WRITE_RGBA;
+	rcp.dest     = inst->dest;
+	rdShader_MakeTmpSrc(&rcp.src[0], tmpReg, 0, fmt);
+	rcp.src[0].reg.unary = RD_SHADER_RCP;
+	rdShader_ApplyOutputModifiers(&rcp, inst);
 
 	if (!rdShader_AssembleInstruction(&out[1], &rcp))
 		return 0;
@@ -262,31 +308,29 @@ static int rdShader_MacroExpandCLAMP(rdShader_Instruction* inst, rdShaderInstr* 
 		return 0;
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
+	// instruction 0: max tmp, a, lo
 	rdShader_Instruction maxInst;
 	memset(&maxInst, 0, sizeof(rdShader_Instruction));
-	maxInst.opcode = RD_SHADER_OP_MAX;
+	maxInst.opcode   = RD_SHADER_OP_MAX;
 	maxInst.srcCount = 2;
-	maxInst.dest.reg.type = RD_SHADER_GPR;
-	maxInst.dest.reg.address = tmpReg;
-	maxInst.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	maxInst.dest.reg.mask = RD_WRITE_RGBA;
-	maxInst.src[0] = inst->src[0]; // a
-	maxInst.src[1] = inst->src[1]; // lo
+	rdShader_MakeTmpDest(&maxInst.dest, tmpReg, fmt);
+	maxInst.src[0]   = inst->src[0]; // a
+	maxInst.src[1]   = inst->src[1]; // lo
 
 	if (!rdShader_AssembleInstruction(&out[0], &maxInst))
 		return 0;
 
+	// instruction 1: min dst, tmp, hi  (final: carry all output modifiers)
 	rdShader_Instruction minInst;
 	memset(&minInst, 0, sizeof(rdShader_Instruction));
-	minInst.opcode = RD_SHADER_OP_MIN;
+	minInst.opcode   = RD_SHADER_OP_MIN;
 	minInst.srcCount = 2;
-	minInst.dest = inst->dest;
-	minInst.src[0].reg.type = RD_SHADER_GPR;
-	minInst.src[0].reg.address = tmpReg;
-	minInst.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	minInst.src[0].reg.mask = RD_WRITE_RGBA;
-	minInst.src[1] = inst->src[2]; // hi
+	minInst.dest     = inst->dest;
+	rdShader_MakeTmpSrc(&minInst.src[0], tmpReg, 0, fmt);
+	minInst.src[1]   = inst->src[2]; // hi
+	rdShader_ApplyOutputModifiers(&minInst, inst);
 
 	if (!rdShader_AssembleInstruction(&out[1], &minInst))
 		return 0;
@@ -295,64 +339,71 @@ static int rdShader_MacroExpandCLAMP(rdShader_Instruction* inst, rdShaderInstr* 
 	return 2;
 }
 
-// pow dst, a, b  ->  log2 tmp, a
+// pow dst, a, b  ->  max  tmp, a, 0     (clamp base >=0 before log2; src[0] modifier applied here)
+//                    log2 tmp, tmp
 //                    mul  tmp, tmp, b
 //                    exp2 dst, tmp
 static int rdShader_MacroExpandPOW(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
-	if (maxOut < 3)
+	if (maxOut < 4)
 		return 0;
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
-	// instruction 0: log2 tmp, a
+	// instruction 0: max tmp, a, 0  (applies src[0] modifier e.g. 1-r1, then clamps to >=0)
+	// max(x,0): log2(0)=-inf, exp2(-inf)=0, so pow(0,b)=0 is correct for b>0
+	rdShader_Instruction maxInst;
+	memset(&maxInst, 0, sizeof(rdShader_Instruction));
+	maxInst.opcode             = RD_SHADER_OP_MAX;
+	maxInst.srcCount           = 2;
+	rdShader_MakeTmpDest(&maxInst.dest, tmpReg, fmt);
+	maxInst.src[0]             = inst->src[0]; // a (with any user modifier, e.g. 1-r1)
+	rdShader_MakeTmpSrc(&maxInst.src[1], 0, 1, fmt);
+	maxInst.src[1].reg.type          = RD_SHADER_IMM8;
+	maxInst.src[1].reg.address       = 0; // stdMath_FloatToMini8(0.0f)
+	maxInst.src[1].reg.immediate.x   = 0.0f;
+
+	if (!rdShader_AssembleInstruction(&out[0], &maxInst))
+		return 0;
+
+	// instruction 1: log2 tmp, tmp
 	rdShader_Instruction log2inst;
 	memset(&log2inst, 0, sizeof(rdShader_Instruction));
-	log2inst.opcode = RD_SHADER_OP_LOG2;
+	log2inst.opcode   = RD_SHADER_OP_LOG2;
 	log2inst.srcCount = 1;
-	log2inst.dest.reg.type = RD_SHADER_GPR;
-	log2inst.dest.reg.address = tmpReg;
-	log2inst.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	log2inst.dest.reg.mask = RD_WRITE_RGBA;
-	log2inst.src[0] = inst->src[0]; // a
+	rdShader_MakeTmpDest(&log2inst.dest, tmpReg, fmt);
+	rdShader_MakeTmpSrc(&log2inst.src[0], tmpReg, 0, fmt);
 
-	if (!rdShader_AssembleInstruction(&out[0], &log2inst))
+	if (!rdShader_AssembleInstruction(&out[1], &log2inst))
 		return 0;
 
-	// instruction 1: MUL tmp, tmp, b
+	// instruction 2: mul tmp, tmp, b
 	rdShader_Instruction mul;
 	memset(&mul, 0, sizeof(rdShader_Instruction));
-	mul.opcode = RD_SHADER_OP_MUL;
+	mul.opcode   = RD_SHADER_OP_MUL;
 	mul.srcCount = 2;
-	mul.dest.reg.type = RD_SHADER_GPR;
-	mul.dest.reg.address = tmpReg;
-	mul.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	mul.dest.reg.mask = RD_WRITE_RGBA;
-	mul.src[0].reg.type = RD_SHADER_GPR;
-	mul.src[0].reg.address = tmpReg;
-	mul.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	mul.src[0].reg.mask = RD_WRITE_RGBA;
-	mul.src[1] = inst->src[1]; // b
+	rdShader_MakeTmpDest(&mul.dest, tmpReg, fmt);
+	rdShader_MakeTmpSrc(&mul.src[0], tmpReg, 0, fmt);
+	mul.src[1]   = inst->src[1]; // b (with any user modifier)
 
-	if (!rdShader_AssembleInstruction(&out[1], &mul))
+	if (!rdShader_AssembleInstruction(&out[2], &mul))
 		return 0;
 
-	// instruction 2: exp2 dst, tmp
+	// instruction 3: exp2 dst, tmp  (final: carry all output modifiers)
 	rdShader_Instruction exp2inst;
 	memset(&exp2inst, 0, sizeof(rdShader_Instruction));
-	exp2inst.opcode = RD_SHADER_OP_EXP2;
+	exp2inst.opcode   = RD_SHADER_OP_EXP2;
 	exp2inst.srcCount = 1;
-	exp2inst.dest = inst->dest;
-	exp2inst.src[0].reg.type = RD_SHADER_GPR;
-	exp2inst.src[0].reg.address = tmpReg;
-	exp2inst.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	exp2inst.src[0].reg.mask = RD_WRITE_RGBA;
+	exp2inst.dest     = inst->dest;
+	rdShader_MakeTmpSrc(&exp2inst.src[0], tmpReg, 0, fmt);
+	rdShader_ApplyOutputModifiers(&exp2inst, inst);
 
-	if (!rdShader_AssembleInstruction(&out[2], &exp2inst))
+	if (!rdShader_AssembleInstruction(&out[3], &exp2inst))
 		return 0;
 
 	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
-	return 3;
+	return 4;
 }
 
 // crs dst, a, b  ->  mul tmp, a.yzxw, b.zxyw
@@ -372,39 +423,35 @@ static int rdShader_MacroExpandCROSS(rdShader_Instruction* inst, rdShaderInstr* 
 	const uint8_t swizzle_zxyw = (2) | (0 << 2) | (1 << 4) | (3 << 6);
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
 	// instruction 0: mul tmp, a.yzxw, b.zxyw
 	rdShader_Instruction mul;
 	memset(&mul, 0, sizeof(rdShader_Instruction));
-	mul.opcode = RD_SHADER_OP_MUL;
+	mul.opcode   = RD_SHADER_OP_MUL;
 	mul.srcCount = 2;
-	mul.dest.reg.type = RD_SHADER_GPR;
-	mul.dest.reg.address = tmpReg;
-	mul.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	mul.dest.reg.mask = RD_WRITE_RGBA;
-	mul.src[0] = inst->src[0];
-	mul.src[0].reg.swizzle = swizzle_yzxw; // a.yzxw
-	mul.src[1] = inst->src[1];
-	mul.src[1].reg.swizzle = swizzle_zxyw; // b.zxyw
+	rdShader_MakeTmpDest(&mul.dest, tmpReg, fmt);
+	mul.src[0]              = inst->src[0];
+	mul.src[0].reg.swizzle  = swizzle_yzxw; // a.yzxw
+	mul.src[1]              = inst->src[1];
+	mul.src[1].reg.swizzle  = swizzle_zxyw; // b.zxyw
 
 	if (!rdShader_AssembleInstruction(&out[0], &mul))
 		return 0;
 
-	// instruction 1: mad dst, a.zxyw, -b.yzxw, tmp
+	// instruction 1: mad dst, a.zxyw, -b.yzxw, tmp  (final: carry all output modifiers)
 	rdShader_Instruction mad;
 	memset(&mad, 0, sizeof(rdShader_Instruction));
-	mad.opcode = RD_SHADER_OP_MAD;
+	mad.opcode   = RD_SHADER_OP_MAD;
 	mad.srcCount = 3;
-	mad.dest = inst->dest;
-	mad.src[0] = inst->src[0];
-	mad.src[0].reg.swizzle = swizzle_zxyw;   // a.zxyw
-	mad.src[1] = inst->src[1];
-	mad.src[1].reg.swizzle = swizzle_yzxw;   // b.yzxw
-	mad.src[1].reg.unary = RD_SHADER_NEGATE; // -b.yzxw
-	mad.src[2].reg.type = RD_SHADER_GPR;
-	mad.src[2].reg.address = tmpReg;
-	mad.src[2].reg.swizzle = RD_SWIZZLE_XYZW;
-	mad.src[2].reg.mask = RD_WRITE_RGBA;
+	mad.dest     = inst->dest;
+	mad.src[0]              = inst->src[0];
+	mad.src[0].reg.swizzle  = swizzle_zxyw;      // a.zxyw
+	mad.src[1]              = inst->src[1];
+	mad.src[1].reg.swizzle  = swizzle_yzxw;      // b.yzxw
+	mad.src[1].reg.unary    = RD_SHADER_NEGATE;  // -b.yzxw
+	rdShader_MakeTmpSrc(&mad.src[2], tmpReg, 2, fmt);
+	rdShader_ApplyOutputModifiers(&mad, inst);
 
 	if (!rdShader_AssembleInstruction(&out[1], &mad))
 		return 0;
@@ -422,18 +469,16 @@ static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* ou
 		return 0;
 
 	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
+	uint8_t fmt    = inst->dest.reg.fmt;
 
 	// instruction 0: dp3 tmp, a, a
 	rdShader_Instruction dp3;
 	memset(&dp3, 0, sizeof(rdShader_Instruction));
-	dp3.opcode = RD_SHADER_OP_DP3;
+	dp3.opcode   = RD_SHADER_OP_DP3;
 	dp3.srcCount = 2;
-	dp3.dest.reg.type = RD_SHADER_GPR;
-	dp3.dest.reg.address = tmpReg;
-	dp3.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	dp3.dest.reg.mask = RD_WRITE_RGBA;
-	dp3.src[0] = inst->src[0]; // a
-	dp3.src[1] = inst->src[0]; // a
+	rdShader_MakeTmpDest(&dp3.dest, tmpReg, fmt);
+	dp3.src[0]   = inst->src[0]; // a
+	dp3.src[1]   = inst->src[0]; // a
 
 	if (!rdShader_AssembleInstruction(&out[0], &dp3))
 		return 0;
@@ -441,31 +486,23 @@ static int rdShader_MacroExpandNRM(rdShader_Instruction* inst, rdShaderInstr* ou
 	// instruction 1: rsqrt tmp, tmp
 	rdShader_Instruction rsqrt;
 	memset(&rsqrt, 0, sizeof(rdShader_Instruction));
-	rsqrt.opcode = RD_SHADER_OP_RSQRT;
+	rsqrt.opcode   = RD_SHADER_OP_RSQRT;
 	rsqrt.srcCount = 1;
-	rsqrt.dest.reg.type = RD_SHADER_GPR;
-	rsqrt.dest.reg.address = tmpReg;
-	rsqrt.dest.reg.swizzle = RD_SWIZZLE_XYZW;
-	rsqrt.dest.reg.mask = RD_WRITE_RGBA;
-	rsqrt.src[0].reg.type = RD_SHADER_GPR;
-	rsqrt.src[0].reg.address = tmpReg;
-	rsqrt.src[0].reg.swizzle = RD_SWIZZLE_XYZW;
-	rsqrt.src[0].reg.mask = RD_WRITE_RGBA;
+	rdShader_MakeTmpDest(&rsqrt.dest, tmpReg, fmt);
+	rdShader_MakeTmpSrc(&rsqrt.src[0], tmpReg, 0, fmt);
 
 	if (!rdShader_AssembleInstruction(&out[1], &rsqrt))
 		return 0;
 
-	// instruction 2: mul dst, a, tmp
+	// instruction 2: mul dst, a, tmp  (final: carry all output modifiers)
 	rdShader_Instruction mul;
 	memset(&mul, 0, sizeof(rdShader_Instruction));
-	mul.opcode = RD_SHADER_OP_MUL;
+	mul.opcode   = RD_SHADER_OP_MUL;
 	mul.srcCount = 2;
-	mul.dest = inst->dest;
-	mul.src[0] = inst->src[0]; // a
-	mul.src[1].reg.type = RD_SHADER_GPR;
-	mul.src[1].reg.address = tmpReg;
-	mul.src[1].reg.swizzle = RD_SWIZZLE_XYZW;
-	mul.src[1].reg.mask = RD_WRITE_RGBA;
+	mul.dest     = inst->dest;
+	mul.src[0]   = inst->src[0]; // a
+	rdShader_MakeTmpSrc(&mul.src[1], tmpReg, 1, fmt);
+	rdShader_ApplyOutputModifiers(&mul, inst);
 
 	if (!rdShader_AssembleInstruction(&out[2], &mul))
 		return 0;
@@ -480,6 +517,8 @@ static const rdShader_Macro rdShader_macros[] =
 	{ "neg",   1, rdShader_MacroExpandNEG   },
 	{ "sat",   1, rdShader_MacroExpandSAT   },
 	{ "abs",   1, rdShader_MacroExpandABS   },
+	{ "rcp",   1, rdShader_MacroExpandRCP   },
+	{ "div",   2, rdShader_MacroExpandDIV   },
 	{ "lrp",   3, rdShader_MacroExpandLERP  },
 	{ "sqrt",  1, rdShader_MacroExpandSQRT  },
 	{ "clamp", 3, rdShader_MacroExpandCLAMP },
