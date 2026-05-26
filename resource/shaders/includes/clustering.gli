@@ -41,4 +41,13 @@ uint scalarize_buckets_bits(uint bucket_bits)
 	return bucket_bits;
 }
 
+bool broadcast(bool value)
+{
+#ifdef GL_KHR_shader_subgroup_vote
+	return subgroupAll(value);
+#else
+	return value;
+#endif
+}
+
 #endif

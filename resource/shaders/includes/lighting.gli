@@ -94,15 +94,6 @@ float halfLambert(vec3 normal, vec3 lvec)
 	return saturate(ndotl * ndotl);
 }
 
-bool broadcast(bool value)
-{
-#ifdef GL_KHR_shader_subgroup_vote
-	return subgroupAll(value);
-#else
-	return value;
-#endif
-}
-
 struct light_data
 {
 	vec3   lvec;

@@ -27,32 +27,23 @@ void calc_shadow(inout float shadow, uint occluder_index, light_input params)
 		
 	vec3 normal = unpackSnorm4x8(params.normal).xyz;
 	float ndotl = clamp(dot(normal, direction), 0.0, 1.0);
-	//if(ndotl <= 0.0)
-	//	return;
+	if(broadcast(ndotl <= 0.0))
+		return;
 				
 	float falloff = clamp((occ.position.w - len) * occ.invRadius, 0.0, 1.0);
-	//if(falloff <= 0.0)
-	//	return;
+	if(broadcast(falloff <= 0.0))
+		return;
 				
 	float x = occ.position.w * rcpLen;
 	//float solidAngle = (1.0 - cos(atanFast(x)));
 
 	float theta = x * fastRcpNR1(0.28 * (x * x) + 1.0); // approximate atan(x)
 	float solidAngle = (0.5 * theta) * theta; // simplified form
-	//if (solidAngle <= 0.0)
-	//	return;
+	if (broadcast(solidAngle <= 0.0))
+		return;
 
 	float integralSolidAngle = ndotl * solidAngle * falloff;
 	shadow *= 1.0 - integralSolidAngle;
-}
-
-bool earlyShadowOut(float shadow)
-{
-#ifdef GL_KHR_shader_subgroup_vote
-	return subgroupAll(shadow < 1.0/255.0);
-#else
-	return (shadow < 1.0/255.0);
-#endif
 }
 
 float calculate_shadows(light_input params, uint cluster)
@@ -77,7 +68,7 @@ float calculate_shadows(light_input params, uint cluster)
 			{
 				calc_shadow(shadow, s_occluder_index - s_first_item, params);
 
-				if (earlyShadowOut(shadow))
+				if (broadcast(shadow < 1.0/255.0))
 					break;
 			}
 			else if (s_occluder_index > s_last_item)
