@@ -386,6 +386,12 @@ int Window_DefaultHandler(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam, voi
 SDL_Window* displayWindow = NULL;
 SDL_Event event;
 SDL_GLContext glWindowContext;
+#ifdef TILE_SW_RASTER
+SDL_Renderer* displayRenderer = NULL;
+SDL_Texture*  swapTexture     = NULL;
+static int    swapTexW = 0;
+static int    swapTexH = 0;
+#endif
 
 int Window_lastXRel = 0;
 int Window_lastYRel = 0;
@@ -686,6 +692,8 @@ float dstScaleW = 1.0f;
 float dstScaleH = 1.0f;
 
 const int fixed_shift = 16; // Bits of fractional precision
+// scale factors for the job blit
+// when using the streaming texture path these are always 1:1
 int scale_x_fp;
 int scale_y_fp;
 __m128i scale_x_fp_vec;
@@ -697,14 +705,10 @@ __m256i x_offset_vec8;
 
 static void SwapWindowJob(uint32_t jobIndex, uint32_t groupIndex)
 {
-	int srcY = srcRect.y + ((jobIndex * scale_y_fp) >> fixed_shift);
+	int srcY = srcRect.y + jobIndex; // scale_y_fp == 1<<fixed_shift so this is jobIndex
 	uint8_t* srcRow = srcPixels + srcY * srcPitch;
 
-	uint32_t* dstRowStart = (uint32_t*)(dstPixels + (dstRect.y + jobIndex) * dstPitch);
-	uint32_t* dstRow = dstRowStart + dstRect.x;
-
-	if (dstRect.x > 0)
-		memset(dstRowStart, 0, dstRect.x * sizeof(uint32_t));
+	uint32_t* dstRow = (uint32_t*)(dstPixels + jobIndex * dstPitch);
 
 #ifdef TARGET_AVX2
 	const __m128i byte_mask = _mm_set1_epi32(0xFF);
@@ -772,39 +776,32 @@ static void SwapWindowJob(uint32_t jobIndex, uint32_t groupIndex)
 		dstRow[x] = paletteCache[srcRow[srcX]];
 	}
 #endif
-
-	int suffixLength = windowSurf->w - (dstRect.x + copyWidth);
-	if (suffixLength > 0)
-		memset(dstRow + copyWidth, 0, suffixLength * sizeof(uint32_t));
+	// Texture is source-sized; no suffix padding needed.
 }
 
 static void SwapWindowJobRGB16(uint32_t jobIndex, uint32_t groupIndex)
 {
-	if (jobIndex >= copyHeight)
+	if (jobIndex >= (uint32_t)copyHeight)
 		return;
-
-	// Row outside vertical copy area, fill entire destination row with black
-	if (jobIndex < dstRect.y || jobIndex >= dstRect.y + copyHeight)
-	{
-		int dstRowWidth = dstRect.w + dstRect.x;
-		uint32_t* dstRow = (uint32_t*)(dstPixels + jobIndex * dstPitch);
-		memset(dstRow, 0, dstRowWidth * sizeof(uint32_t));
-		return;
-	}
 
 	int y = jobIndex;
-	int srcY = srcRect.y + (int)(((int64_t)y * scale_y_fp) >> fixed_shift);
+	int srcY = srcRect.y + y;
 	uint8_t* srcRowBase = srcPixels + srcY * srcPitch;
 
-	uint32_t* dstRowStart = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch);
-	uint32_t* dstRow = dstRowStart + dstRect.x;
-
-	if (dstRect.x > 0)
-		memset(dstRowStart, 0, dstRect.x * sizeof(uint32_t));
+	uint32_t* dstRow = (uint32_t*)(dstPixels + y * dstPitch);
 
 	int srcFormatIs16Bit = Video_pOtherBuf->format.format.bpp == 16;
 	const rdTexformat* srcFmt = &Video_pOtherBuf->format.format;
-	const SDL_PixelFormat* dstFmt = windowSurf->format;
+
+	// ARGB8888 constant format descriptor for the streaming texture
+	static const SDL_PixelFormat texFmt = {
+		.format = SDL_PIXELFORMAT_ARGB8888,
+		.Rloss = 0, .Gloss = 0, .Bloss = 0, .Aloss = 0,
+		.Rshift = 16, .Gshift = 8, .Bshift = 0, .Ashift = 24,
+		.Rmask = 0x00FF0000u, .Gmask = 0x0000FF00u, .Bmask = 0x000000FFu,
+		.Amask = 0xFF000000u,
+	};
+	const SDL_PixelFormat* dstFmt = &texFmt;
 
 	const int fx = stdPalEffects_state.effect.filter.x;
 	const int fy = stdPalEffects_state.effect.filter.y;
@@ -1043,10 +1040,7 @@ static void SwapWindowJobRGB16(uint32_t jobIndex, uint32_t groupIndex)
 #endif
 
 
-	int fullRowWidth = dstPitch / 4;  // full row pixel count
-	int suffixLength = windowSurf->w - (dstRect.x + copyWidth);
-	if (suffixLength > 0)
-		memset(dstRow + copyWidth, 0, suffixLength * sizeof(uint32_t));
+	// Texture is source-sized; no suffix padding needed.
 }
 
 #endif
@@ -1054,14 +1048,13 @@ static void SwapWindowJobRGB16(uint32_t jobIndex, uint32_t groupIndex)
 // TILETODO move me
 void SwapWindow(SDL_Window* window)
 {
-	stdVBuffer* buffer = Video_pOtherBuf;//Video_pMenuBuffer
+	stdVBuffer* buffer = Video_pOtherBuf;
 	if (buffer)
 	{
 #ifndef USE_JOBS
 		SDL_Rect srcRect;
 		SDL_Rect dstRect;
 
-		SDL_Surface* windowSurf = NULL;
 		uint8_t* srcPixels;
 		int srcPitch;
 
@@ -1071,11 +1064,6 @@ void SwapWindow(SDL_Window* window)
 		int copyWidth;
 		int copyHeight;
 #endif
-		windowSurf = SDL_GetWindowSurface(window);
-		SDL_LockSurface(windowSurf);
-
-		//SDL_FillRect(windowSurf, NULL, 0);
-
 		srcRect.x = 0;
 		srcRect.y = 0;
 		srcRect.w = buffer->format.width;
@@ -1109,37 +1097,54 @@ void SwapWindow(SDL_Window* window)
 		if (stdDisplay_pCurDevice->video_device[0].device_active)
 		{
 			std3D_Present(buffer->gpuHandle, buffer->format.width, buffer->format.height, buffer->format.format.bpp >> 3, &dstRect);
-			//SDL_UpdateWindowSurface(displayWindow);
 			return;
 		}
 
-		//SDL_LockSurface(buffer->sdlSurface);
-		
-		srcPixels = (uint8_t*)buffer->surface_lock_alloc;//sdlSurface->pixels;
-		srcPitch = buffer->format.width_in_bytes;// buffer->sdlSurface->pitch;
+		// Streaming-texture path, jobs blit at source resolution, GPU upscales
+		// Recreate the streaming texture if the source dimensions changed.
+		if (!swapTexture || swapTexW != srcRect.w || swapTexH != srcRect.h)
+		{
+			if (swapTexture)
+				SDL_DestroyTexture(swapTexture);
+			swapTexture = SDL_CreateTexture(displayRenderer,
+				SDL_PIXELFORMAT_ARGB8888,
+				SDL_TEXTUREACCESS_STREAMING,
+				srcRect.w, srcRect.h);
+			swapTexW = srcRect.w;
+			swapTexH = srcRect.h;
+		}
 
-		dstPixels = (uint8_t*)windowSurf->pixels;
-		dstPitch = windowSurf->pitch;
+		void* texPixels = NULL;
+		int   texPitch  = 0;
+		SDL_LockTexture(swapTexture, NULL, &texPixels, &texPitch);
 
-		copyWidth = SDL_min(dstRect.w, windowSurf->w - dstRect.x);
-		copyHeight = SDL_min(dstRect.h, windowSurf->h - dstRect.y);
+		srcPixels = (uint8_t*)buffer->surface_lock_alloc;
+		srcPitch  = buffer->format.width_in_bytes;
 
-		// Perhaps we should do palette indexing/RGB format resolving to an intermediate buffer that matches the size of the source
-		// and then rescale that, instead of performing the indexing/resolving per pixel when scaling (pretty redundant for smaller formats)
+		dstPixels = (uint8_t*)texPixels;
+		dstPitch  = texPitch;
+
+		copyWidth  = srcRect.w;
+		copyHeight = srcRect.h;
+
+		// Build a fake pixel format struct so SDL_MapRGBFast produces ARGB8888
+		SDL_PixelFormat texFmt;
+		memset(&texFmt, 0, sizeof(texFmt));
+		texFmt.format = SDL_PIXELFORMAT_ARGB8888;
+		texFmt.Rloss = 0; texFmt.Gloss = 0; texFmt.Bloss = 0;
+		texFmt.Rshift = 16; texFmt.Gshift = 8; texFmt.Bshift = 0;
+		texFmt.Amask = 0xFF000000u;
 
 		if (buffer->format.format.colorMode == STDCOLOR_PAL)
 		{
 			rdColor24* pal_master = (rdColor24*)stdDisplay_masterPalette;
-			for (int i = 0; i < 256; i+= 4) // lazy hoping that the compiler will auto vectorize...
+			for (int i = 0; i < 256; i += 4)
 			{
-				int i0 = i;
-				int i1 = i + 1;
-				int i2 = i + 2;
-				int i3 = i + 3;
-				paletteCache[i0] = SDL_MapRGBFast(windowSurf->format, pal_master[i0].r, pal_master[i0].g, pal_master[i0].b);
-				paletteCache[i1] = SDL_MapRGBFast(windowSurf->format, pal_master[i1].r, pal_master[i1].g, pal_master[i1].b);
-				paletteCache[i2] = SDL_MapRGBFast(windowSurf->format, pal_master[i2].r, pal_master[i2].g, pal_master[i2].b);
-				paletteCache[i3] = SDL_MapRGBFast(windowSurf->format, pal_master[i3].r, pal_master[i3].g, pal_master[i3].b);
+				int i0 = i, i1 = i+1, i2 = i+2, i3 = i+3;
+				paletteCache[i0] = SDL_MapRGBFast(&texFmt, pal_master[i0].r, pal_master[i0].g, pal_master[i0].b);
+				paletteCache[i1] = SDL_MapRGBFast(&texFmt, pal_master[i1].r, pal_master[i1].g, pal_master[i1].b);
+				paletteCache[i2] = SDL_MapRGBFast(&texFmt, pal_master[i2].r, pal_master[i2].g, pal_master[i2].b);
+				paletteCache[i3] = SDL_MapRGBFast(&texFmt, pal_master[i3].r, pal_master[i3].g, pal_master[i3].b);
 			}
 		}
 
@@ -1147,157 +1152,81 @@ void SwapWindow(SDL_Window* window)
 		dstScaleH = 1.0f / (float)dstRect.h;
 
 	#ifdef USE_JOBS
-
-		scale_x_fp = (srcRect.w * (1 << fixed_shift)) / dstRect.w;
-		scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
+		scale_x_fp = (1 << fixed_shift);
+		scale_y_fp = (1 << fixed_shift);
 		scale_x_fp_vec = _mm_set1_epi32(scale_x_fp);
-		x_offset_vec = _mm_set1_epi32(srcRect.x << fixed_shift);
+		x_offset_vec   = _mm_set1_epi32(0);
 #ifdef TARGET_AVX2
 		scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
-		x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
+		x_offset_vec8   = _mm256_set1_epi32(0);
 #endif
 
-		// eebs: tried tiling but it seems that dispatching by row seems to be the fastest option?
+		// Dispatch one job per source row
 		if (buffer->format.format.colorMode)
 			stdJob_Dispatch(copyHeight, 8, SwapWindowJobRGB16);
 		else
 			stdJob_Dispatch(copyHeight, 8, SwapWindowJob);
 		stdJob_Wait();
 
+		SDL_UnlockTexture(swapTexture);
+		SDL_RenderClear(displayRenderer);
+		SDL_RenderCopy(displayRenderer, swapTexture, NULL, &dstRect);
+		SDL_RenderPresent(displayRenderer);
+		return;
+
 	#else
 #ifdef TARGET_AVX2
-		const int fixed_shift = 16;
-		const int scale_x_fp = (srcRect.w * (1 << fixed_shift)) / dstRect.w;
-		const int scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
-		const __m256i scale_x_fp_vec8 = _mm256_set1_epi32(scale_x_fp);
-		const __m256i x_offset_vec8 = _mm256_set1_epi32(srcRect.x << fixed_shift);
-
 		for (int y = 0; y < copyHeight; ++y)
 		{
-			int srcY = srcRect.y + ((y * scale_y_fp) >> fixed_shift);
-			uint8_t* srcRow = srcPixels + srcY * srcPitch;
-			uint32_t* dstRow = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch + dstRect.x * 4);
-
+			uint8_t*  srcRow = srcPixels + y * srcPitch;
+			uint32_t* dstRow = (uint32_t*)(dstPixels + y * dstPitch);
 			int x = 0;
 			for (; x + 7 < copyWidth; x += 8)
 			{
-				__m256i x_vec = _mm256_setr_epi32(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
-				__m256i srcX_fp = _mm256_add_epi32(x_offset_vec8, _mm256_mullo_epi32(x_vec, scale_x_fp_vec8));
-				__m256i srcX = _mm256_srli_epi32(srcX_fp, fixed_shift);
-
-				int srcX_arr[8];
-				_mm256_storeu_si256((__m256i*)srcX_arr, srcX);
-
-				uint8_t indices[8] = {
-					srcRow[srcX_arr[0]], srcRow[srcX_arr[1]], srcRow[srcX_arr[2]], srcRow[srcX_arr[3]],
-					srcRow[srcX_arr[4]], srcRow[srcX_arr[5]], srcRow[srcX_arr[6]], srcRow[srcX_arr[7]]
-				};
-
 				__m256i pixel_vec = _mm256_setr_epi32(
-					paletteCache[indices[0]], paletteCache[indices[1]],
-					paletteCache[indices[2]], paletteCache[indices[3]],
-					paletteCache[indices[4]], paletteCache[indices[5]],
-					paletteCache[indices[6]], paletteCache[indices[7]]
+					paletteCache[srcRow[x]], paletteCache[srcRow[x+1]],
+					paletteCache[srcRow[x+2]], paletteCache[srcRow[x+3]],
+					paletteCache[srcRow[x+4]], paletteCache[srcRow[x+5]],
+					paletteCache[srcRow[x+6]], paletteCache[srcRow[x+7]]
 				);
 				_mm256_storeu_si256((__m256i*)&dstRow[x], pixel_vec);
 			}
-
 			for (; x < copyWidth; ++x)
-			{
-				int srcX = srcRect.x + (x * srcRect.w) / dstRect.w;
-				uint8_t index = srcRow[srcX];
-				rdColor24* color = &pal_master[index];
-				dstRow[x] = SDL_MapRGBFast(windowSurf->format, color->r, color->g, color->b);
-			}
+				dstRow[x] = paletteCache[srcRow[x]];
 		}
 #elif defined(TARGET_SSE)
-		const int fixed_shift = 16; // Bits of fractional precision
-		const int scale_x_fp = (srcRect.w * (1 << fixed_shift)) / dstRect.w;
-		const int scale_y_fp = (srcRect.h * (1 << fixed_shift)) / dstRect.h;
-		const __m128i scale_x_fp_vec = _mm_set1_epi32(scale_x_fp);
-		const __m128i x_offset_vec = _mm_set1_epi32(srcRect.x << fixed_shift);
-
 		for (int y = 0; y < copyHeight; ++y)
 		{
-			// Scale dst Y to src Y
-			int srcY = srcRect.y + ((y * scale_y_fp) >> fixed_shift);
-			uint8_t* srcRow = srcPixels + srcY * srcPitch;
-
-			uint32_t* dstRow = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch + dstRect.x * 4);
-
+			uint8_t*  srcRow = srcPixels + y * srcPitch;
+			uint32_t* dstRow = (uint32_t*)(dstPixels + y * dstPitch);
 			int x = 0;
-			// Process 4 pixels at a time
 			for (; x + 3 < copyWidth; x += 4)
 			{
-				// Create x positions: x, x+1, x+2, x+3
-				__m128i x_vec = _mm_setr_epi32(x, x + 1, x + 2, x + 3);
-
-				// Scale dst X to src X
-				__m128i srcX_fp = _mm_add_epi32(
-					x_offset_vec,
-					_mm_mullo_epi32(x_vec, scale_x_fp_vec)
-				);
-
-				// Convert back to integer
-				__m128i srcX = _mm_srli_epi32(srcX_fp, fixed_shift);
-
-				// Extract the 4 indices
-				int srcX_arr[4];
-				_mm_store_si128((__m128i*)srcX_arr, srcX);
-
-				uint8_t indices[4] = {
-					srcRow[srcX_arr[0]],
-					srcRow[srcX_arr[1]],
-					srcRow[srcX_arr[2]],
-					srcRow[srcX_arr[3]]
-				};
-
-				// Map to destination format
 				__m128i pixel_vec = _mm_setr_epi32(
-					paletteCache[indices[0]],
-					paletteCache[indices[1]],
-					paletteCache[indices[2]],
-					paletteCache[indices[3]]
+					paletteCache[srcRow[x]], paletteCache[srcRow[x+1]],
+					paletteCache[srcRow[x+2]], paletteCache[srcRow[x+3]]
 				);
-
-				// Store 4 pixels
 				_mm_storeu_si128((__m128i*)&dstRow[x], pixel_vec);
 			}
-
-			// Handle remaining pixels
 			for (; x < copyWidth; ++x)
-			{
-				int srcX = srcRect.x + (x * srcRect.w) / dstRect.w;
-				uint8_t index = srcRow[srcX];
-				rdColor24* color = &pal_master[index];
-				dstRow[x] = SDL_MapRGBFast(windowSurf->format, color->r, color->g, color->b);
-			}
+				dstRow[x] = paletteCache[srcRow[x]];
 		}
 #else
 		for (int y = 0; y < copyHeight; ++y)
 		{
-			// Scale dst Y to src Y
-			int srcY = srcRect.y + (y * srcRect.h) / dstRect.h;
-			uint8_t* srcRow = srcPixels + srcY * srcPitch;
-		
-			uint32_t* dstRow = (uint32_t*)(dstPixels + (dstRect.y + y) * dstPitch + dstRect.x * 4);
-		
+			uint8_t*  srcRow = srcPixels + y * srcPitch;
+			uint32_t* dstRow = (uint32_t*)(dstPixels + y * dstPitch);
 			for (int x = 0; x < copyWidth; ++x)
-			{
-				// Scale dst X to src X
-				int srcX = srcRect.x + (x * srcRect.w) / dstRect.w;
-		
-				uint8_t index = srcRow[srcX];
-				dstRow[x] = paletteCache[index];
-			}
+				dstRow[x] = paletteCache[srcRow[x]];
 		}
 	#endif
 	#endif
 
-		//SDL_UnlockSurface(buffer->sdlSurface);
-		SDL_UnlockSurface(windowSurf);
-
-		SDL_UpdateWindowSurface(displayWindow);
+		// Non-jobs fallback: still uses the streaming texture path
+		SDL_UnlockTexture(swapTexture);
+		SDL_RenderClear(displayRenderer);
+		SDL_RenderCopy(displayRenderer, swapTexture, NULL, &dstRect);
+		SDL_RenderPresent(displayRenderer);
 	}
 
 }
@@ -1860,15 +1789,16 @@ void Window_RecreateSDL2Window()
     stdPlatform_Printf("Recreating SDL2 Window!\n");
     Window_needsRecreate = 0;
 
-    if (displayWindow) {
-        std3D_FreeResources();
+	if (displayWindow) {
+		std3D_FreeResources();
 #ifdef TILE_SW_RASTER
-		//std3D_FreeSwapChain();
-#else TILE_SW_RASTER
+		if (swapTexture)     { SDL_DestroyTexture(swapTexture);   swapTexture = NULL; }
+		if (displayRenderer) { SDL_DestroyRenderer(displayRenderer); displayRenderer = NULL; }
+#else
 		SDL_GL_DeleteContext(glWindowContext);
 #endif
-        SDL_DestroyWindow(displayWindow);
-    }
+		SDL_DestroyWindow(displayWindow);
+	}
 
 #ifdef TILE_SW_RASTER
 	int flags = SDL_WINDOW_RESIZABLE; 
@@ -1974,7 +1904,19 @@ void Window_RecreateSDL2Window()
     Window_resized = 1;
 
 #ifdef TILE_SW_RASTER
-	//std3D_CreateSwapChain();
+	// Create an SDL2 hardware-accelerated renderer for the streaming texture swap.
+	displayRenderer = SDL_CreateRenderer(displayWindow, -1,
+		SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC * (jkPlayer_enableVsync ? 1 : 0));
+	if (!displayRenderer)
+	{
+		// Fall back to software renderer rather than crashing
+		displayRenderer = SDL_CreateRenderer(displayWindow, -1, SDL_RENDERER_SOFTWARE);
+	}
+	if (displayRenderer)
+		SDL_RenderSetLogicalSize(displayRenderer, 0, 0);
+	// swapTexture is lazily created in SwapWindow when source dimensions are known
+	swapTexW = 0;
+	swapTexH = 0;
 #endif
 }
 
