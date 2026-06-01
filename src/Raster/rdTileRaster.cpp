@@ -25,6 +25,8 @@ extern "C" {
 
 #ifdef TILE_SW_RASTER
 
+//#define HI_Z
+
 constexpr int MAX_TRIS = 30;
 
 #ifdef TARGET_AVX2
@@ -54,8 +56,12 @@ static uint8_t** rdRaster_ppTileStream = &rdRaster_pTileStream;
 // todo: this should be interleaved, so we can store both color and depth in the same cache and avoid some redundant memory accesses
 static thread_local SIMD_ALIGN uint8_t rdRaster_TileColor[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
 static thread_local SIMD_ALIGN uint16_t rdRaster_TileDepth[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
-//static thread_local uint16_t rdRaster_TileHiZ = 0xFFFF;
 static thread_local SIMD_ALIGN uint32_t rdRaster_TileColorRGBA[RDCACHE_FINE_TILE_SIZE * RDCACHE_FINE_TILE_SIZE];
+
+
+#ifdef HI_Z
+static thread_local uint16_t rdRaster_TileHiZ = 0;
+#endif
 
 static flex_t rdRaster_fogOffset = 0.0f;
 static flex_t rdRaster_fogScale = 1.0f;
@@ -104,6 +110,7 @@ typedef struct rdTilePrimitiveHeader
 	uint32_t discard : 1;
 	uint32_t colorDepth : 2;
 	uint32_t numTris : 5;
+	uint32_t minZi : 16; // primitive min zi (closest vertex) for Hi-Z culling
 
 	union
 	{
@@ -381,6 +388,40 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData, int explicitSlot = 
 		pFace->vertices[i].z = stdMath_Rcp(pFace->vertices[i].z * invFar);
 #endif
 
+	// compute primitive minZi: minimum zi = closest vertex in depth-buffer space
+	// vertices[i].z is now zFar/z_world, so the max of those = closest vertex (smallest z_world)
+	// minZi = 1/maxTransformedZ * 65535 = z_world_min/zFar * 65535
+	{
+		flex_t maxTransformedZ = pFace->vertices[0].z;
+#ifdef TARGET_SSE
+		{
+			__m128 maxVec = _mm_set1_ps(maxTransformedZ);
+			int i = 0;
+			for (; i + 4 <= pFace->numVertices; i += 4)
+			{
+				__m128 z = _mm_set_ps(
+					pFace->vertices[i + 3].z, pFace->vertices[i + 2].z,
+					pFace->vertices[i + 1].z, pFace->vertices[i + 0].z);
+				maxVec = _mm_max_ps(maxVec, z);
+			}
+			// horizontal max
+			maxVec = _mm_max_ps(maxVec, _mm_movehl_ps(maxVec, maxVec));
+			maxVec = _mm_max_ps(maxVec, _mm_shuffle_ps(maxVec, maxVec, _MM_SHUFFLE(1, 1, 1, 1)));
+			maxTransformedZ = _mm_cvtss_f32(maxVec);
+			for (; i < pFace->numVertices; ++i)
+				if (pFace->vertices[i].z > maxTransformedZ) maxTransformedZ = pFace->vertices[i].z;
+		}
+#else
+		for (int i = 1; i < pFace->numVertices; ++i)
+			if (pFace->vertices[i].z > maxTransformedZ) maxTransformedZ = pFace->vertices[i].z;
+#endif
+		// pHeader is set below, store later after pHeader is allocated
+		// hold minZi temporarily
+		(void)maxTransformedZ; // used after header allocation
+		// temporarily capture for use below (re-compute inline since pHeader isn't allocated yet)
+		// We'll compute it right after pHeader allocation
+	}
+
 	// prescale/divide uvs
 	if (geoMode == RD_GEOMODE_TEXTURED)
 	{
@@ -518,6 +559,13 @@ int rdRaster_SetupTiled(rdProcEntry* pFace, uint8_t** pData, int explicitSlot = 
 	pHeader->geoMode = geoMode;
 	pHeader->lightMode = lightMode;
 	pHeader->texMode = texMode;
+	// Compute minZi: max(vertices[i].z) = closest vertex (zFar/z_world), then invert
+	{
+		flex_t maxZ = pFace->vertices[0].z;
+		for (int i = 1; i < pFace->numVertices; ++i)
+			if (pFace->vertices[i].z > maxZ) maxZ = pFace->vertices[i].z;
+		pHeader->minZi = (uint32_t)stdMath_Clamp(stdMath_Rcp(maxZ) * 65535.0f + 0.5f, 0.0f, 65535.0f);
+	}
 	if (pHeader->geoMode == RD_GEOMODE_TEXTURED)
 	{
 		pHeader->colorDepth = pTexture->format.format.bpp >> 3;
@@ -708,6 +756,7 @@ typedef struct rdTileDrawCommand
 	uint32_t flatLight;
 } rdTileDrawCommand;
 
+
 static const uint32_t rdRaster_DitherLUT[16] = {
 	0, 4, 1, 5,
 	6, 2, 7, 3,
@@ -748,6 +797,15 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 	//uint16_t iz_min = (uint16_t)(int)(entry->z_min * 65536.0f + 0.5f);
 	//if(iz_min >= rdRaster_TileHiZ)
 	//	return;
+#ifdef HI_Z
+	const uint16_t localHiZ = rdRaster_TileHiZ;
+	if constexpr (ReadZ)
+	{
+		// Coarse Hi-Z: if the primitive's nearest depth is behind every occluder in the tile, skip.
+		if (pCommand->pHeader->minZi > localHiZ)
+			return;
+	}
+#endif
 	int tileMinX = tileX * RDCACHE_FINE_TILE_SIZE;
 	int tileMinY = tileY * RDCACHE_FINE_TILE_SIZE;
 	int tileMaxX = tileMinX + RDCACHE_FINE_TILE_SIZE - 1;
@@ -822,8 +880,32 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 	}
 
 	maybe<UseFlatLight, __m256> flatLight;
+	maybe<UseFlatLight && !IsRGBAOutput, const uint8_t*> lightLevelsLit;
 	if constexpr (UseFlatLight)
+	{
 		flatLight = _mm256_set1_ps(pCommand->flatLight / 255.0f);
+		if constexpr (!IsRGBAOutput)
+		{
+			// dither is always 0 (hardcoded), so this is constant for the entire draw command
+			const int lightRow = stdMath_ClampInt(pCommand->flatLight, 0, 63) << 8;
+			lightLevelsLit = lightLevels + lightRow;
+		}
+	}
+
+	// thread_local tile buffer pointers into plain locals to avoid a hidden TLS
+	// lookup on every access inside the hot rasterization loop.
+	uint16_t* const tileDepth     = rdRaster_TileDepth;
+	uint8_t*  const tileColor     = rdRaster_TileColor;
+	uint32_t* const tileColorRGBA = rdRaster_TileColorRGBA;
+
+#ifdef HI_Z
+	// Accumulate the maximum written depth across all triangles so we can
+	// update rdRaster_TileHiZ once at the end, enabling progressive culling
+	// for subsequent draw commands to this tile.
+	maybe<WriteZ, __m256i> hiZAccum;
+	if constexpr (WriteZ)
+		hiZAccum = _mm256_setzero_si256();
+#endif
 
 	// Pre-decode all triangles from the stream into a contiguous local array so that
 	// the hot rasterization loop operates on cache-friendly sequential data, rather than
@@ -988,13 +1070,20 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 					if constexpr (ReadZ || WriteZ)
 					{
 						// Load exactly 8 x uint16 (16 bytes) and zero-extend each to int32
-						__m128i depth_u16 = _mm_loadu_si128((__m128i*) & rdRaster_TileDepth[offset]);
+						__m128i depth_u16 = _mm_loadu_si128((__m128i*) & tileDepth[offset]);
 						depth_vals = _mm256_cvtepu16_epi32(depth_u16);
 					}
 
 					// Early Z (try to avoid texture accesses when mask fails, not sure how helpful it is)
 					if constexpr (!UseDiscard && ReadZ)
 						depthMask = _mm256_andnot_si256(_mm256_cmpgt_epi32(zi, depth_vals), _mm256_set1_epi32(-1)); // don't have a lessequal, use greater and flip
+
+					// Combined early-out: skip all texture/color work if no lane passes both coverage and depth
+					if constexpr (!UseDiscard && ReadZ)
+					{
+						if (!_mm256_movemask_ps(_mm256_castsi256_ps(_mm256_and_si256(coverageMask, depthMask))))
+							goto next_simd_step;
+					}
 
 					// Texture/Color
 					__m256i index;
@@ -1031,26 +1120,29 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						const __m256i y_wrapped = _mm256_and_si256(_mm256_srli_epi32(y_fixed, 16 - texRowShift), vWrap);
 						const __m256i texcoords = _mm256_add_epi32(x_wrapped, y_wrapped);
 
-						// extract the depth and texcoord for each lane
-						uint32_t depthMasks[8];
-						_mm256_storeu_si256((__m256i*)depthMasks, depthMask);
-						uint32_t tcs[8];
-						_mm256_storeu_si256((__m256i*)tcs, texcoords);
-
-						// Read the texture for each texcoord
-						SIMD_ALIGN TextureStorage texels[8];
-						for (int lane = 0; lane < 8; lane++)
-							texels[lane] = depthMasks[lane] ? pixels[tcs[lane]] : 0;
+						// Gather 8 texels in parallel using AVX2, pixels is uint8_t but gather reads int32,
+						// so we mask to the low byte afterwards. Masked lanes (depthMask == 0) are zeroed.
+						__m256i gathered = _mm256_mask_i32gather_epi32(
+							_mm256_setzero_si256(),
+							(const int*)pixels,
+							texcoords,
+							depthMask,
+							1 /* scale=1, byte-addressed */);
+						gathered = _mm256_and_si256(gathered, _mm256_set1_epi32(0xFF));
 
 						if constexpr (IsIndexedColor) // Direct index lookup
 						{
 							if constexpr (!IsRGBAOutput)
 							{
-								// 8 uint8 indices fit in the low 8 bytes of a __m128i; upper bits unused
-								index = _mm256_castsi128_si256(_mm_loadl_epi64((__m128i*)texels));
+								// pack 8 x int32 -> 8 x uint8 directly into the low 64 bits
+								__m128i p16 = _mm_packus_epi32(_mm256_castsi256_si128(gathered), _mm256_extracti128_si256(gathered, 1));
+								index = _mm256_castsi128_si256(_mm_packus_epi16(p16, _mm_setzero_si128()));
 							}
 							else
 							{
+								SIMD_ALIGN TextureStorage texels[8];
+								__m128i p16 = _mm_packus_epi32(_mm256_castsi256_si128(gathered), _mm256_extracti128_si256(gathered, 1));
+								_mm_storel_epi64((__m128i*)texels, _mm_packus_epi16(p16, _mm_setzero_si128()));
 								uint32_t rgbs[8];
 								for (int lane = 0; lane < 8; ++lane)
 								{
@@ -1062,8 +1154,8 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						}
 						else // RGB->index conversion
 						{
-							// SIMD texels so we can convert them all at the same time
-							__m256i pix = _mm256_set_epi32(texels[7], texels[6], texels[5], texels[4], texels[3], texels[2], texels[1], texels[0]);
+							// gathered already holds 8 x int32 texels
+							__m256i pix = gathered;
 
 							// Extract channels
 							__m256i r = _mm256_slli_epi32(_mm256_and_si256(_mm256_srli_epi32(pix, r_shift), r_mask), r_loss);
@@ -1081,10 +1173,12 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 								// offset = (b << 12) | (g << 6) | r
 								__m256i offset = _mm256_or_si256(_mm256_or_si256(_mm256_slli_epi32(b, 12), _mm256_slli_epi32(g, 6)), r);
 
-								// Extract the offsets and read the lUT
+								// Extract the offsets and read the LUT
 								SIMD_ALIGN uint32_t offsets[8];
 								_mm256_store_si256((__m256i*)offsets, offset);
-								
+								// depthMask is still in SIMD register; extract it for the per-lane guard
+								SIMD_ALIGN uint32_t depthMasks[8];
+								_mm256_storeu_si256((__m256i*)depthMasks, depthMask);
 								SIMD_ALIGN uint8_t indices_arr[8];
 								for (int lane = 0; lane < 8; ++lane)
 									indices_arr[lane] = depthMasks[lane] ? searchTable[offsets[lane]] : 0;
@@ -1105,7 +1199,7 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 					{
 						if constexpr (!IsRGBAOutput)
 						{
-							// discard where index == 0; indices live in bytes 0-7 of the low __m128i
+							// discard where index == 0, indices live in bytes 0-7 of the low __m128i
 							// todo: actual transparency index
 							__m128i discardMask8 = _mm_cmpeq_epi8(_mm256_castsi256_si128(index), _mm_setzero_si128());
 							discardMask = _mm256_cvtepi8_epi32(discardMask8);
@@ -1120,16 +1214,15 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 					if constexpr (UseDiscard && ReadZ)
 						depthMask = _mm256_andnot_si256(_mm256_cmpgt_epi32(zi, depth_vals), _mm256_set1_epi32(-1)); // don't have a lessequal, use greater and flip
 
-					// Merge the masks and determine what we keep from src and from dst
+					// Merge the masks
 					__m256i srcMask = _mm256_andnot_si256(discardMask, _mm256_and_si256(coverageMask, depthMask));
-					__m256i dstMask = _mm256_xor_si256(srcMask, _mm256_set1_epi32(-1));
-					// Depth write
+					// Depth write — dstMask derived inline via andnot, no need to store it in a register
 					if constexpr (WriteZ)
 					{
 						// Blend new and old Z values
 						__m256i new_depth = _mm256_or_si256(
 							_mm256_and_si256(srcMask, zi),
-							_mm256_and_si256(dstMask, depth_vals)
+							_mm256_andnot_si256(srcMask, depth_vals)
 						);
 
 						// Pack 8 x int32 down to 8 x uint16 and write 16 bytes
@@ -1138,82 +1231,114 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 						__m128i packed_depth = _mm_packus_epi32(
 							_mm256_castsi256_si128(new_depth),
 							_mm256_extracti128_si256(new_depth, 1));
-						_mm_storeu_si128((__m128i*)&rdRaster_TileDepth[offset], packed_depth);
+						_mm_storeu_si128((__m128i*)&tileDepth[offset], packed_depth);
+#ifdef HI_Z
+						// Track the maximum depth written so far to update the tile HiZ later
+						hiZAccum = _mm256_max_epu16(hiZAccum, _mm256_castsi128_si256(_mm_and_si128(
+							packed_depth,
+							_mm_set1_epi16((short)0xFFFF))));
+#endif
 					}
 
 					if constexpr (!IsRGBAOutput)
 					{
-						// Read the previous index/color
-						SIMD_ALIGN uint8_t oldIndex_arr[8];
-						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 8);
+						// Load 8 old palette indices directly as packed bytes into XMM — no YMM expansion
+						__m128i oldIdx8 = _mm_loadl_epi64((__m128i*)&tileColor[offset]);
 
-						// Extract the indices and masks so we can do light/transparency lookups
-#ifndef FOG // todo: UseFog
+						// All !IsRGBAOutput paths (solid color, indexed texture, RGB->searchTable)
+						// store 8 x uint8 in the low 64 bits of index's bottom __m128i.
+						__m128i idx8 = _mm256_castsi256_si128(index);
+
+						// Pack srcMask (8 x int32, each 0x00000000 or 0xFFFFFFFF) to 8 x uint8
+						// (each 0x00 or 0xFF) for the XMM merge at the end.
+						// srli by 24: 0xFFFFFFFF -> 0xFF, 0 -> 0, then two unsigned-saturating packs.
+						__m256i smShifted = _mm256_srli_epi32(srcMask, 24);
+						__m128i smPacked16 = _mm_packus_epi32(_mm256_castsi256_si128(smShifted), _mm256_extracti128_si256(smShifted, 1));
+						__m128i srcMask8 = _mm_packus_epi16(smPacked16, _mm_setzero_si128());
+
+						// When at least one lighting or alpha stage is active, expand idx8 to 32-bit once
+						// and keep values in that form across all stages, packing back to 8-bit only at
+						// the very end. This avoids a redundant pack->expand round-trip between stages.
 						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
-#endif
 						{
-							SIMD_ALIGN uint8_t index_arr[8];
-							// indices live in the low 8 bytes of index — use _mm_storel_epi64, not a 32-byte store
-							_mm_storel_epi64((__m128i*)index_arr, _mm256_castsi256_si128(index));
-							SIMD_ALIGN uint32_t laneMasks[8];
-							_mm256_storeu_si256((__m256i*)laneMasks, srcMask);
+							__m256i idx32 = _mm256_cvtepu8_epi32(idx8);
 
-							flex_maybe<UseGouraud> l_arr[8];
 							if constexpr (UseGouraud)
-								_mm256_storeu_ps(l_arr, l);
-#ifdef FOG
-							__m256 fog = _mm256_fmadd_ps(iz, _mm256_set1_ps(rdRaster_fogScale), _mm256_set1_ps(rdRaster_fogOffset));
-							__m256i fogi = _mm256_cvtps_epi32(fog);
-
-							SIMD_ALIGN uint32_t fog_arr[8];
-							_mm256_storeu_si256((__m256i*)fog_arr, fogi);
-#endif
-
-							for (int lane = 0; lane < 8; lane++)
 							{
-								if constexpr (UseGouraud)
-									index_arr[lane] = laneMasks[lane] ? lightLevels[(stdMath_ClampInt((uint32_t)l_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]] : 0;
-
-								if constexpr (UseFlatLight)
-									index_arr[lane] = laneMasks[lane] ? lightLevels[(stdMath_ClampInt(pCommand->flatLight + dither, 0, 63) << 8) + index_arr[lane]] : 0;
-
-#ifdef FOG
-	// tiletodo: optimize me
-								if (rdroid_curFogEnabled)
-									index_arr[lane] = laneMasks[lane] ? rdroid_fogTable[(stdMath_ClampInt(fog_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]] : index_arr[lane];
-#endif
-
-
-								if constexpr (UseAlpha)
-									index_arr[lane] = laneMasks[lane] ? transparency[(oldIndex_arr[lane] << 8) + index_arr[lane]] : 0;
+								__m256i li = _mm256_cvtps_epi32(l);
+								li = _mm256_add_epi32(li, _mm256_set1_epi32(dither));
+								li = _mm256_max_epi32(li, _mm256_setzero_si256());
+								li = _mm256_min_epi32(li, _mm256_set1_epi32(63));
+								__m256i lightOffsets = _mm256_add_epi32(_mm256_slli_epi32(li, 8), idx32);
+								__m256i lit = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(), (const int*)lightLevels, lightOffsets, srcMask, 1);
+								idx32 = _mm256_and_si256(lit, _mm256_set1_epi32(0xFF));
 							}
 
-							// Pack back into SIMD (8 bytes back into low 64 bits)
-							index = _mm256_castsi128_si256(_mm_loadl_epi64((__m128i*)index_arr));
+							if constexpr (UseFlatLight)
+							{
+								__m256i lit = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(), (const int*)lightLevelsLit, idx32, srcMask, 1);
+								idx32 = _mm256_and_si256(lit, _mm256_set1_epi32(0xFF));
+							}
+
+	#ifdef FOG
+							if (rdroid_curFogEnabled)
+							{
+								__m256 fogf = _mm256_fmadd_ps(iz, _mm256_set1_ps(rdRaster_fogScale), _mm256_set1_ps(rdRaster_fogOffset));
+								__m256i fogi = _mm256_cvtps_epi32(fogf);
+								fogi = _mm256_add_epi32(fogi, _mm256_set1_epi32(dither));
+								fogi = _mm256_max_epi32(fogi, _mm256_setzero_si256());
+								fogi = _mm256_min_epi32(fogi, _mm256_set1_epi32(63));
+								__m256i fogOffsets = _mm256_add_epi32(_mm256_slli_epi32(fogi, 8), idx32);
+								__m256i fogged = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(), (const int*)rdroid_fogTable, fogOffsets, srcMask, 1);
+								fogged = _mm256_and_si256(fogged, _mm256_set1_epi32(0xFF));
+								// Fog covers covered lanes; others keep their current value
+								idx32 = _mm256_or_si256(_mm256_and_si256(srcMask, fogged), _mm256_andnot_si256(srcMask, idx32));
+							}
+	#endif
+
+							if constexpr (UseAlpha)
+							{
+								// transparency[(oldIndex << 8) + newIndex]
+								__m256i oldIdx32 = _mm256_cvtepu8_epi32(oldIdx8);
+								__m256i alphaOffsets = _mm256_add_epi32(_mm256_slli_epi32(oldIdx32, 8), idx32);
+								__m256i blended = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(), (const int*)transparency, alphaOffsets, srcMask, 1);
+								idx32 = _mm256_and_si256(blended, _mm256_set1_epi32(0xFF));
+							}
+
+							// Single pack at the end of the lighting/alpha chain
+							__m128i p16 = _mm_packus_epi32(_mm256_castsi256_si128(idx32), _mm256_extracti128_si256(idx32, 1));
+							idx8 = _mm_packus_epi16(p16, _mm_setzero_si128());
 						}
+	#ifdef FOG
+						else if (rdroid_curFogEnabled)
+						{
+							// FOG-only path (no lighting or alpha): expand, gather and blend in-place
+							__m256 fogf = _mm256_fmadd_ps(iz, _mm256_set1_ps(rdRaster_fogScale), _mm256_set1_ps(rdRaster_fogOffset));
+							__m256i fogi = _mm256_cvtps_epi32(fogf);
+							fogi = _mm256_add_epi32(fogi, _mm256_set1_epi32(dither));
+							fogi = _mm256_max_epi32(fogi, _mm256_setzero_si256());
+							fogi = _mm256_min_epi32(fogi, _mm256_set1_epi32(63));
+							__m256i idx32 = _mm256_cvtepu8_epi32(idx8);
+							__m256i fogOffsets = _mm256_add_epi32(_mm256_slli_epi32(fogi, 8), idx32);
+							__m256i fogged = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(), (const int*)rdroid_fogTable, fogOffsets, srcMask, 1);
+							fogged = _mm256_and_si256(fogged, _mm256_set1_epi32(0xFF));
+							__m128i p16 = _mm_packus_epi32(_mm256_castsi256_si128(fogged), _mm256_extracti128_si256(fogged, 1));
+							__m128i fogged8 = _mm_packus_epi16(p16, _mm_setzero_si128());
+							idx8 = _mm_or_si128(_mm_and_si128(srcMask8, fogged8), _mm_andnot_si128(srcMask8, idx8));
+						}
+	#endif
 
-						// Load oldIndex as SIMD for masked write
-						// 8 uint8 indices: expand to 8 x int32 for masking, then pack back to 8 bytes
-						__m256i oldIndexVec = _mm256_cvtepu8_epi32(_mm_loadl_epi64((__m128i*)oldIndex_arr));
-
-						// Merge using masks
-						__m256i masked = _mm256_or_si256(
-							_mm256_and_si256(srcMask, _mm256_cvtepu8_epi32(_mm256_castsi256_si128(index))),
-							_mm256_and_si256(dstMask, oldIndexVec)
+						// Final merge and store — entirely in XMM, no 256-bit ops needed
+						__m128i masked8 = _mm_or_si128(
+							_mm_and_si128(srcMask8, idx8),
+							_mm_andnot_si128(srcMask8, oldIdx8)
 						);
-
-						// Pack 8 x int32 -> 8 x uint16 -> 8 x uint8 and store exactly 8 bytes
-						// _mm256_packus interleaves lanes, so use SSE across the two halves
-						__m128i packed16 = _mm_packus_epi32(
-							_mm256_castsi256_si128(masked),
-							_mm256_extracti128_si256(masked, 1));
-						__m128i packed8 = _mm_packus_epi16(packed16, _mm_setzero_si128());
-						_mm_storel_epi64((__m128i*)&rdRaster_TileColor[offset], packed8);
+						_mm_storel_epi64((__m128i*)&tileColor[offset], masked8);
 					}
 					else
 					{
 						// Load 8 pixels starting at offset
-						__m256i oldPixels = _mm256_loadu_si256((__m256i*)(rdRaster_TileColorRGBA + offset));
+						__m256i oldPixels = _mm256_loadu_si256((__m256i*)(tileColorRGBA + offset));
 
 						// Lighting and blending
 						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
@@ -1266,18 +1391,18 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 							index = stdColor_EncodeRGBASIMD_AVX2(&rdRaster_32bitMode, r, g, b, a);
 						}
 
-						// Mask pixels
-						// blended = (srcMask & index) | (dstMask & oldPixels)
+						// Mask pixels — dstMask derived inline via andnot
 						__m256i masked = _mm256_or_si256(
 							_mm256_and_si256(srcMask, index),
-							_mm256_and_si256(dstMask, oldPixels)
+							_mm256_andnot_si256(srcMask, oldPixels)
 						);
 
 						// Store the masked pixels back
-						_mm256_storeu_si256((__m256i*)(rdRaster_TileColorRGBA + offset), masked);
+						_mm256_storeu_si256((__m256i*)(tileColorRGBA + offset), masked);
 					}
-				}
+				} // if (coverageMask)
 
+			next_simd_step:
 				// Column step
 				w0 = _mm256_add_epi32(w0, w0_stride);
 				w1 = _mm256_add_epi32(w1, w1_stride);
@@ -1313,6 +1438,23 @@ void rdRaster_DrawToTileSIMD_AVX2(/*rdTilePrimitive* prim,*/ rdTileDrawCommand* 
 				l_row = _mm256_add_ps(l_row, l_dy);
 		}
 	}
+
+#ifdef HI_Z
+	if constexpr (WriteZ)
+	{
+		// Reduce the 16-lane uint16 accumulator to a single maximum and update the
+		// tile HiZ so the next draw command on this tile can cull against fresh data.
+		__m128i lo = _mm256_castsi256_si128(hiZAccum);
+		__m128i hi = _mm256_extracti128_si256(hiZAccum, 1);
+		__m128i m  = _mm_max_epu16(lo, hi);
+		m = _mm_max_epu16(m, _mm_shuffle_epi32(m, _MM_SHUFFLE(1, 0, 3, 2)));
+		m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(1, 0, 3, 2)));
+		m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(0, 0, 0, 1)));
+		const uint16_t newHiZ = (uint16_t)_mm_extract_epi16(m, 0);
+		if (newHiZ > rdRaster_TileHiZ)
+			rdRaster_TileHiZ = newHiZ;
+	}
+#endif
 }
 #endif
 
@@ -1335,6 +1477,14 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 	//uint16_t iz_min = (uint16_t)(int)(entry->z_min * 65536.0f + 0.5f);
 	//if(iz_min >= rdRaster_TileHiZ)
 	//	return;
+#ifdef HI_Z
+	if constexpr (ReadZ)
+	{
+		// Coarse Hi-Z: if the primitive's nearest depth is behind every occluder in the tile, skip.
+		if (pCommand->pHeader->minZi > rdRaster_TileHiZ)
+			return;
+	}
+#endif
 	int tileMinX = tileX * RDCACHE_FINE_TILE_SIZE;
 	int tileMinY = tileY * RDCACHE_FINE_TILE_SIZE;
 	int tileMaxX = tileMinX + RDCACHE_FINE_TILE_SIZE - 1;
@@ -1356,14 +1506,6 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 	uint8_t* transparency = ((uint8_t*)pCommand->pHeader->pColormap->transparency);
 	uint8_t* lightLevels = ((uint8_t*)pCommand->pHeader->pColormap->lightlevel);
 	uint8_t* searchTable = pCommand->pHeader->pColormap->searchTable;
-
-	rdRaster_PrimitiveEncoderDecoder* pDecoder = pCommand->pDecoder;
-
-	static constexpr float alpha = 90.0f / 255.0f;
-	static constexpr float oneMinusAlpha = 1.0f - alpha;
-
-	maybe<!UseTexture, __m128i> solidColor;
-	if constexpr (!UseTexture)
 	{
 		if constexpr (IsRGBAOutput)
 		{
@@ -1731,72 +1873,88 @@ void rdRaster_DrawToTileSIMD(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pComma
 						_mm_storel_epi64((__m128i*) & rdRaster_TileDepth[offset], packed_depth);
 					}
 
-					if constexpr (!IsRGBAOutput)
-					{
-						// Read the previous index/color
-						SIMD_ALIGN uint8_t oldIndex_arr[4];
-						memcpy(oldIndex_arr, &rdRaster_TileColor[offset], 4);
+									if constexpr (!IsRGBAOutput)
+										{
+											// Read the previous index/color as SIMD (needed by UseAlpha and the masked write)
+											__m128i oldIndexVec = _mm_cvtepu8_epi32(_mm_loadl_epi64((__m128i*)&rdRaster_TileColor[offset]));
 
-						// Extract the indices and masks so we can do light/transparency lookups
-#ifndef FOG // todo: UseFog
-						if constexpr (UseGouraud || UseFlatLight || UseAlpha)
-#endif
-						{
-							SIMD_ALIGN uint8_t index_arr[4];
-							_mm_storeu_si32((__m128i*)index_arr, index);
+											// Zero-extend the 4 texel indices from index to 4 x int32
+											__m128i idx32 = _mm_cvtepu8_epi32(index);
 
-							SIMD_ALIGN uint32_t laneMasks[4];
-							_mm_storeu_si128((__m128i*)laneMasks, srcMask);
+											if constexpr (UseGouraud)
+											{
+												// Per-lane light row: clamp(l + dither, 0, 63) << 8
+												__m128i li = _mm_cvtps_epi32(l);
+												li = _mm_add_epi32(li, _mm_set1_epi32(dither));
+												li = _mm_max_epi32(li, _mm_setzero_si128());
+												li = _mm_min_epi32(li, _mm_set1_epi32(63));
+												__m128i lightOffsets = _mm_add_epi32(_mm_slli_epi32(li, 8), idx32);
+												__m128i lit = _mm_mask_i32gather_epi32(
+													_mm_setzero_si128(),
+													(const int*)lightLevels,
+													lightOffsets,
+													srcMask,
+													1);
+												idx32 = _mm_and_si128(lit, _mm_set1_epi32(0xFF));
+											}
 
-							flex_maybe<UseGouraud> l_arr[4];
-							if constexpr (UseGouraud)
-								_mm_storeu_ps(l_arr, l);
+											if constexpr (UseFlatLight)
+											{
+												int lightRow = stdMath_ClampInt(pCommand->flatLight + dither, 0, 63) << 8;
+												__m128i lit = _mm_mask_i32gather_epi32(
+													_mm_setzero_si128(),
+													(const int*)(lightLevels + lightRow),
+													idx32,
+													srcMask,
+													1);
+												idx32 = _mm_and_si128(lit, _mm_set1_epi32(0xFF));
+											}
 
-#ifdef FOG
-							__m128 fog = _mm_fmadd_ps(iz, _mm_set_ps1(rdRaster_fogScale), _mm_set_ps1(rdRaster_fogOffset));
-							__m128i fogi = _mm_cvtps_epi32(fog);
+					#ifdef FOG
+											if (rdroid_curFogEnabled)
+											{
+												__m128 fogf = _mm_fmadd_ps(iz, _mm_set_ps1(rdRaster_fogScale), _mm_set_ps1(rdRaster_fogOffset));
+												__m128i fogi = _mm_cvtps_epi32(fogf);
+												fogi = _mm_add_epi32(fogi, _mm_set1_epi32(dither));
+												fogi = _mm_max_epi32(fogi, _mm_setzero_si128());
+												fogi = _mm_min_epi32(fogi, _mm_set1_epi32(63));
+												__m128i fogOffsets = _mm_add_epi32(_mm_slli_epi32(fogi, 8), idx32);
+												__m128i fogged = _mm_mask_i32gather_epi32(
+													_mm_setzero_si128(),
+													(const int*)rdroid_fogTable,
+													fogOffsets,
+													srcMask,
+													1);
+												fogged = _mm_and_si128(fogged, _mm_set1_epi32(0xFF));
+												idx32 = _mm_or_si128(
+													_mm_and_si128(srcMask, fogged),
+													_mm_andnot_si128(srcMask, idx32));
+											}
+					#endif
 
-							SIMD_ALIGN uint32_t fog_arr[4];
-							_mm_storeu_si128((__m128i*)fog_arr, fogi);
-#endif
+											if constexpr (UseAlpha)
+											{
+												__m128i alphaOffsets = _mm_add_epi32(_mm_slli_epi32(oldIndexVec, 8), idx32);
+												__m128i blended = _mm_mask_i32gather_epi32(
+													_mm_setzero_si128(),
+													(const int*)transparency,
+													alphaOffsets,
+													srcMask,
+													1);
+												idx32 = _mm_and_si128(blended, _mm_set1_epi32(0xFF));
+											}
 
-							for (int lane = 0; lane < 4; lane++)
-							{
-								if constexpr (UseGouraud)
-									index_arr[lane] = laneMasks[lane] ? lightLevels[(stdMath_ClampInt((uint32_t)l_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]] : 0;
+											// Merge using masks and store 4 bytes
+											__m128i masked = _mm_or_si128(
+												_mm_and_si128(srcMask, idx32),
+												_mm_and_si128(dstMask, oldIndexVec)
+											);
 
-								if constexpr (UseFlatLight)
-									index_arr[lane] = laneMasks[lane] ? lightLevels[(stdMath_ClampInt(pCommand->flatLight + dither, 0, 63) << 8) + index_arr[lane]] : 0;
-
-#ifdef FOG
-	// tiletodo: optimize me
-								if (rdroid_curFogEnabled)
-									index_arr[lane] = laneMasks[lane] ? rdroid_fogTable[(stdMath_ClampInt(fog_arr[lane] + dither, 0, 63) << 8) + index_arr[lane]] : index_arr[lane];
-#endif
-
-
-								if constexpr (UseAlpha)
-									index_arr[lane] = laneMasks[lane] ? transparency[(oldIndex_arr[lane] << 8) + index_arr[lane]] : 0;
-							}
-
-							// Pack back into SIMD
-							index = _mm_loadl_epi64((__m128i*)index_arr);
-						}
-
-						// Load oldIndex as SIMD for masked write
-						__m128i oldIndexVec = _mm_cvtepu8_epi32(_mm_loadl_epi64((__m128i*)oldIndex_arr));
-
-						// Merge using masks
-						__m128i masked = _mm_or_si128(
-							_mm_and_si128(srcMask, _mm_cvtepu8_epi32(index)),
-							_mm_and_si128(dstMask, oldIndexVec)
-						);
-
-						// Pack blended back to 8-bit and store
-						__m128i packed16 = _mm_packus_epi32(masked, _mm_setzero_si128());
-						__m128i packed8 = _mm_packus_epi16(packed16, _mm_setzero_si128());
-						_mm_storeu_si32((__m128i*) & rdRaster_TileColor[offset], packed8);
-					}
+											// Pack blended back to 8-bit and store
+											__m128i packed16 = _mm_packus_epi32(masked, _mm_setzero_si128());
+											__m128i packed8 = _mm_packus_epi16(packed16, _mm_setzero_si128());
+											_mm_storeu_si32((__m128i*) & rdRaster_TileColor[offset], packed8);
+										}
 					else
 					{
 						// Load 4 pixels starting at offset
@@ -1922,6 +2080,14 @@ void rdRaster_DrawToTile(/*rdTilePrimitive* prim,*/rdTileDrawCommand* pCommand, 
 	//uint16_t iz_min = (uint16_t)(int)(entry->z_min * 65536.0f + 0.5f);
 	//if(iz_min >= rdRaster_TileHiZ)
 	//	return;
+#ifdef HI_Z
+	if constexpr (ReadZ)
+	{
+		// Coarse Hi-Z: if the primitive's nearest depth is behind every occluder in the tile, skip.
+		if (pCommand->pHeader->minZi > rdRaster_TileHiZ)
+			return;
+	}
+#endif
 
 	int tileMinX = tileX * RDCACHE_FINE_TILE_SIZE;
 	int tileMinY = tileY * RDCACHE_FINE_TILE_SIZE;
@@ -2585,10 +2751,17 @@ extern "C" {
 		if (pCanvas->bIdk & 4)
 		{
 			memset(rdRaster_TileDepth, 0xFFFF, sizeof(rdRaster_TileDepth));
+#ifdef HI_Z
+			rdRaster_TileHiZ = 0xFFFF;
+#endif
 		}
 		else // Otherwise copy the depth buffer to the tile
 		{
-			// Copy depth buffer row-wise
+			// Copy depth buffer row-wise, computing the tile HiZ inline to avoid a
+			// separate second pass over the same data.
+#ifdef HI_Z
+			__m256i hiZVec = _mm256_setzero_si256();
+#endif
 			for (int row = 0; row < tileHeight; ++row)
 			{
 				const uint16_t* src = zBuffer + (tileMinY + row) * width + tileMinX;
@@ -2599,11 +2772,26 @@ extern "C" {
 				// Clear remaining columns if needed
 				if (tileWidth < maxW)
 					memset(dst + tileWidth, 0, (maxW - tileWidth) * sizeof(uint16_t));
+#ifdef HI_Z
+				// Accumulate the row maximum (full tile width, cleared columns are 0)
+				hiZVec = _mm256_max_epu16(hiZVec, _mm256_loadu_si256((const __m256i*)dst));
+#endif
 			}
 
 			// Clear remaining rows if needed
 			for (int row = tileHeight; row < maxH; ++row)
 				memset(rdRaster_TileDepth + row * maxW, 0, maxW * sizeof(uint16_t));
+
+#ifdef HI_Z
+			// Horizontal reduce the accumulated vector to a single uint16 maximum
+			__m128i lo = _mm256_castsi256_si128(hiZVec);
+			__m128i hi = _mm256_extracti128_si256(hiZVec, 1);
+			__m128i m  = _mm_max_epu16(lo, hi);
+			m = _mm_max_epu16(m, _mm_shuffle_epi32(m, _MM_SHUFFLE(1, 0, 3, 2)));
+			m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(1, 0, 3, 2)));
+			m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(0, 0, 0, 1)));
+			rdRaster_TileHiZ = (uint16_t)_mm_extract_epi16(m, 0);
+#endif
 		}
 	}
 
@@ -2887,27 +3075,45 @@ extern "C" {
 		if (pCanvas->bIdk & 4)
 		{
 			memset(rdRaster_TileDepth, 0xFFFF, sizeof(rdRaster_TileDepth));
+#ifdef HI_Z
+			rdRaster_TileHiZ = 0xFFFF;
+#endif
 		}
 		else
 		{
-			// Copy depth buffer row-wise
+			// Copy depth buffer row-wise, computing the tile HiZ inline to avoid a
+			// separate second pass over the same data.
+#ifdef HI_Z
+			__m256i hiZVec = _mm256_setzero_si256();
+#endif
 			for (int row = 0; row < tileHeight; ++row)
 			{
 				uint16_t* src = zBuffer + (tileMinY + row) * width_in_pixels + tileMinX;
-				uint16_t* dst = (uint16_t*)(rdRaster_TileDepth)+row * RDCACHE_FINE_TILE_SIZE;
+				uint16_t* dst = (uint16_t*)(rdRaster_TileDepth) + row * RDCACHE_FINE_TILE_SIZE;
 				memcpy(dst, src, tileWidth * sizeof(uint16_t));
-
-				//for (int x = 0; x < tileWidth; ++x)
-					//rdRaster_TileHiZ = src[x] < rdRaster_TileHiZ ? src[x] : rdRaster_TileHiZ;
 
 				if (tileWidth < RDCACHE_FINE_TILE_SIZE)
 					memset(dst + tileWidth, 0, (RDCACHE_FINE_TILE_SIZE - tileWidth) * sizeof(uint16_t));
+#ifdef HI_Z
+				// Accumulate the row maximum (full tile width, cleared columns are 0)
+				hiZVec = _mm256_max_epu16(hiZVec, _mm256_loadu_si256((const __m256i*)dst));
+#endif
 			}
-
 
 			// Clear remaining rows if needed
 			for (int row = tileHeight; row < RDCACHE_FINE_TILE_SIZE; ++row)
 				memset(rdRaster_TileDepth + row * RDCACHE_FINE_TILE_SIZE, 0, RDCACHE_FINE_TILE_SIZE * sizeof(uint16_t));
+
+#ifdef HI_Z
+			// Horizontal reduce the accumulated vector to a single uint16 maximum
+			__m128i lo = _mm256_castsi256_si128(hiZVec);
+			__m128i hi = _mm256_extracti128_si256(hiZVec, 1);
+			__m128i m  = _mm_max_epu16(lo, hi);
+			m = _mm_max_epu16(m, _mm_shuffle_epi32(m, _MM_SHUFFLE(1, 0, 3, 2)));
+			m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(1, 0, 3, 2)));
+			m = _mm_max_epu16(m, _mm_shufflelo_epi16(m, _MM_SHUFFLE(0, 0, 0, 1)));
+			rdRaster_TileHiZ = (uint16_t)_mm_extract_epi16(m, 0);
+#endif
 		}
 	}
 
