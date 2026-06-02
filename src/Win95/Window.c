@@ -1045,7 +1045,12 @@ static void SwapWindowJobRGB16(uint32_t jobIndex, uint32_t groupIndex)
 
 #endif
 
-// TILETODO move me
+// TILETODO if we move the SDL_Texture to stdVBuffer and use the same format as the render target
+// then we can skip the whole software scaling path and just let the GPU do all the work
+// which should be faster and also support palette effects without needing to do them in software
+// 
+// this would also allow us to remove the SDL_LockTexture and memcpy from the job and just write directly
+// to the texture memory which would be a big win for performance
 void SwapWindow(SDL_Window* window)
 {
 	stdVBuffer* buffer = Video_pOtherBuf;
