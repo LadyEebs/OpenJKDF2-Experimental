@@ -163,24 +163,23 @@ void stdJob_WorkerThread(void* param)
 	stdJob* job = NULL;
 	while (1)
 	{
-		if(SDL_AtomicGet(&stdJob_jobSystem.quit))
-			break;
-
 		if (stdJob_PopRingBuffer(&jobs->jobPool, &job))
 		{
-			//if (!job->args)
-			//	stdPlatform_Printf("Job arguments are NULL, the job will fail. Try increasing the ring buffer size.\n");
-			//else
-			//	job->function(job->args); // Execute job
-			//job->args = NULL;
 			job->function(&job->args);
 			stdJob_Complete(job);
 		}
 		else
 		{
 			SDL_LockMutex(jobs->wakeMutex);
+			if (SDL_AtomicGet(&jobs->quit))
+			{
+				SDL_UnlockMutex(jobs->wakeMutex);
+				break;
+			}
 			SDL_CondWait(jobs->wakeCondition, jobs->wakeMutex);
 			SDL_UnlockMutex(jobs->wakeMutex);
+			if (SDL_AtomicGet(&jobs->quit))
+				break;
 		}
 	}
 }
@@ -249,15 +248,13 @@ void stdJob_Shutdown()
 {
 	stdJob_bInit = 0;
 
-	SDL_AtomicSet(&stdJob_jobSystem.quit, 1);
-
 	stdJob_Wait();
-	
-	// why is the following crashing and causing hangs???
-	//SDL_CondSignal(stdJob_jobSystem.wakeCondition); // Signal workers
 
-	//for (uint32_t i = 0; i < stdJob_jobSystem.numThreads; ++i)
-		//SDL_WaitThread(stdJob_jobSystem.workerThreads[i], NULL); // Wait for thread to finish
+	SDL_AtomicSet(&stdJob_jobSystem.quit, 1);
+	SDL_CondBroadcast(stdJob_jobSystem.wakeCondition); // Wake all threads so they see quit
+
+	for (uint32_t i = 0; i < stdJob_jobSystem.numThreads; ++i)
+		SDL_WaitThread(stdJob_jobSystem.workerThreads[i], NULL); // Wait for thread to finish
 
 	stdJob_FreeRingBuffer(&stdJob_jobSystem.jobPool);
 
