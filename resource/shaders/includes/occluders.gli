@@ -78,7 +78,7 @@ float calculate_shadows(light_input params, uint cluster)
 			}
 		}
 					
-		if (earlyShadowOut(shadow))
+		if (broadcast(shadow < 1e-5))
 			break;
 	}
 
