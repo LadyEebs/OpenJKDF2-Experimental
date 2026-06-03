@@ -5592,8 +5592,11 @@ GLuint std3D_PrimitiveForGeoMode(rdGeoMode_t geoMode)
 
 int std3D_GetStageIndex(std3D_DrawCallState* pState)
 {
-	int alphaTest = pState->stateBits.alphaTest & 1 || pState->shaderState.shader->bUsesAlphaTest;
+	int alphaTest = pState->stateBits.alphaTest & 1;
 	int blending  = pState->stateBits.blend & 1;
+
+	if (pState->shaderState.shader && pState->shaderState.shader->bUsesAlphaTest)
+		alphaTest = 1;
 
 	if (alphaTest || blending)
 		return WORLD_STAGE_COLOR_ALPHATEST;
