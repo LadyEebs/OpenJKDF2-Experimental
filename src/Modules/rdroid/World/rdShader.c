@@ -652,7 +652,9 @@ static void rdShader_ParseDestinationOperand(char* token, rdShader_DestOperand* 
 	char* alias = (char*)stdHashTable_GetKeyVal(rdShader_pCurrentAssembler->aliasHash, token);
 	if (alias)
 	{
-		op->reg.type = rdShader_ParseDstRegisterType(alias[0]);
+		int type = rdShader_ParseDstRegisterType(alias[0]);
+		if (type != RD_SHADER_GPR)
+			return; // todo: error
 		op->reg.address = atoi(alias + 1);
 		token += strlen(token);
 	}
@@ -689,7 +691,7 @@ static char* rdShader_ParseSourceRegister(char* token, rdShader_Register* reg)
 		if (swizzle)
 			*swizzle = '\0'; // set to null so we can parse the name
 
-		// kill any trailing spaces that fuck with the alias key
+		// kill any trailing spaces that interfere with the alias key
 		char* trailingSpace = strchr(token, ' ');
 		if (trailingSpace)
 			*trailingSpace = '\0';
@@ -702,6 +704,8 @@ static char* rdShader_ParseSourceRegister(char* token, rdShader_Register* reg)
 			reg->address = atoi(alias + 1);
 			if (trailingSpace) // skip ahead
 				token = trailingSpace;
+			else
+				token += strlen(token);
 		}
 		else
 		{
