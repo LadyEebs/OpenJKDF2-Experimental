@@ -134,6 +134,7 @@ layout(binding = UBO_SLOT_MATERIAL, std140) uniform materialBlock
 };
 
 // Global light buffer
+// todo: split into multiple buffers for different light types and;/or pack more tightly
 struct light
 {
 	vec4  position;
