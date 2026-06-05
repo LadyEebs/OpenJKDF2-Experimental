@@ -221,50 +221,6 @@ static int rdShader_MacroExpandDIV(rdShader_Instruction* inst, rdShaderInstr* ou
 	return rdShader_AssembleInstruction(&out[0], inst) ? 1 : 0;
 }
 
-// lerp dst, a, b, t -> add tmp, b, -a
-//                      mad dst, tmp, t, a
-static int rdShader_MacroExpandLERP(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
-{
-	if (maxOut < 2)
-		return 0;
-
-	uint8_t tmpReg = rdShader_pCurrentAssembler->shader->regcount + 1;
-	uint8_t fmt    = inst->dest.reg.fmt;
-	// b-a is in [-1,1] for LDR inputs, S8 gives 4 signed channels at that range
-	// for HDR inputs the intermediate will clip, might need a real opcode
-	const uint8_t tmpFmt = fmt == RD_SHADER_U8 ? RD_SHADER_S8 : fmt;
-
-	// instruction 0: add tmp, b, -a  (b - a)
-	rdShader_Instruction sub;
-	memset(&sub, 0, sizeof(rdShader_Instruction));
-	sub.opcode   = RD_SHADER_OP_ADD;
-	sub.srcCount = 2;
-	rdShader_MakeTmpDest(&sub.dest, tmpReg, tmpFmt);
-	sub.src[0]           = inst->src[1]; // b
-	sub.src[1]           = inst->src[0]; // a
-	sub.src[1].reg.unary = RD_SHADER_NEGATE; // -a
-
-	if (!rdShader_AssembleInstruction(&out[0], &sub))
-		return 0;
-
-	// instruction 1: mad dst, tmp, t, a  (final: carry all output modifiers)
-	rdShader_Instruction mad;
-	memset(&mad, 0, sizeof(rdShader_Instruction));
-	mad.opcode   = RD_SHADER_OP_MAD;
-	mad.srcCount = 3;
-	mad.dest     = inst->dest;
-	rdShader_MakeTmpSrc(&mad.src[0], tmpReg, 0, tmpFmt);
-	mad.src[1]   = inst->src[2]; // t
-	mad.src[2]   = inst->src[0]; // a
-	rdShader_ApplyOutputModifiers(&mad, inst);
-
-	if (!rdShader_AssembleInstruction(&out[1], &mad))
-		return 0;
-
-	rdShader_pCurrentAssembler->shader->regcount = tmpReg;
-	return 2;
-}
-
 // sqrt dst, a  ->  rsqrt dst, a  (with dst_unary=rcp: 1 / (1/sqrt(a)) = sqrt(a), no temp needed)
 static int rdShader_MacroExpandSQRT(rdShader_Instruction* inst, rdShaderInstr* out, int maxOut)
 {
@@ -438,7 +394,6 @@ static const rdShader_Macro rdShader_macros[] =
 	{ "abs",   1, rdShader_MacroExpandABS   },
 	{ "rcp",   1, rdShader_MacroExpandRCP   },
 	{ "div",   2, rdShader_MacroExpandDIV   },
-	{ "lrp",   3, rdShader_MacroExpandLERP  },
 	{ "sqrt",  1, rdShader_MacroExpandSQRT  },
 	{ "clamp", 3, rdShader_MacroExpandCLAMP },
 	{ "crs",   2, rdShader_MacroExpandCROSS },

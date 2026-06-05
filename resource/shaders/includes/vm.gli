@@ -134,6 +134,10 @@ void run_vm()
 			result = s0 * s1 + s2;
 			break;
 
+		case OP_LRP:
+			result = mix(s0, s1, s2);
+			break;
+
 		case OP_CMP:
 			result = mix( s2, s1, greaterThan( s0, vec4(0.0) ));
 			break;

@@ -25,21 +25,21 @@ import "uniforms.gli"
 #define OP_EXP2		12	// base 2 exponential
 #define OP_FRC		13	// fractional
 #define OP_LOG2		14	// base 2 logarithm
-#define OP_MAD		15	// multiply add
-#define OP_MAX		16	// maximum
-#define OP_MIN		17	// minimum
-#define OP_MOV		18	// move
-#define OP_MUL		19	// multiply
-#define OP_POW      20  // pow
-#define OP_POM		21	// parallax
-#define OP_RSQRT	22	// reciprocal square root
-#define OP_SIN		23	// sine
-#define OP_TEX		24	// texture
-#define OP_TEXLOD	25	// texture lod
-#define OP_TEXADD	26	// texture + offset
-#define OP_TEXINFO	27	// texture info (size, mips)
-#define OP_TEXKILL	28	// texkill (discard if src.a < threshold, forces alphatest stage)
-
+#define OP_LRP		15	// linear interpolation
+#define OP_MAD		16	// multiply add
+#define OP_MAX		17	// maximum
+#define OP_MIN		18	// minimum
+#define OP_MOV		19	// move
+#define OP_MUL		20	// multiply
+#define OP_POW      21  // pow
+#define OP_POM		22	// parallax
+#define OP_RSQRT	23	// reciprocal square root
+#define OP_SIN		24	// sine
+#define OP_TEX		25	// texture
+#define OP_TEXLOD	26	// texture lod
+#define OP_TEXADD	27	// texture + offset
+#define OP_TEXINFO	28	// texture info (size, mips)
+#define OP_TEXKILL	29	// texkill (discard if src.a < threshold, forces alphatest stage)
 // register types
 #define REG_TYPE_GPR     0	// register
 #define REG_TYPE_CLR     1	// color
