@@ -56,6 +56,15 @@ int sithLight_Load(sithWorld *world, int a2)
 		//	light->rdlight.intensity *= range;
 			light->rdlight.falloffMin = light->rdlight.falloffMax = range;// / 0.4;
 
+			if (range < 0 && world->backdropSector)
+			{
+				light->rdlight.active = 0;
+				rdVector_Sub3Acc(&light->pos, &world->backdropSector->center);
+				//rdVector_Neg3Acc(&light->pos);
+				rdVector_Normalize3Acc(&light->pos);
+				//rdVector_Scale3Acc(&light->pos, 10000.0f);
+			}
+
             float percentDelta = 5.0 / (double)numLights;
             loadPercent += percentDelta;
             sithWorld_UpdateLoadPercent(loadPercent);
