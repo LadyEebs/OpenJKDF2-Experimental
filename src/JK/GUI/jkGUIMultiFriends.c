@@ -254,7 +254,7 @@ void jkGuiMultiFriends_ListDraw(jkGuiElement* element_, jkGuiMenu* menu, stdVBuf
 			}
 
 			stdFont* nameFont = menu->fonts[element_->textType + (i == element_->selectedTextEntry)];
-			int textHeight = nameFont->bitmap->mipSurfaces[0]->format.height;
+			int textHeight = stdFont_GetHeight(nameFont);
 
 			jkGuiStringEntry* pStringEntry = &element_->unistr[i];
 			stdFont_sub_434EC0(

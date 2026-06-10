@@ -65,7 +65,7 @@ void rdDecal_Draw(rdThing* thing, rdMatrix34* matrix)
 	int clipResult;
 	rdVector3 viewPos;
 	rdMatrix_TransformPoint34(&viewPos, &matrix->scale, &rdCamera_pCurCamera->view_matrix);
-	clipResult = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &viewPos, decal->radius);
+	clipResult = rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &viewPos, decal->radius);
 
 	if (clipResult == 2)
 		return;

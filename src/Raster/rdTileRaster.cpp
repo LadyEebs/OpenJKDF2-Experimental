@@ -1,6 +1,4 @@
-﻿#include "fixed.h"
-
-#include <math.h>
+﻿#include <math.h>
 #include <bitset>
 
 #include "rdRaster.h"
@@ -24,7 +22,7 @@ extern "C" {
 }
 
 #ifdef TILE_SW_RASTER
-
+#include "fixed.h"
 //#define HI_Z
 
 constexpr int MAX_TRIS = 30;

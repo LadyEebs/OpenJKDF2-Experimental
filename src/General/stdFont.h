@@ -60,7 +60,6 @@ MATH_FUNC unsigned int stdFont_DrawMultilineCenteredHeight(stdFont *font, unsign
 #endif
 
 // Added
-int stdFont_GetHeight(stdFont* font);
 
 //static int (*stdFont_Draw4)(stdVBuffer *a1, stdFont *font, int xPos, int yPos, int a5, int a6, int a7, wchar_t *text, int alpha_maybe) = (void*)stdFont_Draw4_ADDR;
 //static void (*stdFont_Free)(stdFont *font) = (void*)stdFont_Free_ADDR;
@@ -80,5 +79,6 @@ static inline int32_t stdFont_GetHeight(stdFont* pFont) {
 
     return pFont->pBitmap->mipSurfaces[0]->format.height;
 }
+
 
 #endif // _STDFONT_H

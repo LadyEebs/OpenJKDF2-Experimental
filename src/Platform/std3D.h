@@ -8,9 +8,6 @@
 extern "C" {
 #endif
 
-#include "types.h"
-#include "globals.h"
-
 #ifdef RENDER_DROID2
 
 #include "Modules/std/std3D.h"

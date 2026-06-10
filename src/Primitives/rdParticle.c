@@ -310,7 +310,7 @@ int rdParticle_Draw(rdThing* thing, rdMatrix34* mat)
 
 	int clipResult;
 	if (rdroid_curCullFlags & 2)
-		clipResult = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, particle->cloudRadius);
+		clipResult = rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, particle->cloudRadius);
 	else
 		clipResult = thing->clippingIdk;
 

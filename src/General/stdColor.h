@@ -36,30 +36,30 @@ int stdColor_BuildRGBA16LUT(rdColor24 *palette, uint16_t *lut, rdTexFormat *form
 //static int (*stdColor_ColorConvertOneRow)(uint8_t *outPixels, rdTexFormat *formatTo, uint8_t *inPixels, rdTexFormat *formatFrom, int numPixels) = (void*)stdColor_ColorConvertOneRow_ADDR;
 
 uint32_t stdColor_ScaleColorComponent(uint32_t cc, int srcBPP, int deltaBPP);
-uint32_t stdColor_EncodeRGB(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_t b);
-uint32_t stdColor_EncodeRGBA(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-void stdColor_DecodeRGB(uint32_t encoded, const rdTexformat* ci, uint8_t* r, uint8_t* g, uint8_t* b);
-void stdColor_DecodeRGBA(uint32_t encoded, const rdTexformat* ci, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
-uint32_t stdColor_Recode(uint32_t encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI);
+uint32_t stdColor_EncodeRGB(const rdTexFormat* ci, uint8_t r, uint8_t g, uint8_t b);
+uint32_t stdColor_EncodeRGBA(const rdTexFormat* ci, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+void stdColor_DecodeRGB(uint32_t encoded, const rdTexFormat* ci, uint8_t* r, uint8_t* g, uint8_t* b);
+void stdColor_DecodeRGBA(uint32_t encoded, const rdTexFormat* ci, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
+uint32_t stdColor_Recode(uint32_t encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI);
 
 #ifdef TARGET_SSE
 
 __m128i stdColor_ScaleColorComponentSIMD(__m128i cc, int srcBPP, int deltaBPP);
-__m128i stdColor_EncodeRGBSIMD(const rdTexformat* ci, __m128i r, __m128i g, __m128i b);
-__m128i stdColor_EncodeRGBASIMD(const rdTexformat* ci, __m128i r, __m128i g, __m128i b, __m128i a);
-void stdColor_DecodeRGBSIMD(__m128i encoded, const rdTexformat* ci, __m128i* r, __m128i* g, __m128i* b);
-void stdColor_DecodeRGBASIMD(__m128i encoded, const rdTexformat* ci, __m128i* r, __m128i* g, __m128i* b, __m128i* a);
-__m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI);
+__m128i stdColor_EncodeRGBSIMD(const rdTexFormat* ci, __m128i r, __m128i g, __m128i b);
+__m128i stdColor_EncodeRGBASIMD(const rdTexFormat* ci, __m128i r, __m128i g, __m128i b, __m128i a);
+void stdColor_DecodeRGBSIMD(__m128i encoded, const rdTexFormat* ci, __m128i* r, __m128i* g, __m128i* b);
+void stdColor_DecodeRGBASIMD(__m128i encoded, const rdTexFormat* ci, __m128i* r, __m128i* g, __m128i* b, __m128i* a);
+__m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI);
 
 #endif
 
 #ifdef TARGET_AVX2
 __m256i stdColor_ScaleColorComponentSIMD_AVX2(__m256i cc, int srcBPP, int deltaBPP);
-__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b);
-__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b, __m256i a);
-void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b);
-void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a);
-__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI);
+__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexFormat* ci, __m256i r, __m256i g, __m256i b);
+__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexFormat* ci, __m256i r, __m256i g, __m256i b, __m256i a);
+void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexFormat* ci, __m256i* r, __m256i* g, __m256i* b);
+void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexFormat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a);
+__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI);
 #endif
 
 // Added

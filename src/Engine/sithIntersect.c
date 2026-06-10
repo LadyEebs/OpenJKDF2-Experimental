@@ -789,7 +789,7 @@ int sithIntersect_sub_5090B0(const rdVector3 *pStartPos, const rdVector3 *pRayDi
 int sithIntersect_CheckFaceIntersection(rdVector3 *a1, flex_t a2, rdFace *a3, rdVector3 *a4, rdVector3 *pProjectedOut)
 {
     int side = 0;
-    int result = sithIntersect_sub_508750(a1, a2, a3, a4, &side);
+    int result = sithIntersect_FaceIntersection(a1, a2, a3, a4, &side);
     if ( !result )
         return 0;
     if ( side == 0 )

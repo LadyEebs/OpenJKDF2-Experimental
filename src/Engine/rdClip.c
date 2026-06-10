@@ -10,6 +10,16 @@
 #define INST_WORKBUFS
 #define INST_WORKBUFS_MOTS
 
+rdVector3* NO_ALIAS rdClip_pSourceVert;
+flex_t rdClip_workIVerts[32];
+rdVector3 rdClip_workVerts[32];
+rdVector3* NO_ALIAS rdClip_pDestVert;
+flex_t* NO_ALIAS rdClip_pDestIVert;
+rdVector2 rdClip_workTVerts[32];
+flex_t* NO_ALIAS rdClip_pSourceIVert;
+rdVector2* NO_ALIAS rdClip_pSourceTVert;
+rdVector2* NO_ALIAS rdClip_pDestTVert;
+
 #define pSourceVert  rdClip_pSourceVert 
 #define workIVerts rdClip_workIVerts
 #define workVerts rdClip_workVerts

@@ -1760,7 +1760,7 @@ void stdDisplay_RestoreDisplayMode()
 }
 
 #ifdef TILE_SW_RASTER
-stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* pDesiredColorFormat, stdVBuffer* pSrc)
+stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexFormat* pDesiredColorFormat, stdVBuffer* pSrc)
 {
 	assert(pSrc != NULL);
 	if (memcmp(pDesiredColorFormat, &pSrc->format.format, sizeof(rdTexformat)) == 0)
@@ -1852,7 +1852,7 @@ stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* pDesiredColo
 	return pDest;
 }
 #else
-stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexformat* a, stdVBuffer* b)
+stdVBuffer* stdDisplay_VBufferConvertColorFormat(const rdTexFormat* a, stdVBuffer* b)
 {
     return b;
 }

@@ -1542,7 +1542,7 @@ rdClip_Face3T	.text	00472090	00000D27	00000020	00000010	R	.	.	.	.	.	T	.
 rdClip_Face3TOrtho	.text	00472DC0	00000AB4	0000001C	00000010	R	.	.	.	.	.	T	.
 rdClip_Face3GT	.text	00473880	0000104C	00000030	00000014	R	.	.	.	.	.	T	.
 rdClip_Face3GTOrtho	.text	004748D0	00000E07	00000024	00000014	R	.	.	.	.	.	T	.
-rdClip_SphereInFrustrum	.text	004756E0	0000027D	0000000C	0000000C	R	.	.	.	.	.	T	.
+rdClip_SphereInFrustum	.text	004756E0	0000027D	0000000C	0000000C	R	.	.	.	.	.	T	.
 rdAFRaster_CalcAffineGradients	.text	00475960	00000547	00000038	00000008	R	.	.	.	.	.	.	.
 rdAFRaster_CalcPerspGradients	.text	00475EB0	00000647	00000040	00000008	R	.	.	.	.	.	.	.
 rdAFRaster_DrawZSpan	.text	00476500	000000CB	0000001C	00000004	R	.	.	.	.	B	.	.

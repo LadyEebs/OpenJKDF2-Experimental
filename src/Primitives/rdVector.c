@@ -663,7 +663,7 @@ int rdVector_IsZero3(const rdVector3* v)
     return (v->x == 0.0 && v->y == 0.0 && v->z == 0.0);
 }
 
-int rdVector_IsNotZero3(rdVector3* v)
+int rdVector_IsNotZero3(const rdVector3* v)
 {
 	return (v->x != 0.0 || v->y != 0.0 || v->z != 0.0);
 }
