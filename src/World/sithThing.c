@@ -268,7 +268,10 @@ void sithThing_TickAll(flex_t deltaSeconds, int deltaMs)
         if (!pThingIter->type)
             continue;
 #ifdef TARGET_TWL
-        int bCanUpdateOffscreen = (((uint8_t)jkPlayer_currentTickIdx + (pThingIter->thingIdx & 0xFF)) & 0x7F) == 0;
+        int bCanUpdateOffscreen = (((uint8_t)jkPlayer_currentTickIdx + (pThingIter->thingIdx & 0xFF)) & 0x3F) == 0;
+        int bActorCanUpdateEveryOther = pThingIter->type == SITH_THING_ACTOR && (((uint8_t)jkPlayer_currentTickIdx + (pThingIter->thingIdx & 0xFF)) & 1) == 0;
+        int bActorCanUpdateNow = pThingIter->type == SITH_THING_ACTOR && pThingIter->screenPos.y < 0.5;
+        int bCanAlwaysUpdatePhysics = pThingIter->type == SITH_THING_PLAYER || pThingIter->type == SITH_THING_PARTICLE || pThingIter->type == SITH_THING_WEAPON || pThingIter->type == SITH_THING_DEBRIS || pThingIter->type == SITH_THING_COG;
 #endif
 
         if (!(pThingIter->thingflags & SITH_TF_WILLBEREMOVED))
@@ -301,6 +304,7 @@ void sithThing_TickAll(flex_t deltaSeconds, int deltaMs)
             {
                 case SITH_CT_AI:
                     // CPU optimization testing
+                    // TODO: Check if a thing has been given a target by a COG and allow it to move, eg easter egg lady in Baron's Hed
 #ifdef TARGET_TWL
                     if (pThingIter->type == SITH_THING_PLAYER || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
 #endif
@@ -342,7 +346,7 @@ void sithThing_TickAll(flex_t deltaSeconds, int deltaMs)
             {
                 // CPU optimization testing
 #ifdef TARGET_TWL
-                if (pThingIter->type == SITH_THING_PLAYER || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
+                if (bCanAlwaysUpdatePhysics || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
 #endif
                 sithPhysics_ThingTick(pThingIter, deltaSeconds);
             }
@@ -353,18 +357,19 @@ void sithThing_TickAll(flex_t deltaSeconds, int deltaMs)
 
             // CPU optimization testing
 #ifdef TARGET_TWL
-            if (pThingIter->type == SITH_THING_PLAYER || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
+            if (bCanAlwaysUpdatePhysics || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
 #endif
             sithThing_TickPhysics(pThingIter, deltaSeconds);
 
             // CPU optimization testing
 #ifdef TARGET_TWL
-            if (pThingIter->type == SITH_THING_PLAYER || pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3 || bCanUpdateOffscreen)
-#endif
+            if ((pThingIter->type == SITH_THING_PLAYER) || bActorCanUpdateNow || bActorCanUpdateEveryOther || (pThingIter->type != SITH_THING_ACTOR && pThingIter->lastRenderedTickIdx >= jkPlayer_currentTickIdx-3) || bCanUpdateOffscreen)
+            sithPuppet_Tick(pThingIter, bActorCanUpdateEveryOther ? deltaSeconds * 2 : deltaSeconds);
+#else
             sithPuppet_Tick(pThingIter, deltaSeconds);
-
 #ifdef PUPPET_PHYSICS
 			sithConstraint_TickConstraints(pThingIter, deltaSeconds);
+#endif
 #endif
             continue;
         }
@@ -608,6 +613,11 @@ void sithThing_sub_4CCE60()
     int32_t v6; // eax
     int32_t v8; // ecx
 
+    // Added: Prevent crashes
+    if (!sithWorld_pCurrentWorld) {
+        return;
+    }
+
     sithNet_thingsIdx = 0;
     sithWorld_pCurrentWorld->numThings = -1;
     v2 = sithNet_things + 1;
@@ -648,7 +658,7 @@ void sithThing_FreeEverythingNet(sithThing* pThing)
     sithThing_FreeEverything(pThing); // Inlined
 
     v2 = pThing->thingIdx;
-    if ( v2 == sithWorld_pCurrentWorld->numThings )
+    if (sithWorld_pCurrentWorld && v2 == sithWorld_pCurrentWorld->numThings ) // Added: sithWorld_pCurrentWorld nullptr check
     {
         v3 = v2 - 1;
         if ( v2 - 1 >= 0 )
@@ -941,7 +951,12 @@ void sithThing_ExitWater(sithThing* pThing, int a2)
     if ( pThing->animclass )
         sithPuppet_sub_4E4760(pThing, 0);
 
+#ifdef QOL_IMPROVEMENTS
+    // Prevent splash sound spam if they're not actually making significant movement
+    if ( pThing->soundclass && stdMath_Fabs(pThing->physicsParams.vel.z) > 0.02 )  
+#else
     if ( pThing->soundclass )
+#endif
     {
         if ( pThing->moveType == SITH_MT_PHYSICS && rdVector_Len3(&pThing->physicsParams.vel) < 1.0 )
             sithSoundClass_PlayModeRandom(pThing, SITH_SC_EXITWATERSLOW);
@@ -1648,7 +1663,9 @@ int sithThing_Load(sithWorld *pWorld, int a2)
                 }
                 else
                 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
                     stdString_SafeStrCopy(v21->template_name, stdConffile_entry.args[2].value, 0x20);
+#endif
                 }
             }
         }

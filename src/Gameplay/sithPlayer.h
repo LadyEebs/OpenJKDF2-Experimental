@@ -36,8 +36,12 @@
 extern int sithPlayer_bNoClippingRend;
 
 void sithPlayer_Startup(int idx);
+void sithPlayer_Open();
 void sithPlayer_Close();
 void sithPlayer_NewEntry(sithWorld *world);
+int sithPlayer_GetBinItemActive(int binIdx);
+int sithPlayer_GetBinItemAvailable(int binIdx);
+void sithPlayer_SetBinItemActive(int binIdx, int active);
 flex_t sithPlayer_GetBinAmt(int idx);
 void sithPlayer_SetBinAmt(int idx, flex_t amt);
 int sithPlayer_GetNum(sithThing *player);

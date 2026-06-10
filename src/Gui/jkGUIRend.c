@@ -3,6 +3,7 @@
 #include "General/Darray.h"
 #include "General/stdBitmap.h"
 #include "General/stdFont.h"
+#include "General/stdMath.h"
 #include "Engine/rdMaterial.h" // TODO move stdVBuffer
 #include "Devices/sithSound.h"
 #include "Primitives/rdVector.h"
@@ -12,6 +13,8 @@
 #include "Win95/stdGdi.h"
 #include "Win95/stdSound.h"
 #include "General/stdString.h"
+#include "Primitives/rdRect.h"
+#include "Gui/jkGUI.h"
 #include "stdPlatform.h"
 #include "jk.h"
 #include "types.h"
@@ -74,8 +77,24 @@ void jkGuiRend_CopyVBuffer(jkGuiMenu *menu, rdRect *rect)
 			stdDisplay_VBufferFill(jkGuiRend_menuBuffer, 0, rect);
 		else
 #endif
-        if ( menu->texture )
-            stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, rect->x, rect->y, rect, 0);
+		{
+#ifdef STDBITMAP_PARTIAL_LOAD
+			if (menu->pBgBitmap) {
+				stdBitmap_EnsureData(menu->pBgBitmap);
+
+				if (menu->pBgBitmap->mipSurfaces[0]) {
+					stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pBgBitmap->mipSurfaces[0], rect->x, rect->y, rect, 0);
+				}
+			}
+			else if (menu->pTextureOverride) {
+				stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pTextureOverride, rect->x, rect->y, rect, 0);   
+			}
+#else
+			if (menu->texture) {
+				stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, rect->x, rect->y, rect, 0);
+			}
+		}
+#endif
     }
 }
 
@@ -291,6 +310,25 @@ void jkGuiRend_Paint(jkGuiMenu *menu)
     stdDisplay_SetMasterPalette(jkGuiRend_palette);
 
 	jkGuiRend_PaintBg(menu);
+	
+#ifndef TARGET_TWL
+#ifdef STDBITMAP_PARTIAL_LOAD
+    if (menu->pBgBitmap) {
+        stdBitmap_EnsureData(menu->pBgBitmap);
+
+        if (menu->pBgBitmap->mipSurfaces[0]) {
+            stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pBgBitmap->mipSurfaces[0], 0, 0, 0, 0);
+        }
+    }
+    else if (menu->pTextureOverride) {
+        stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pTextureOverride, 0, 0, 0, 0);
+    }
+#else
+    if (menu->texture) {
+        stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, 0, 0, 0, 0);
+    }
+#endif
+#endif
 
     jkGuiElement* clickable = &menu->paElements[0];
     int32_t clickableIdx = 0;
@@ -374,6 +412,13 @@ int32_t jkGuiRend_DisplayAndReturnClicked(jkGuiMenu *menu)
     jkGuiRend_sub_50FDB0();
     --jkGuiRend_thing_five;
     jkGuiRend_activeMenu = lastActiveMenu;
+
+#ifdef STDBITMAP_PARTIAL_LOAD
+    for (int i = 0; i < 35; i++) {
+        stdBitmap_UnloadData(jkGui_stdBitmaps[i]);
+    }
+#endif
+
     return menu->lastClicked;
 }
 
@@ -386,8 +431,18 @@ void jkGuiRend_sub_50FAD0(jkGuiMenu *menu)
     menu->lastMouseOverClickable = 0;
     menu->lastClicked = 0;
 
-    if ( menu->palette )
+#ifdef STDBITMAP_PARTIAL_LOAD
+    if (menu->pBgBitmap) {
+        stdBitmap_EnsureData(menu->pBgBitmap);
+    }
+    if (menu->pBgBitmap && menu->pBgBitmap->palette) {
+       jkGuiRend_SetPalette((uint8_t*)menu->pBgBitmap->palette);
+    }
+#else
+    if (menu->palette) {
        jkGuiRend_SetPalette(menu->palette);
+    }
+#endif
 
     paletteChecksum = 0;
 
@@ -460,8 +515,22 @@ void jkGuiRend_gui_sets_handler_framebufs(jkGuiMenu *menu)
     ++jkGuiRend_HandlerIsSet;
     
 #ifdef TARGET_TWL
-    if ( menu->texture )
+#ifdef STDBITMAP_PARTIAL_LOAD
+    if (menu->pBgBitmap) {
+        stdBitmap_EnsureData(menu->pBgBitmap);
+
+        if (menu->pBgBitmap->mipSurfaces[0]) {
+            stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pBgBitmap->mipSurfaces[0], 0, 0, 0, 0);
+        }
+    }
+    else if (menu->pTextureOverride) {
+        stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pTextureOverride, 0, 0, 0, 0);
+    }
+#else
+    if (menu->texture) {
         stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, 0, 0, 0, 0);
+    }
+#endif
 #endif
     
     jkGuiRend_Paint(menu);
@@ -568,6 +637,13 @@ void jkGuiRend_Close()
     jkGuiRend_bOpen = 0;
 
 	jkGuiRend_StopAudio();
+	
+#ifdef STDBITMAP_PARTIAL_LOAD
+    for (int i = 0; i < 35; i++) {
+        stdBitmap_UnloadData(jkGui_stdBitmaps[i]);
+    }
+#endif
+
 }
 
 jkGuiElement* jkGuiRend_MenuGetClickableById(jkGuiMenu *menu, int32_t id)
@@ -637,6 +713,9 @@ void jkGuiRend_PlayWav(char *fpath)
             
 
         stdSound_BufferPlay(newHandle, 0);
+    }
+    else {
+        stdPlatform_Printf("Failed to open path: `%s`!\n", fpath);
     }
 }
 
@@ -901,7 +980,8 @@ int32_t jkGuiRend_InvokeClicked(jkGuiElement *clickable, jkGuiMenu *menu, int32_
 {
     jkGuiClickHandlerFunc_t handler;
 
-    if ( !clickable->bIsVisible || clickable->enableHover )
+    // Added: !clickable
+    if (!clickable || !clickable->bIsVisible || clickable->enableHover )
         return 0;
 
     handler = clickable->clickHandlerFunc;
@@ -1359,6 +1439,7 @@ int jkGuiRend_ListBoxEventHandler(jkGuiElement *element, jkGuiMenu *menu, int32_
 
     if (eventType == JKGUI_EVENT_INIT)
     {
+        // TODO is this an inlined func?
         v19 = 2;
         v20 = &menu->fonts[element->textType];
         do
@@ -1366,8 +1447,8 @@ int jkGuiRend_ListBoxEventHandler(jkGuiElement *element, jkGuiMenu *menu, int32_
             if ( *v20 )
             {
                 v21 = element->texInfo.textHeight;
-                if ( v21 <= (*(*v20)->bitmap->mipSurfaces)->format.height )
-                    v21 = (*(*v20)->bitmap->mipSurfaces)->format.height;
+                if ( v21 <= stdFont_GetHeight(*v20) )
+                    v21 = stdFont_GetHeight(*v20);
                 element->texInfo.textHeight = v21;
             }
             ++v20;
@@ -1465,6 +1546,12 @@ int jkGuiRend_ListBoxEventHandler(jkGuiElement *element, jkGuiMenu *menu, int32_
                 jkGuiRend_UpdateAndDrawClickable(element_, menu, 1);
                 jkGuiRend_PlayWav(menu->soundHover);
                 break;
+            
+            // Added: Click-focus on currently selected element
+            case VK_SHIFT:
+                a1a = -1234;
+                break;
+
             default:
                 break;
         }
@@ -1499,6 +1586,11 @@ void jkGuiRend_ListBoxDraw(jkGuiElement *element_, jkGuiMenu *menu, stdVBuffer *
     bitmapIndices = element_->uiBitmaps;
     topArrowBitmap = menu->ui_structs[bitmapIndices[0]];
     bottomArrowBitmap = menu->ui_structs[bitmapIndices[1]];
+
+    // Added
+    stdBitmap_EnsureData(topArrowBitmap);
+    stdBitmap_EnsureData(bottomArrowBitmap);
+
     if ( redraw )
         jkGuiRend_CopyVBuffer(menu, &element_->texInfo.rect);
     if ( menu->focusedElement == element_ )
@@ -1589,9 +1681,14 @@ void jkGuiRend_CheckBoxDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *
     rdRect drawRect; // [esp+10h] [ebp-10h]
     int32_t a4a; // [esp+30h] [ebp+10h]
 
-    if ( redraw )
+    if (redraw) {
         jkGuiRend_CopyVBuffer(menu, &element->rect);
+    }
     checkboxBitmap = menu->ui_structs[menu->checkboxBitmapIdx];
+
+    // Added
+    stdBitmap_EnsureData(checkboxBitmap);
+
     v6 = checkboxBitmap->mipSurfaces[(element->selectedTextEntry != 0) ? 1 : 0];
     v7 = (uint32_t)(element->rect.height - v6->format.height) / 2;
     if ( v7 < 0 )
@@ -1916,14 +2013,24 @@ int jkGuiRend_SliderEventHandler(jkGuiElement *element, jkGuiMenu *menu, int32_t
                 bitmapIdices = (int32_t *)element->uiBitmaps;
                 backgroundIdx = *bitmapIdices;
                 backgroundBitmap = menu->ui_structs[backgroundIdx];
+
                 if ( backgroundBitmap )
                 {
+                    // Added
+                    stdBitmap_EnsureData(backgroundBitmap);
+
                     v12 = (*backgroundBitmap->mipSurfaces)->format.width;
                     v11 = (v9 - v12) / 2;
                 }
                 sliderThumbBitmap = menu->ui_structs[bitmapIdices[1]];
+
+
+
                 if ( sliderThumbBitmap )
                 {
+                    // Added
+                    stdBitmap_EnsureData(sliderThumbBitmap);
+
                     v18 = (*sliderThumbBitmap->mipSurfaces)->format.width;
                     v12 -= v18;
                     if ( v33 != (uint8_t*)-44 )
@@ -2071,8 +2178,17 @@ void jkGuiRend_SliderDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vb
     sliderThumbIdx = bitmapIndices[1];
     sliderThumbBitmap = menu->ui_structs[sliderThumbIdx];
     sliderBackgroundBitmap = menu->ui_structs[*bitmapIndices];
+
+    // Added
+    stdBitmap_EnsureData(sliderThumbBitmap);
+    stdBitmap_EnsureData(sliderBackgroundBitmap);
+
     v44 = sliderThumbBitmap;
     elementa = menu->ui_structs[*bitmapIndices];
+
+    // Added
+    stdBitmap_EnsureData(elementa);
+
     if (!sliderThumbBitmap || !sliderBackgroundBitmap) return;
     
     if ( element == menu->lastMouseOverClickable )
@@ -2131,6 +2247,10 @@ void jkGuiRend_SliderDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vb
     bitmapIndices2 = element->uiBitmaps;
     elementb = element->selectedTextEntry;
     sliderBackgroundBitmap2 = menu->ui_structs[*bitmapIndices2];
+
+    // Added
+    stdBitmap_EnsureData(sliderBackgroundBitmap2);
+
     v32 = 0;
     v33 = element->rect.width;
     if ( sliderBackgroundBitmap2 )
@@ -2139,6 +2259,10 @@ void jkGuiRend_SliderDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer *vb
         v32 = (element->rect.width - v33) / 2;
     }
     sliderThumbBitmap2 = menu->ui_structs[bitmapIndices2[1]];
+    
+    // Added
+    stdBitmap_EnsureData(sliderThumbBitmap2);
+
     if ( sliderThumbBitmap2 )
     {
         v33 -= (*sliderThumbBitmap2->mipSurfaces)->format.width;
@@ -2210,7 +2334,7 @@ int jkGuiRend_TextBoxEventHandler(jkGuiElement *element, jkGuiMenu *menu, int32_
         v26 = menu->fonts[element->textType];
         if ( v26 )
         {
-            v27 = (*v26->bitmap->mipSurfaces)->format.height + 3;
+            v27 = (*v26->pBitmap->mipSurfaces)->format.height + 3;
             if ( element->rect.height > v27 )
                 v27 = element->rect.height;
             element->rect.height = v27;
@@ -2383,6 +2507,13 @@ int jkGuiRend_PicButtonEventHandler(jkGuiElement *element, jkGuiMenu *menu, int3
     stdBitmap* bitmap = menu->ui_structs[element->selectedTextEntry];
     if ( bitmap )
     {
+        // Added
+        stdBitmap_EnsureData(bitmap);
+
+#ifdef JKGUI_SMOL_SCREEN
+        element->rect = element->rectOrig;
+        element->bIsSmolDirty = 1;
+#endif
         if ( element->rect.x < 0 )
             element->rect.x = bitmap->xPos;
         if ( element->rect.y < 0 )
@@ -2391,6 +2522,9 @@ int jkGuiRend_PicButtonEventHandler(jkGuiElement *element, jkGuiMenu *menu, int3
             element->rect.width = bitmap->mipSurfaces[0]->format.width;
         if ( element->rect.height < 0 )
             element->rect.height = bitmap->mipSurfaces[0]->format.height;
+#ifdef JKGUI_SMOL_SCREEN
+        jkGui_SmolScreenFixup(menu, 0);
+#endif
     }
 
     return 1;
@@ -2414,6 +2548,9 @@ void jkGuiRend_PicButtonDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer 
     stdBitmap* bitmap = menu->ui_structs[element->selectedTextEntry];
     if ( bitmap )
     {
+        // Added
+        stdBitmap_EnsureData(bitmap);
+
         rect.x = 0;
         rect.y = 0;
 
@@ -2444,8 +2581,8 @@ int jkGuiRend_TextButtonEventHandler(jkGuiElement *element, jkGuiMenu *menu, int
         if ( *v6 )
         {
             v7 = element->rect.height;
-            if ( v7 <= (*(*v6)->bitmap->mipSurfaces)->format.height )
-                v7 = (*(*v6)->bitmap->mipSurfaces)->format.height;
+            if ( v7 <= stdFont_GetHeight(*v6))
+                v7 = stdFont_GetHeight(*v6);
             element->rect.height = v7;
         }
         ++v6;
@@ -2476,6 +2613,10 @@ void jkGuiRend_TextButtonDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffer
 void jkGuiRend_FocusElementDir(jkGuiMenu *pMenu, int32_t dir)
 {
     int32_t idx = 0;
+    if (!pMenu) {
+        return;
+    }
+
     jkGuiElement* focusedElement = pMenu->focusedElement;
     if (focusedElement && !focusedElement->bIsVisible) {
         focusedElement = NULL;
@@ -2537,9 +2678,39 @@ void jkGuiRend_FocusElementDir(jkGuiMenu *pMenu, int32_t dir)
     }
 
     rdRect curFocus = focusedElement->rect;
+    // Move the current focus rect position to position of the corresponding edge
+    if (dir == FOCUS_LEFT || dir == FOCUS_RIGHT)
+    {
+        // A left edge or a right edge
+        curFocus.y += curFocus.height/2;
+    }
+    else if (dir == FOCUS_UP || dir == FOCUS_DOWN)
+    {
+        // A top edge or a bottom edge
+        curFocus.x += curFocus.width/2;
+    }
 
+    if (dir == FOCUS_DOWN) {
+        curFocus.y += curFocus.height-1;
+    }
+    else if (dir == FOCUS_RIGHT) {
+        curFocus.x += curFocus.width-1;
+    }
+
+    // We're iterating through every element to narrow down which element is the closest
+    // in the direction we're focusing. The "best candidate" is the element that is currently
+    // the closest, and gets replaced when a closer one is found.
     jkGuiElement* iter = pMenu->paElements;
     jkGuiElement* bestCandidate = focusedElement;
+
+    rdRect bcRect = bestCandidate->rect;
+    if (dir == FOCUS_RIGHT || dir == FOCUS_DOWN) {
+        bcRect = (rdRect){-10000,-10000,0,0};
+    }
+    else {
+        bcRect = (rdRect){10000,10000,0,0};
+    }
+
     while ( 1 )
     {
         if ( iter->type == ELEMENT_END ) {
@@ -2582,16 +2753,28 @@ void jkGuiRend_FocusElementDir(jkGuiMenu *pMenu, int32_t dir)
         }
 
         rdRect rect = iter->rect;
-        rdRect bcRect = bestCandidate->rect;
-        if (bestCandidate == focusedElement) {
-            if (dir == FOCUS_RIGHT || dir == FOCUS_DOWN) {
-                bcRect = (rdRect){-1000,-1000,0,0};
-            }
-            else {
-                bcRect = (rdRect){1000,1000,0,0};
-            }
-            
+
+        // Move the iter rect position to the opposing edge
+        // (ie, FOCUS_RIGHT will jump from the right side of the 
+        //  current element to the left side of the next element)
+        if (dir == FOCUS_LEFT || dir == FOCUS_RIGHT)
+        {
+            // A left edge or a right edge
+            rect.y += rect.height/2;
         }
+        else if (dir == FOCUS_UP || dir == FOCUS_DOWN)
+        {
+            // A top edge or a bottom edge
+            rect.x += rect.width/2;
+        }
+
+        if (dir == FOCUS_UP) {
+            rect.y += rect.height;
+        }
+        else if (dir == FOCUS_LEFT) {
+            rect.x += rect.width;
+        }
+
         //printf("%u %u\n", abs(rect.y - curFocus.y), abs(bcRect.y - curFocus.y));
         //int bDistCloseX = abs(rect.x - curFocus.x) < abs(bcRect.x - curFocus.x);
         //int bDistCloseY = abs(rect.y - curFocus.y) < abs(bcRect.y - curFocus.y);
@@ -2599,30 +2782,47 @@ void jkGuiRend_FocusElementDir(jkGuiMenu *pMenu, int32_t dir)
         int32_t distBc = sqrt((bcRect.x - curFocus.x)*(bcRect.x - curFocus.x) + (bcRect.y - curFocus.y)*(bcRect.y - curFocus.y));
         int32_t bDistCloseX = distCur < distBc;
         int32_t bDistCloseY = bDistCloseX;
+        BOOL containsPt = rdRect_ContainsPoint(&focusedElement->rect, rect.x, rect.y) || rdRect_ContainsPoint(&iter->rect, curFocus.x, curFocus.y); // In case elements overlap
+        BOOL containsX = rect.x >= focusedElement->rect.x && rect.x <= focusedElement->rect.x + focusedElement->rect.width;
+        // Most listboxes have action buttons under them, allow focusing to them with left/right
+        BOOL isListbox = focusedElement->type == ELEMENT_LISTBOX;
         if (dir == FOCUS_LEFT)
         {
-            if (rect.x < curFocus.x && bDistCloseX && bDistCloseY) {
+            if ((curFocus.x > rect.x || containsPt || isListbox) && bDistCloseX && bDistCloseY) {
                 bestCandidate = iter;
             }
         }
         else if (dir == FOCUS_RIGHT)
         {
-            if (rect.x > curFocus.x && bDistCloseX && bDistCloseY) {
+            if ((curFocus.x < rect.x || containsPt || isListbox) && bDistCloseX && bDistCloseY) {
                 bestCandidate = iter;
             }
         }
         else if (dir == FOCUS_UP)
         {
-            if (rect.y < curFocus.y && bDistCloseX && bDistCloseY) {
+            if ((curFocus.y > rect.y || containsPt) && bDistCloseX && bDistCloseY) {
                 bestCandidate = iter;
             }
         }
         else if (dir == FOCUS_DOWN)
         {
-            if (rect.y > curFocus.y && bDistCloseX && bDistCloseY) {
+            if ((curFocus.y < rect.y || containsPt) && bDistCloseX && bDistCloseY) {
                 bestCandidate = iter;
             }
         }
+
+        if (bestCandidate == iter) {
+            bcRect = rect;
+        }
+
+#if 0
+        if (bestCandidate == iter) {
+            printf("* %u->%u, cur=%u %u, nxt=%u %u, %u %u%c\n", (int)(focusedElement - pMenu->paElements), (int)(bestCandidate - pMenu->paElements), curFocus.x, curFocus.y, rect.x, rect.y, distCur, distBc, bDistCloseX?'!':'x');
+        }
+        else {
+            printf("%u->%u, cur=%u %u, nxt=%u %u, %u %u%c\n", (int)(focusedElement - pMenu->paElements), (int)(iter - pMenu->paElements), curFocus.x, curFocus.y, rect.x, rect.y, distCur, distBc, bDistCloseX?'!':'x');
+        }
+#endif
         
         iter++;
     }
@@ -2630,13 +2830,16 @@ void jkGuiRend_FocusElementDir(jkGuiMenu *pMenu, int32_t dir)
     //printf("%u->%u, %u %u, %u %u\n", (int)(focusedElement - pMenu->paElements), (int)(bestCandidate - pMenu->paElements), focusedElement->rect.x, focusedElement->rect.y, bestCandidate->rect.x, bestCandidate->rect.y);
 
     jkGuiElement* element = bestCandidate;
-    if (!element) return;
+    if (!element) {
+        return;
+    }
     if ((element->type == ELEMENT_LISTBOX || element->type == ELEMENT_TEXTBOX) && jkGuiRend_sub_5103E0(element))
     {
 //#if !defined(SDL2_RENDER) && !defined(TARGET_TWL)
         pMenu->focusedElement = element;
         pMenu->lastMouseOverClickable = element;
 //#endif
+
         if ( focusedElement )
         {
             if ( focusedElement != element )
@@ -2651,54 +2854,156 @@ LABEL_22:
             if ( focusedElement != element )
                 jkGuiRend_UpdateAndDrawClickable(element, pMenu, 1);
         }
+
+        if (element->type == ELEMENT_LISTBOX) {
+            jkGuiRend_InvokeEvent(element, pMenu, JKGUI_EVENT_KEYDOWN, VK_SHIFT); // Just need to trigger the handler w/o any keys
+        }
     }
     else {
-        jkGuiRend_MouseMovedCallback(pMenu, bestCandidate->rect.x, bestCandidate->rect.y);
+        // focusedElement is for textboxes and listboxes only
+        pMenu->focusedElement = NULL;
+        //jkGuiRend_MouseMovedCallback(pMenu, bestCandidate->rect.x, bestCandidate->rect.y);
+        jkGuiRend_ClickableMouseover(pMenu, bestCandidate);
     }
 }
 
+// Added: controller support
+// TODO: QOL ifdef?
+static jkGuiMenu* jkGuiRend_lastActiveMenu = NULL;
+static jkGuiMenu* jkGuiRend_B1Menu = NULL;
 void jkGuiRend_UpdateController()
 {
+    if (!jkGuiRend_activeMenu) {
+        jkGuiRend_lastActiveMenu = NULL;
+        return;
+    }
+    static int lastB1 = 0;
+    static int keyboardShowedLastUpdate = 0;
+    static jkGuiElement* currentKeyboardFocusedElement = NULL;
+    static int prev_stdControl_bControlsActive = 0;
+    prev_stdControl_bControlsActive = stdControl_bControlsActive;
     stdControl_bControlsActive = 1; // HACK
     stdControl_ReadControls();
 
+    static flex_t lastJoyXRight = 0.0;
+    static flex_t lastJoyYDown = 0.0;
+    static flex_t lastJoyXLeft = 0.0;
+    static flex_t lastJoyYUp = 0.0;
+    flex_t joyXRight = stdMath_Max(stdControl_ReadAxis(AXIS_JOY1_X), stdControl_ReadAxis(AXIS_JOY1_Z));
+    flex_t joyYDown = stdMath_Max(stdControl_ReadAxis(AXIS_JOY1_Y), stdControl_ReadAxis(AXIS_JOY1_R));
+    flex_t joyXLeft = stdMath_Min(stdControl_ReadAxis(AXIS_JOY1_X), stdControl_ReadAxis(AXIS_JOY1_Z));
+    flex_t joyYUp = stdMath_Min(stdControl_ReadAxis(AXIS_JOY1_Y), stdControl_ReadAxis(AXIS_JOY1_R));
+
+    //stdPlatform_Printf("%f %f, %d\n", joyX, joyY, (joyY < -0.5 && lastJoyY >= -0.5));
+
     int val = 0;
-    if (stdControl_ReadKey(KEY_JOY1_HLEFT, &val) && val) {
+    int valB1 = 0;
+    if ((stdControl_ReadKey(KEY_JOY1_HLEFT, &val) && val) 
+        || (joyXLeft < -0.5 && lastJoyXLeft >= -0.5)) {
         jkGuiRend_FocusElementDir(jkGuiRend_activeMenu, FOCUS_LEFT);
-        printf("left\n");
+        stdPlatform_Printf("left\n");
     }
-    if (stdControl_ReadKey(KEY_JOY1_HRIGHT, &val) && val) {
+    else if ((stdControl_ReadKey(KEY_JOY1_HRIGHT, &val) && val)
+            || (joyXRight > 0.5 && lastJoyXRight <= 0.5)) {
         jkGuiRend_FocusElementDir(jkGuiRend_activeMenu, FOCUS_RIGHT);
-        printf("right\n");
+        stdPlatform_Printf("right\n");
     }
-    if (stdControl_ReadKey(KEY_JOY1_HUP, &val) && val) {
+    if ((stdControl_ReadKey(KEY_JOY1_HUP, &val) && val)
+        || (joyYUp < -0.5 && lastJoyYUp >= -0.5)) {
         jkGuiRend_FocusElementDir(jkGuiRend_activeMenu, FOCUS_UP);
-        printf("up\n");
+        stdPlatform_Printf("up\n");
     }
-    if (stdControl_ReadKey(KEY_JOY1_HDOWN, &val) && val) {
+    else if ((stdControl_ReadKey(KEY_JOY1_HDOWN, &val) && val)
+        || (joyYDown > 0.5 && lastJoyYDown <= 0.5)) {
         jkGuiRend_FocusElementDir(jkGuiRend_activeMenu, FOCUS_DOWN);
-        printf("down\n");
+        stdPlatform_Printf("down\n");
     }
-    if (stdControl_ReadKey(KEY_JOY1_B1, &val) && val) {
-        //jkGuiRend_InvokeEvent(jkGuiRend_activeMenu->focusedElement, jkGuiRend_activeMenu, JKGUI_EVENT_KEYDOWN, VK_RETURN);
-        jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_RETURN, 0, 0);
-        //if (jkGuiRend_activeMenu->lastMouseOverClickable && jkGuiRend_activeMenu->lastMouseOverClickable->clickHandlerFunc )
-        //    jkGuiRend_activeMenu->lastClicked = jkGuiRend_activeMenu->lastMouseOverClickable->clickHandlerFunc(jkGuiRend_activeMenu->lastMouseOverClickable, jkGuiRend_activeMenu, jkGuiRend_mouseX, jkGuiRend_mouseY, 1);
-        jkGuiRend_InvokeClicked(jkGuiRend_activeMenu->lastMouseOverClickable, jkGuiRend_activeMenu, jkGuiRend_mouseX, jkGuiRend_mouseY, 1);
-        printf("a\n");
+
+    lastJoyXRight = joyXRight;
+    lastJoyYDown = joyYDown;
+    lastJoyXLeft = joyXLeft;
+    lastJoyYUp = joyYUp;
+
+    valB1 = stdControl_ReadKey(KEY_JOY1_B1, &val);
+
+    extern jkGuiMenu jkGuiSaveLoad_menu;
+    extern jkGuiMenu jkGuiDialog_OkCancel_menu;
+
+    if (!lastB1 && valB1) {
+        jkGuiRend_B1Menu = jkGuiRend_activeMenu;
+        jkGuiMenu* pB1Menu = jkGuiRend_activeMenu;
+        lastB1 = valB1; // Ugh, recursion junk
+
+        // HACK: Prevent player from killing themselves on load or save
+        if (jkGuiRend_activeMenu != &jkGuiSaveLoad_menu && !(jkGuiRend_activeMenu == &jkGuiDialog_OkCancel_menu && jkGuiRend_lastActiveMenu == &jkGuiSaveLoad_menu)) {
+            jkGuiElement* prevFocusedElement = jkGuiRend_activeMenu->focusedElement;
+            jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_RETURN, 0, 0);
+            if (prevFocusedElement == jkGuiRend_activeMenu->focusedElement && pB1Menu == jkGuiRend_activeMenu) {
+                jkGuiRend_activeMenu->lastMouseDownClickable = jkGuiRend_activeMenu->lastMouseOverClickable;
+                jkGuiRend_InvokeClicked(jkGuiRend_activeMenu->lastMouseOverClickable, jkGuiRend_activeMenu, jkGuiRend_mouseX, jkGuiRend_mouseY, 1);
+            }
+            stdPlatform_Printf("a1\n");
+        }
     }
+    else if (lastB1 && !valB1) {
+        jkGuiMenu* pB1Menu = jkGuiRend_activeMenu;
+        lastB1 = valB1; // Ugh, recursion junk
+
+        if ((jkGuiRend_activeMenu == &jkGuiSaveLoad_menu || (jkGuiRend_activeMenu == &jkGuiDialog_OkCancel_menu && jkGuiRend_lastActiveMenu == &jkGuiSaveLoad_menu)) && jkGuiRend_B1Menu == jkGuiRend_activeMenu) {
+            jkGuiElement* prevFocusedElement = jkGuiRend_activeMenu->focusedElement;
+            jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_RETURN, 0, 0);
+            if (prevFocusedElement == jkGuiRend_activeMenu->focusedElement && pB1Menu == jkGuiRend_activeMenu) {
+                jkGuiRend_activeMenu->lastMouseDownClickable = jkGuiRend_activeMenu->lastMouseOverClickable;
+                jkGuiRend_InvokeClicked(jkGuiRend_activeMenu->lastMouseOverClickable, jkGuiRend_activeMenu, jkGuiRend_mouseX, jkGuiRend_mouseY, 1);
+            }
+            stdPlatform_Printf("a2\n");
+        }
+
+        if (jkGuiRend_activeMenu) {
+            jkGuiRend_activeMenu->lastMouseDownClickable = 0;
+        }
+    }
+    lastB1 = valB1;
+
     if (stdControl_ReadKey(KEY_JOY1_B2, &val) && val) {
         jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_ESCAPE, 0, 0);
-        printf("b\n");
+        stdPlatform_Printf("b\n");
     }
 	
     if (stdControl_ReadKey(KEY_JOY1_B3, &val) && val) {
         //jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_TAB, 0, 0);
-        printf("x\n");
-        if (jkGuiRend_activeMenu->pReturnKeyShortcutElement) {
+        stdPlatform_Printf("x\n");
+        if (jkGuiRend_activeMenu && jkGuiRend_activeMenu->pReturnKeyShortcutElement) {
             jkGuiRend_InvokeClicked(jkGuiRend_activeMenu->pReturnKeyShortcutElement, jkGuiRend_activeMenu, jkGuiRend_mouseX, jkGuiRend_mouseY, 1);
         }
     }
+
+    if (!stdControl_IsSystemKeyboardShowing() || jkGuiRend_activeMenu->focusedElement != currentKeyboardFocusedElement) {
+        stdControl_HideSystemKeyboard();
+        keyboardShowedLastUpdate = 0;
+        currentKeyboardFocusedElement = NULL;
+    }
+
+    if (jkGuiRend_activeMenu && jkGuiRend_activeMenu->focusedElement && jkGuiRend_activeMenu->focusedElement->type == ELEMENT_TEXTBOX) {
+        stdControl_ShowSystemKeyboard();
+        if (!keyboardShowedLastUpdate) {
+            jkGuiRend_WindowHandler(0, WM_KEYFIRST, VK_END, 0, 0);
+        }
+
+        keyboardShowedLastUpdate = 1;
+        currentKeyboardFocusedElement = jkGuiRend_activeMenu->focusedElement;
+    }
+    else if (keyboardShowedLastUpdate) {
+        stdControl_HideSystemKeyboard();
+        keyboardShowedLastUpdate = 0;
+        currentKeyboardFocusedElement = NULL;
+    }
+
+    if (jkGuiRend_activeMenu != jkGuiRend_lastActiveMenu) {
+        jkGuiRend_lastActiveMenu = jkGuiRend_activeMenu;
+    }
+
+    stdControl_bControlsActive = prev_stdControl_bControlsActive;
 }
 
 void jkGuiRend_UpdateAudio()

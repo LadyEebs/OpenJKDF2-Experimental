@@ -1504,31 +1504,31 @@ sithThing* sithWeapon_ProjectileAutoAim(rdMatrix34 *out, sithThing *sender, rdMa
 }
 
 // MOTS altered ??
-sithThing* sithWeapon_FireProjectile(sithThing *sender, sithThing *projectileTemplate, sithSound *fireSound, int mode, rdVector3 *fireOffset, rdVector3 *aimError, flex_t scale, int16_t scaleFlags, flex_t autoaimFov, flex_t autoaimMaxDist, int extra)
+sithThing* sithWeapon_FireProjectile(sithThing *pSender, sithThing *pProjectileTemplate, sithSound *pFireSound, int mode, rdVector3 *pFireOffset, rdVector3 *pAimError, flex_t scale, int16_t scaleFlags, flex_t autoaimFov, flex_t autoaimMaxDist, int extra)
 {
 	rdMatrix34 senderLookat;
-	rdMatrix_Copy34(&senderLookat, &sender->lookOrientation);   
-	if (sender->type == SITH_THING_ACTOR || sender->type == SITH_THING_PLAYER )
-		rdMatrix_PreRotate34(&senderLookat, &sender->actorParams.eyePYR);
+	rdMatrix_Copy34(&senderLookat, &pSender->lookOrientation);
+	if (pSender->type == SITH_THING_ACTOR || pSender->type == SITH_THING_PLAYER )
+		rdMatrix_PreRotate34(&senderLookat, &pSender->actorParams.eyePYR);
 
-	if ( rdVector_IsZero3(fireOffset) )
+	if ( rdVector_IsZero3(pFireOffset) )
 	{
-		*fireOffset = sender->position;
+		*pFireOffset = pSender->position;
 	}
 	else
 	{
-		rdMatrix_TransformVector34Acc(fireOffset, &senderLookat);
-		rdVector_Add3Acc(fireOffset, &sender->position);
+		rdMatrix_TransformVector34Acc(pFireOffset, &senderLookat);
+		rdVector_Add3Acc(pFireOffset, &pSender->position);
 	}
 
 	rdMatrix34 projectileLookat;
 	if ( (sithWeapon_bAutoAim & 1) != 0 && (scaleFlags & SITH_PROJECTILE_AUTOAIM) != 0 && (!sithNet_isMulti || (scaleFlags & SITH_PROJECTILE_AUTOAIM_MP) != 0) )
-		sithWeapon_ProjectileAutoAim(&projectileLookat, sender, &senderLookat, fireOffset, autoaimFov, autoaimMaxDist);
+		sithWeapon_ProjectileAutoAim(&projectileLookat, pSender, &senderLookat, pFireOffset, autoaimFov, autoaimMaxDist);
 	else
 		rdMatrix_Copy34(&projectileLookat, &senderLookat);
 
-	if (rdVector_IsZero3(aimError) )
-		rdMatrix_PreRotate34(&projectileLookat, aimError);
+	if (rdVector_IsZero3(pAimError) )
+		rdMatrix_PreRotate34(&projectileLookat, pAimError);
 
 	float fireRateDeltaTime = 0.0f;
 	if ( (scaleFlags & SITH_PROJECTILE_SCALE_UNK10) == 0 )
@@ -1546,21 +1546,21 @@ sithThing* sithWeapon_FireProjectile(sithThing *sender, sithThing *projectileTem
 		{
 			fireRateTimeRatio -= 1.0;
 			fireRateDeltaTime = fireRateTimeRatio * sithWeapon_fireRate;
-			sithThing* result = sithWeapon_FireProjectile_0(sender, projectileTemplate, &projectileLookat.lvec, fireOffset, 0, mode, scale, scaleFlags, fireRateDeltaTime, extra);
+			sithThing* result = sithWeapon_FireProjectile_0(pSender, pProjectileTemplate, &projectileLookat.lvec, pFireOffset, 0, mode, scale, scaleFlags, fireRateDeltaTime, extra);
 				
 			if (result && sithComm_multiplayerFlags )
-				sithDSSThing_SendFireProjectile(sender, projectileTemplate, &projectileLookat.lvec, fireOffset, 0, mode, scale, scaleFlags, fireRateDeltaTime, result->thing_id, INVALID_DPID, 255, extra);
+				sithDSSThing_SendFireProjectile(pSender, pProjectileTemplate, &projectileLookat.lvec, pFireOffset, 0, mode, scale, scaleFlags, fireRateDeltaTime, result->thing_id, INVALID_DPID, 255, extra);
 		}
 	}
 
-	if ( fireSound )
-		sithAIAwareness_AddEntry(sender->sector, &sender->position, 1, 4.0, sender);
-	sithThing* result = sithWeapon_FireProjectile_0(sender, projectileTemplate, &projectileLookat.lvec, fireOffset, fireSound, mode, scale, scaleFlags, fireRateDeltaTime, extra);
+	if ( pFireSound )
+		sithAIAwareness_AddEntry(pSender->sector, &pSender->position, 1, 4.0, pSender);
+	sithThing* result = sithWeapon_FireProjectile_0(pSender, pProjectileTemplate, &projectileLookat.lvec, pFireOffset, pFireSound, mode, scale, scaleFlags, fireRateDeltaTime, extra);
 	if ( result )
 	{
 		if ( sithComm_multiplayerFlags )
 		{
-			sithDSSThing_SendFireProjectile(sender, projectileTemplate, &projectileLookat.lvec, fireOffset, fireSound,
+			sithDSSThing_SendFireProjectile(pSender, pProjectileTemplate, &projectileLookat.lvec, pFireOffset, pFireSound,
 				mode, scale, scaleFlags, fireRateDeltaTime, result->thing_id, INVALID_DPID, 255, extra);
 		}
 	}

@@ -35,6 +35,10 @@
 #include <ctype.h>
 #endif
 
+#ifdef TARGET_TWL
+#include <nds.h>
+#endif
+
 #include "General/stdString.h"
 #include "Platform/stdControl.h"
 
@@ -337,15 +341,17 @@ char* _strcat(char* str, const char* concat)
     return str;
 }
 
+#if !defined(TARGET_TWL)
 void* _memset(void* ptr, int val, size_t num)
 {
-    int i;
+    size_t i;
     for (i = 0; i < num; i++)
     {
         *(uint8_t*)((char*)ptr+i) = val;
     }
     return ptr;
 }
+#endif
 
 #if !defined(MACOS) && !defined(WIN64_STANDALONE) && !defined(LINUX) && !defined(TARGET_TWL)
 void* memset(void* ptr, int val, size_t num)
@@ -685,6 +691,26 @@ void jk_exit(int a)
 {
     exit(a);
 }
+
+#ifdef TARGET_TWL
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern void __real_exit(int res);
+void __wrap_exit(int res) {
+    while (1) {
+        scanKeys();
+        u16 keys_held = keysHeld();
+        if (!!(keys_held & KEY_A)) {
+            break;
+        }
+    }
+    __real_exit(res);
+}
+#ifdef __cplusplus
+}
+#endif
+#endif
 
 int jk_printf(const char* fmt, ...)
 {

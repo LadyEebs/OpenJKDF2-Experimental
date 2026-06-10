@@ -33,7 +33,7 @@ jkGuiElement jkGuiDialog_OkCancel_buttons[5] = {
     {ELEMENT_END, 0, 0, 0, 0, {0}, 0, 0, 0, 0, 0, 0, {0}, 0}
 };
 
-static jkGuiMenu jkGuiDialog_OkCancel_menu  = {jkGuiDialog_OkCancel_buttons, -1, 0xE1, 0xFF, 0xF, 0, 0, jkGui_stdBitmaps, jkGui_stdFonts, 0, 0, "thermloop01.wav", "thrmlpu2.wav", 0, 0, 0, 0, 0, 0};
+jkGuiMenu jkGuiDialog_OkCancel_menu  = {jkGuiDialog_OkCancel_buttons, -1, 0xE1, 0xFF, 0xF, 0, 0, jkGui_stdBitmaps, jkGui_stdFonts, 0, 0, "thermloop01.wav", "thrmlpu2.wav", 0, 0, 0, 0, 0, 0};
 
 void jkGuiDialog_Startup()
 {
@@ -60,13 +60,26 @@ stdVBuffer *jkGuiDialog_sub_416900()
     stdVBuffer *v0; // eax
     stdVBuffer *v1; // esi
 
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]);
+
     v0 = stdDisplay_VBufferNew(&(*jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]->mipSurfaces)->format, 0, 0, Video_menuBuffer.palette);
     v1 = v0;
     if ( v0 )
     {
+        int copyX = jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->xPos;
+        int copyY = jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->yPos;
+#ifdef JKGUI_SMOL_SCREEN
+        copyX = (int)((flex_t)copyX * 0.4);
+        copyY = (int)((flex_t)copyY * 0.4);
+#endif
         stdDisplay_VBufferCopy(v0, &Video_menuBuffer, 0, 0, 0, 0);
-        stdDisplay_VBufferCopy(v1, *jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->mipSurfaces, jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->xPos, jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->yPos, 0, 0);
+        stdDisplay_VBufferCopy(v1, *jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]->mipSurfaces, copyX, copyY, 0, 0);
     }
+
+    stdBitmap_UnloadData(jkGui_stdBitmaps[JKGUI_BM_BK_DIALOG]);
+
     return v1;
 }
 
@@ -74,6 +87,9 @@ int jkGuiDialog_OkCancelDialog(wchar_t *stringA, wchar_t *stringB)
 {
     int v2; // edi
     int v5; // esi
+
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 
     v2 = 0;
     if ( !jkGui_GdiMode )
@@ -84,27 +100,45 @@ int jkGuiDialog_OkCancelDialog(wchar_t *stringA, wchar_t *stringB)
     }
     jkGuiDialog_OkCancel_buttons[0].wstr = stringA;
     jkGuiDialog_OkCancel_buttons[1].wstr = stringB;
+#ifdef STDBITMAP_PARTIAL_LOAD
+    jkGuiDialog_OkCancel_menu.pTextureOverride = jkGuiDialog_sub_416900();
+    jkGuiDialog_OkCancel_menu.pBgBitmap = NULL;
+#else
     jkGuiDialog_OkCancel_menu.texture = jkGuiDialog_sub_416900();
-    jkGuiDialog_OkCancel_menu.palette = 0;
+    jkGuiDialog_OkCancel_menu.palette = NULL;
+#endif
     jkGuiDialog_OkCancel_buttons[2].wstr = jkStrings_GetUniStringWithFallback("GUI_OK");
     jkGuiDialog_OkCancel_buttons[3].bIsVisible = 1;
     jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiDialog_OkCancel_menu, &jkGuiDialog_OkCancel_buttons[2]);
     jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiDialog_OkCancel_menu, &jkGuiDialog_OkCancel_buttons[3]);
     v5 = jkGuiRend_DisplayAndReturnClicked(&jkGuiDialog_OkCancel_menu);
+    
+#ifdef STDBITMAP_PARTIAL_LOAD
+    stdDisplay_VBufferFree(jkGuiDialog_OkCancel_menu.pTextureOverride);
+    jkGuiDialog_OkCancel_menu.pTextureOverride = NULL;
+#else
     stdDisplay_VBufferFree(jkGuiDialog_OkCancel_menu.texture);
-    jkGuiDialog_OkCancel_menu.texture = 0;
+    jkGuiDialog_OkCancel_menu.texture = NULL;
+#endif
     if ( v2 )
         jkGui_SetModeGame();
 
 #ifdef MENU_16BIT
 	jkuGuiRend_dialogBackgroundMenu = 0;
 #endif
+
+	// Added
+    stdBitmap_UnloadData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
+	
     return v5 == 1;
 }
 
 void jkGuiDialog_ErrorDialog(wchar_t *stringA, wchar_t *stringB)
 {
     int v2; // edi
+
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 
     v2 = 0;
     if ( !jkGui_GdiMode )
@@ -115,26 +149,43 @@ void jkGuiDialog_ErrorDialog(wchar_t *stringA, wchar_t *stringB)
     }
     jkGuiDialog_Ok_buttons[0].wstr = stringA;
     jkGuiDialog_Ok_buttons[1].wstr = stringB;
+#ifdef STDBITMAP_PARTIAL_LOAD
+    jkGuiDialog_Ok_menu.pTextureOverride = jkGuiDialog_sub_416900();
+    jkGuiDialog_Ok_menu.pBgBitmap = NULL;
+#else
     jkGuiDialog_Ok_menu.texture = jkGuiDialog_sub_416900();
-    jkGuiDialog_Ok_menu.palette = 0;
+    jkGuiDialog_Ok_menu.palette = NULL;
+#endif
     jkGuiDialog_Ok_buttons[2].wstr = jkStrings_GetUniStringWithFallback("GUI_OK");
     jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiDialog_Ok_menu, &jkGuiDialog_Ok_buttons[2]);
     jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiDialog_Ok_menu, &jkGuiDialog_Ok_buttons[2]);
     jkGuiRend_DisplayAndReturnClicked(&jkGuiDialog_Ok_menu);
+    
+#ifdef STDBITMAP_PARTIAL_LOAD
+    stdDisplay_VBufferFree(jkGuiDialog_Ok_menu.pTextureOverride);
+    jkGuiDialog_Ok_menu.pTextureOverride = NULL;
+#else
     stdDisplay_VBufferFree(jkGuiDialog_Ok_menu.texture);
-    jkGuiDialog_Ok_menu.texture = 0;
+    jkGuiDialog_Ok_menu.texture = NULL;
+#endif
     if ( v2 )
         jkGui_SetModeGame();
 
 #ifdef MENU_16BIT
 	jkuGuiRend_dialogBackgroundMenu = 0;
 #endif
+
+    // Added
+    stdBitmap_UnloadData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 }
 
 int jkGuiDialog_YesNoDialog(wchar_t *stringA, wchar_t *stringB)
 {
     int v2; // edi
     int v5; // esi
+
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 
     v2 = 0;
     if ( !jkGui_GdiMode )
@@ -145,22 +196,36 @@ int jkGuiDialog_YesNoDialog(wchar_t *stringA, wchar_t *stringB)
     }
     jkGuiDialog_OkCancel_buttons[0].wstr = stringA;
     jkGuiDialog_OkCancel_buttons[1].wstr = stringB;
+#ifdef STDBITMAP_PARTIAL_LOAD
+    jkGuiDialog_OkCancel_menu.pTextureOverride = jkGuiDialog_sub_416900();
+    jkGuiDialog_OkCancel_menu.pBgBitmap = NULL;
+#else
     jkGuiDialog_OkCancel_menu.texture = jkGuiDialog_sub_416900();
-    jkGuiDialog_OkCancel_menu.palette = 0;
+    jkGuiDialog_OkCancel_menu.palette = NULL;
+#endif
     jkGuiDialog_OkCancel_buttons[2].wstr = jkStrings_GetUniStringWithFallback("GUI_YES");
     jkGuiDialog_OkCancel_buttons[3].wstr = jkStrings_GetUniStringWithFallback("GUI_NO");
     jkGuiDialog_OkCancel_buttons[3].bIsVisible = 1;
     jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiDialog_OkCancel_menu, &jkGuiDialog_OkCancel_buttons[2]);
     jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiDialog_OkCancel_menu, &jkGuiDialog_OkCancel_buttons[3]);
     v5 = jkGuiRend_DisplayAndReturnClicked(&jkGuiDialog_OkCancel_menu);
+    
+#ifdef STDBITMAP_PARTIAL_LOAD
+    stdDisplay_VBufferFree(jkGuiDialog_OkCancel_menu.pTextureOverride);
+    jkGuiDialog_OkCancel_menu.pTextureOverride = NULL;
+#else
     stdDisplay_VBufferFree(jkGuiDialog_OkCancel_menu.texture);
-    jkGuiDialog_OkCancel_menu.texture = 0;
+    jkGuiDialog_OkCancel_menu.texture = NULL;
+#endif
     if ( v2 )
         jkGui_SetModeGame();
 
 #ifdef MENU_16BIT
 	jkuGuiRend_dialogBackgroundMenu = 0;
 #endif
+
+    // Added
+    stdBitmap_UnloadData(jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 
     return v5 == 1;
 }

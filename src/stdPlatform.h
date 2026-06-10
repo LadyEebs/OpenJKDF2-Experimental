@@ -27,14 +27,24 @@ void stdPlatform_InitServices(HostServices *handlers);
 int stdPlatform_Startup();
 void stdPlatform_Shutdown();
 
+#ifndef PLATFORM_POSIX
+void stdPlatform_Assert(const char *msg, const char *file, int line);
+void* stdPlatform_AllocHandle(uint32_t size);
+void stdPlatform_FreeHandle(void *ptr);
+void* stdPlatform_ReallocHandle(void *ptr, uint32_t size);
+void* stdPlatform_LockHandle(void *ptr);
+void stdPlatform_UnlockHandle(void *ptr);
+void stdPlatform_GetDateTime(char *out, uint32_t outLen);
+#else
+// On POSIX, these are not needed — Linux_* functions handle everything
 #ifndef __cplusplus
 static void (*stdPlatform_Assert)(const char* a1, const char *a2, int a3) = (void*)stdPlatform_Assert_ADDR;
-
 static void* (*stdPlatform_AllocHandle)(size_t) = (void*)stdPlatform_AllocHandle_ADDR;
 static void (*stdPlatform_FreeHandle)(void*) = (void*)stdPlatform_FreeHandle_ADDR;
 static void* (*stdPlatform_ReallocHandle)(void*, size_t) = (void*)stdPlatform_ReallocHandle_ADDR;
 static uint32_t (*stdPlatform_LockHandle)(uint32_t) = (void*)stdPlatform_LockHandle_ADDR;
 static void (*stdPlatform_UnlockHandle)(uint32_t) = (void*)stdPlatform_UnlockHandle_ADDR;
+#endif
 #endif
 
 #ifndef PLATFORM_POSIX

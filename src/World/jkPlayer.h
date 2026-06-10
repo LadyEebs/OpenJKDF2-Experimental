@@ -220,6 +220,9 @@ extern flex_t jkPlayer_puppetPosBias;
 extern flex_t jkPlayer_puppetFriction;
 #endif
 
+extern int jkPlayer_bEnableEmissiveTextures;
+extern int jkPlayer_bEnableClassicLighting;
+
 #define FOV_MIN (40)
 #define FOV_MAX (170)
 

@@ -1,11 +1,18 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-#ifdef TARGET_TWL
+#if defined(TARGET_TWL) && defined(EXPERIMENTAL_FIXED_POINT)
 //#include <nds.h>
 #define flextov16(n) ((v16)((int32_t)n.to_raw() >> (FIXED_POINT_DECIMAL_BITS-12)))
+#define flextot16(n) ((v16)((int32_t)n.to_raw() >> (FIXED_POINT_DECIMAL_BITS-4)))
 #define flextof32(n) ((int32_t)((int32_t)n.to_raw() >> (FIXED_POINT_DECIMAL_BITS-12)))
 #define f32toflex(n) (numeric::fixed<FIXED_POINT_WHOLE_BITS, FIXED_POINT_DECIMAL_BITS>::from_base(n<<(FIXED_POINT_DECIMAL_BITS-12)))
+#elif defined(TARGET_TWL) && !defined(EXPERIMENTAL_FIXED_POINT)
+#define flextov16(n) (floattov16(n))
+#define flextot16(n) (floattot16(n))
+#define flextof32(n) (floattof32(n))
+#define f32toflex(n) (f32tofloat(n))
+
 #endif
 
 #ifdef EXPERIMENTAL_FIXED_POINT
@@ -116,22 +123,6 @@ typedef uint32_t size_t;
 
 #include "Primitives/rdRect.h"
 
-#ifdef QOL_IMPROVEMENTS
-#define SITH_MAX_SYNC_THINGS (128)
-#else
-#define SITH_MAX_SYNC_THINGS (16)
-#endif
-
-#ifdef QOL_IMPROVEMENTS
-    #define SITH_NUM_EVENTS (6)
-#else // !QOL_IMPROVEMENTS
-    #ifdef JKM_TYPES
-        #define SITH_NUM_EVENTS (6)
-    #else // !JKM_TYPES
-        #define SITH_NUM_EVENTS (5)
-    #endif // JKM_TYPES
-#endif // QOL_IMPROVEMENTS
-
 
 #if defined(JK_NO_MMAP)
 //#define RDCACHE_MAX_TRIS (0x2000)
@@ -160,6 +151,26 @@ typedef uint32_t size_t;
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) ((sizeof a)/(sizeof a[0]))
+#endif
+	
+#if defined(_MSC_VER)
+#define PURE_FUNC //TODO
+#else
+#if defined(__GNUC__)
+#define PURE_FUNC __attribute__ ((pure))
+#else
+#define PURE_FUNC __attribute__ ((pure))
+#endif
+#endif
+
+#if defined(_MSC_VER)
+#define ALWAYS_INLINE //TODO
+#else
+#if defined(__GNUC__)
+#define ALWAYS_INLINE __attribute__ ((always_inline))
+#else
+#define ALWAYS_INLINE __attribute__ ((always_inline))
+#endif
 #endif
 
 #ifdef PLATFORM_STEAM
@@ -380,7 +391,8 @@ typedef struct rdSprite rdSprite;
 typedef struct rdPolyLine rdPolyLine;
 typedef struct rdSurface rdSurface;
 typedef struct rdThing rdThing;
-typedef struct rdVertexIdxInfo rdVertexIdxInfo;
+typedef struct rdTexFormat rdTexFormat;
+typedef struct rdTexFormatMin rdTexFormatMin;
 typedef struct sithCollisionSearchEntry sithCollisionSearchEntry;
 typedef struct sithPlayingSound sithPlayingSound;
 typedef struct sithSoundClass sithSoundClass;
@@ -405,9 +417,15 @@ typedef struct sithPlayerInfo sithPlayerInfo;
 typedef struct sithAnimclassEntry sithAnimclassEntry;
 typedef struct stdALBuffer stdALBuffer;
 typedef struct stdALStreamBuffer stdALStreamBuffer;
+typedef struct stdMaxmodBuffer stdMaxmodBuffer;
 typedef struct stdNullSoundBuffer stdNullSoundBuffer;
 typedef struct stdFontCharset stdFontCharset;
+#ifndef RDCACHE_RENDER_NGONS
 typedef struct rdTri rdTri;
+#else
+typedef struct rdNGon rdNGon;
+typedef int rdTri; // for symbols.syms
+#endif
 typedef struct rdLine rdLine;
 typedef struct rdGeoset rdGeoset;
 typedef struct rdMeshinfo rdMeshinfo;
@@ -447,6 +465,11 @@ typedef stdALStreamBuffer stdSound_streamBuffer_t;
 #ifdef STDSOUND_NULL
 typedef stdNullSoundBuffer stdSound_buffer_t;
 typedef stdNullSoundBuffer stdSound_3dBuffer_t;
+#endif 
+
+#ifdef STDSOUND_MAXMOD
+typedef stdMaxmodBuffer stdSound_buffer_t;
+typedef stdMaxmodBuffer stdSound_3dBuffer_t;
 #endif 
 
 #endif // STDSOUND_OPENAL
@@ -710,12 +733,16 @@ typedef struct rdCamera
 	rdMatrix34 prev_view_matrix;
 #endif
     flex_t fov;
-    flex_t fov_y;
+    flex_t fovDx;
     flex_t screenAspectRatio;
     flex_t orthoScale;
     rdClipFrustum *pClipFrustum;
-    void (*fnProject)(rdVector3 *, rdVector3 *);
-    void (*fnProjectLst)(rdVector3 *, rdVector3 *, unsigned int);
+
+    void (*fnProject)(rdVector3 *, const rdVector3 *);
+    void (*fnProjectLst)(rdVector3 *, const rdVector3 *, unsigned int);
+#ifdef TARGET_TWL
+    void (*fnProjectLstClip)(rdVector3 *, const rdVector3 *, unsigned int);
+#endif
 #ifdef RGB_AMBIENT
 	rdVector3 ambientLight;
 	rdAmbient ambientSH;
@@ -768,15 +795,22 @@ typedef struct rdAnimEntry
 
 typedef struct rdJoint
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char mesh_name[32];
-    uint32_t nodeIdx;
+#endif
+    int32_t nodeIdx;
     uint32_t numAnimEntries;
     rdAnimEntry* paAnimEntries;
 } rdJoint;
 
 typedef struct rdKeyframe
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char name[32];
+#endif
+#ifdef STDHASHTABLE_CRC32_KEYS
+    uint32_t namecrc;
+#endif
     uint32_t id;
     uint32_t flags;
     uint32_t numJoints;
@@ -811,10 +845,10 @@ typedef struct rdClipFrustum
 	flex_t x, y, width, height;
 #endif
 #ifdef QOL_IMPROVEMENTS
-  flex_t minX;
-  flex_t minY;
-  flex_t maxX;
-  flex_t maxY;
+  //flex_t minX;
+  //flex_t minY;
+  //flex_t maxX;
+  //flex_t maxY;
 #endif
 } rdClipFrustum;
 
@@ -901,6 +935,7 @@ typedef struct v11_struct
   rdMaterial *material;
 } v11_struct;
 
+#ifndef RDCACHE_RENDER_NGONS
 typedef struct rdTri
 {
   int32_t v1;
@@ -909,6 +944,7 @@ typedef struct rdTri
   int32_t flags;
   rdDDrawSurface *texture; // DirectDrawSurface*
 } rdTri;
+#endif
 
 typedef struct rdUITri
 {
@@ -926,6 +962,16 @@ typedef struct rdLine
     int32_t v2;
     int32_t flags;
 } rdLine;
+
+#ifdef RDCACHE_RENDER_NGONS
+typedef struct rdNGon
+{
+  int32_t vertIdxStart;
+  int32_t numVertices;
+  int32_t flags;
+  rdDDrawSurface *texture; // DirectDrawSurface*
+} rdNGon;
+#endif
 
 typedef float D3DVALUE;
 
@@ -1109,23 +1155,9 @@ typedef struct D3DVERTEX_twl
   #pragma pack(push, 4)
   union
   {
-    flex_t nx;
-    flex_t dvNX;
-  };
-  #pragma pack(pop)
-  #pragma pack(push, 4)
-  union
-  {
     flex_t ny;
     flex_t dvNY;
     uint32_t color;
-  };
-  #pragma pack(pop)
-  #pragma pack(push, 4)
-  union
-  {
-    flex_t nz;
-    flex_t dvNZ;
   };
   #pragma pack(pop)
   #pragma pack(push, 4)
@@ -1142,6 +1174,7 @@ typedef struct D3DVERTEX_twl
     flex_t dvTV;
   };
   #pragma pack(pop)
+  uint32_t lightLevel;
 } D3DVERTEX_twl;
 #pragma pack(pop)
 
@@ -1420,12 +1453,14 @@ typedef struct jkgm_cache_entry_t jkgm_cache_entry_t;
 
 typedef struct rdDDrawSurface
 {
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     void* lpVtbl; // IDirectDrawSurfaceVtbl *lpVtbl
     uint32_t direct3d_tex;
     uint8_t surface_desc[0x6c];
-    uint32_t texture_id;
-    uint32_t texture_loaded;
-    uint32_t is_16bit;
+#endif
+    int texture_id;
+    int texture_loaded;
+    int is_16bit;
     uint32_t width;
     uint32_t height;
 
@@ -1454,7 +1489,7 @@ typedef struct rdDDrawSurface
 #endif
 } rdDDrawSurface;
 
-typedef struct rdTexformat
+typedef struct rdTexFormat
 {
 	stdColorMode colorMode;
     uint32_t bpp;
@@ -1470,7 +1505,15 @@ typedef struct rdTexformat
     uint32_t unk_40;
     uint32_t unk_44;
     uint32_t unk_48;
-} rdTexformat;
+} rdTexFormat;
+
+#ifdef RDMATERIAL_MINIMIZE_STRUCTS
+typedef struct rdTexFormatMin
+{
+    BOOL is16bit;
+    BOOL bpp;
+} rdTexFormatMin;
+#endif // RDMATERIAL_MINIMIZE_STRUCTS
 
 typedef struct stdVBufferTexFmt
 {
@@ -1479,14 +1522,18 @@ typedef struct stdVBufferTexFmt
     uint32_t texture_size_in_bytes;
     uint32_t width_in_bytes;
     uint32_t width_in_pixels;
-    rdTexformat format;
+#ifdef RDMATERIAL_MINIMIZE_STRUCTS
+    rdTexFormatMin format;
+#else
+    rdTexFormat format;
+#endif
 } stdVBufferTexFmt;
 
 
 typedef struct stdFontEntry
 {
-  int32_t field_0;
-  int32_t field_4;
+  int32_t glyphTexX;
+  int32_t glyphWidth;
 } stdFontEntry;
 
 typedef struct stdFontCharset
@@ -1500,12 +1547,14 @@ typedef struct stdFontCharset
 
 typedef struct stdFont
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
   char name[32];
+#endif
   int32_t marginY;
   int32_t marginX;
   int16_t field_28;
   int16_t monospaceW;
-  stdBitmap *bitmap;
+  stdBitmap *pBitmap;
   stdFontCharset charsetHead;
 } stdFont;
 
@@ -1532,8 +1581,10 @@ typedef struct stdFontExtHeader
 typedef struct stdVBuffer
 {
     uint32_t bSurfaceLocked;
-    int32_t lock_cnt;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
+    uint32_t lock_cnt;
     uint32_t gap8;
+#endif
     stdVBufferTexFmt format;
     void* palette;
     char* surface_lock_alloc;
@@ -1552,7 +1603,9 @@ typedef struct stdVBuffer
 	uint64_t gpuHandle;
 #endif
     void* ddraw_palette; // LPDIRECTDRAWPALETTE
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     uint8_t desc[0x6c];
+#endif
 } stdVBuffer;
 
 typedef struct rdColor24
@@ -1572,11 +1625,13 @@ typedef struct rdColor32
 
 typedef struct rdColormap
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char colormap_fname[32];
+#endif
     uint32_t flags;
     rdVector3 tint;
     rdColor24 colors[256];
-    void* lightlevel;
+    uint8_t* lightlevel;
     void* lightlevelAlloc;
     void* transparency;
     void* transparencyAlloc;
@@ -1651,7 +1706,7 @@ typedef struct rdTexinfoExtHeader
 typedef struct rdTexinfoHeader
 {
     uint32_t texture_type;
-    uint32_t field_4;
+    uint32_t solidColor;
     uint32_t field_8;
     uint32_t field_C;
     uint32_t field_10;
@@ -1672,28 +1727,41 @@ typedef struct rdMaterialHeader
     uint32_t type;
     uint32_t num_texinfo;
     uint32_t num_textures;
-    rdTexformat tex_format;
+    rdTexFormat texFormat;
 } rdMaterialHeader;
 
 typedef struct rdMaterial
 {
     uint32_t tex_type;
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char mat_fpath[32];
+#endif
 #if defined(SDL2_RENDER) || defined(RDMATERIAL_LRU_LOAD_UNLOAD)
-    char mat_full_fpath[256];
+#ifndef SITH_DEBUG_STRUCT_NAMES
+    union {
+#endif
+    char mat_full_fpath[128];
+#ifndef SITH_DEBUG_STRUCT_NAMES
+    char mat_fpath[32];
+    };
+#endif
 #endif
     uint32_t id;
-    rdTexformat tex_format;
+#ifdef RDMATERIAL_MINIMIZE_STRUCTS
+    rdTexFormatMin texFormat;
+#else
+    rdTexFormat texFormat;
+#endif
     rdColor24 *palette_alloc;
     uint32_t num_texinfo;
     uint32_t celIdx;
-    rdTexinfo *texinfos[16];
+    rdTexinfo *texinfos[RDMATERIAL_MAX_TEXINFOS];
     uint32_t num_textures;
     rdTexture *textures;
 #ifdef RDMATERIAL_LRU_LOAD_UNLOAD
-    BOOL bDataLoaded;
+    uint16_t bDataLoaded;
+    uint16_t bMetadataLoaded; 
     int frameNum;
-    int refcnt;
     rdMaterial* pPrevCachedMaterial;
     rdMaterial* pNextCachedMaterial;
 #endif
@@ -1780,7 +1848,12 @@ typedef struct sithRagdoll
 
 typedef struct sithAnimclass
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char name[32];
+#endif
+#ifdef STDHASHTABLE_CRC32_KEYS
+    uint32_t namecrc;
+#endif
     sithAnimclassMode modes[6];
 	int32_t bodypart_to_joint[JOINTTYPE_NUM_JOINTS];
 #ifdef PUPPET_PHYSICS
@@ -1797,15 +1870,8 @@ typedef struct sithAdjoin
     sithAdjoin *next;
     uint32_t field_14;
     flex_t dist;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     rdVector3 field_1C;
-#ifdef TARGET_TWL
-    int timesClipped;
-    flex_t minX;
-    flex_t maxX;
-    flex_t minY;
-    flex_t maxY;
-    flex_t minZ;
-    flex_t maxZ;
 #endif
 } sithAdjoin;
 
@@ -1820,7 +1886,9 @@ typedef struct sithCamera
     sithThing* secondaryFocus;
     sithSector* sector;
     rdVector3 collisionOffset;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     rdVector3 unused1;
+#endif
     rdMatrix34 viewMat;
     rdVector3 vec3_1;
     rdVector3 viewPYR;
@@ -1970,33 +2038,12 @@ typedef struct rdEdge
     rdEdge* next;
 } rdEdge;
 
-typedef struct rdVertexIdxInfo
-{
-    uint32_t numVertices;
-    int* vertexPosIdx;
-    int* vertexUVIdx;
-    rdVector3* vertices;
-    rdVector2* vertexUVs;
-    flex_t* paDynamicLight;
-#ifdef RGB_THING_LIGHTS
-	flex_t* paDynamicLightR;
-	flex_t* paDynamicLightG;
-	flex_t* paDynamicLightB;
-#endif
-    flex_t* intensities;
-#ifdef JKM_LIGHTING
-    flex_t* paRedIntensities;
-    flex_t* paGreenIntensities;
-    flex_t* paBlueIntensities;
-#endif
-} rdVertexIdxInfo;
-
 typedef struct rdMeshinfo
 {
     uint32_t numVertices;
     int* vertexPosIdx;
     int* vertexUVIdx;
-    rdVector3* verticesProjected;
+    rdVector3* vertices;
     rdVector2* vertexUVs;
     flex_t* paDynamicLight;
 #ifdef RGB_THING_LIGHTS
@@ -2082,12 +2129,16 @@ typedef struct sithSurface
     sithAdjoin* adjoin;
     uint32_t surfaceFlags;
     sithSurfaceInfo surfaceInfo;
+
 #ifdef RENDER_DROID2
 	float radius;
 	rdVector3 center;
 	rdVector3 tangent;
 	rdVector3 bitangent;
 	rdVector2 localSize;
+#elif defined(SITHRENDER_SPHERE_TEST_SURFACES)
+    flex_t radius;
+    rdVector3 center;
 #endif
 } sithSurface;
 
@@ -2356,6 +2407,20 @@ typedef struct sithCogCallstack
     uint32_t trigId;
 } sithCogCallstack;
 
+#ifdef COG_COMPRESS_VAR_SIZE
+typedef struct sithCogStackvar
+{
+    union
+    {
+        cog_int_t data[1];
+        cog_flex_t dataAsFloat[1];
+        intptr_t dataAsPtrs[1];
+        char* dataAsName;
+        cogSymbolFunc_t dataAsFunc;
+    };
+    int16_t type;
+} sithCogStackvar;
+#else
 typedef struct sithCogStackvar
 {
     uint32_t type;
@@ -2368,6 +2433,7 @@ typedef struct sithCogStackvar
         cogSymbolFunc_t dataAsFunc;
     };
 } sithCogStackvar;
+#endif
 
 typedef struct sithCog
 {
@@ -2391,9 +2457,16 @@ typedef struct sithCog
     sithCogCallstack callstack[4];
     uint32_t calldepth;
     sithCogSymboltable* pSymbolTable;
+#ifdef COG_DYNAMIC_STACKS
+    sithCogStackvar* stack;
+    uint32_t stackSize;
+#else
     sithCogStackvar stack[SITHCOGVM_MAX_STACKSIZE];
+#endif
     uint32_t stackPos;
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char cogscript_fpath[32];
+#endif
 #ifdef JKM_TYPES
     uint32_t unk1;
     int32_t numHeapVars;
@@ -2507,6 +2580,9 @@ typedef struct HostServicesBasic
     int (*fileSize)(stdFile_t);
     int (*filePrintf)(stdFile_t, const char*, ...);
     const wchar_t* (*fileGetws)(stdFile_t, wchar_t *, size_t);
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+    void (*suggestHeap)(int);
+#endif
 } HostServicesBasic;
 
 typedef struct HostServices
@@ -2534,6 +2610,9 @@ typedef struct HostServices
     int (*fileSize)(stdFile_t);
     int (*filePrintf)(stdFile_t, const char*, ...);
     const wchar_t* (*fileGetws)(stdFile_t, wchar_t *, size_t);
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+    int (*suggestHeap)(int);
+#endif
     void* (*allocHandle)(size_t);
     void (*freeHandle)(void*);
     void* (*reallocHandle)(void*, size_t);
@@ -2545,7 +2624,7 @@ typedef struct jkResGobDirectory
 {
   char name[128];
   int32_t numGobs;
-  stdGob *gobs[64];
+  stdGob *gobs[STDGOB_MAX_GOBS];
 } jkResGobDirectory;
 
 typedef struct jkRes
@@ -2599,7 +2678,11 @@ typedef struct sithCogSymbol
   };
 #endif
   int32_t field_14;
-  char* field_18;
+#ifndef COG_CRC32_SYMBOL_NAMES
+  char* pName;
+#else
+  uint32_t nameCrc;
+#endif
 } sithCogSymbol;
 
 typedef struct sithCogSymboltable
@@ -2626,19 +2709,38 @@ typedef struct sithCogReference
 typedef struct sithCogScript
 {
     sithCogFlags_t flags;
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char cog_fpath[32];
+#endif
+#ifdef STDHASHTABLE_CRC32_KEYS
+    uint32_t pathCrc;
+#endif
     int32_t* script_program;
     uint32_t codeSize;
     sithCogSymboltable *pSymbolTable;
     uint32_t num_triggers;
+
+#ifdef COG_DYNAMIC_TRIGGERS
+    sithCogTrigger* triggers;
+#else
     sithCogTrigger triggers[32];
+#endif
+
+#ifdef COG_DYNAMIC_IDK
+    sithCogReference* aIdk;
+#else    
     sithCogReference aIdk[128];
+#endif
     uint32_t numIdk;
 } sithCogScript;
 
 typedef struct sithAICommand
 {
+#ifndef SITHAI_CRC32_INSTINCTS
     char name[32];
+#else
+    uint32_t namecrc;
+#endif
     sithAICommandFunc_t func;
     int32_t param1;
     int32_t param2;
@@ -2669,7 +2771,12 @@ typedef struct sithAIClass
   flex_t accuracy;
   int32_t numEntries;
   sithAIClassEntry entries[16];
+#ifdef SITH_DEBUG_STRUCT_NAMES
   char fpath[32];
+#endif
+#ifdef STDHASHTABLE_CRC32_KEYS
+    uint32_t fpathcrc;
+#endif
 } sithAIClass;
 
 #ifdef JKM_LIGHTING
@@ -2870,7 +2977,11 @@ typedef struct sithWorldParser
 typedef struct sithItemDescriptor
 {
     uint32_t flags;
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char fpath[128];
+#else
+    char fpath[8];
+#endif
     flex_t ammoMin;
     flex_t ammoMax;
     sithCog* cog;
@@ -2912,7 +3023,9 @@ typedef struct sithMap
 
 typedef struct rdPolyLine 
 {
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char fname[32];
+#endif
     flex_t length;
     flex_t baseRadius;
     flex_t tipRadius;
@@ -3115,9 +3228,9 @@ typedef struct jkPlayerInfo
     jkSaberCollide saberCollideInfo;
     uint32_t lastSparkSpawnMs;
 #ifdef JKM_SABER
-    uint32_t jkmUnk1;
-    rdMatrix34 jkmSaberUnk1;
-    rdMatrix34 jkmSaberUnk2;
+    uint32_t bHasLastJointMat;
+    rdMatrix34 lastSaberJointMat;
+    rdMatrix34 lastSecondarySaberJointMat;
 #endif // JKM_SABER
     sithThing* wall_sparks;
     sithThing* blood_sparks;
@@ -3160,7 +3273,9 @@ typedef struct jkPlayerMpcInfo
   wchar_t name[32];
   char model[32];
   char soundClass[32];
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
   uint8_t gap80[32];
+#endif
 #ifdef JKM_PARAMS
   int32_t unk1;
 #endif
@@ -3270,7 +3385,9 @@ typedef struct sithSectorAlloc
     int32_t field_0;
     flex_t field_4[3];
     rdVector3 field_10[3];
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     rdVector3 field_34[3];
+#endif
     sithThing* field_58[3];
 } sithSectorAlloc;
 
@@ -3329,9 +3446,11 @@ typedef struct sithActor
     int32_t mood0;
     int32_t mood1;
     int32_t mood2;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     int32_t field_27C;
     int32_t field_280;
     int32_t field_284;
+#endif
     int32_t field_288;
     int32_t field_28C;
     rdVector3 *paFrames;
@@ -3799,7 +3918,13 @@ typedef struct sithThing
 #ifdef PUPPET_PHYSICS
 	sithRagdollInstance* ragdoll;
 #endif
+
+#ifdef SITH_DEBUG_STRUCT_NAMES
     char template_name[32];
+#endif
+#ifdef STDHASHTABLE_CRC32_KEYS
+    uint32_t templateNameCrc;
+#endif
     sithCog* class_cog;
     sithCog* capture_cog;
     jkPlayerInfo* playerInfo;
@@ -3817,6 +3942,10 @@ typedef struct sithThing
 #endif
 #ifdef QOL_IMPROVEMENTS
 	sithThing* nextDrawThing;
+#endif
+
+#ifdef QOL_IMPROVEMENTS
+    uint32_t lastAnnoyingSoundSpamMs;
 #endif
 } sithThing;
 
@@ -3972,6 +4101,12 @@ typedef struct jkGuiElement
     };
 #endif
 
+    // Added: Allow soft-resetting auto-smol repositioning
+#ifdef JKGUI_SMOL_SCREEN
+    rdRect rectOrig;
+    BOOL bIsSmolDirty;
+    BOOL bIsOrigStored;
+#endif
 } jkGuiElement;
 
 typedef struct jkGuiStringEntry
@@ -3992,8 +4127,13 @@ typedef struct jkGuiMenu
   int32_t textBoxCursorColor;
   int32_t fillColor;
   int32_t checkboxBitmapIdx;
+#ifndef STDBITMAP_PARTIAL_LOAD
   stdVBuffer *texture;
   uint8_t* palette;
+#else
+  stdBitmap* pBgBitmap;
+  stdVBuffer* pTextureOverride;
+#endif
   stdBitmap **ui_structs;
   stdFont** fonts;
   intptr_t paddings;

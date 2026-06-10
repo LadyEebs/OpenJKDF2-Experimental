@@ -27,6 +27,7 @@ ExternalProject_Add(
     UPDATE_DISCONNECTED TRUE
     CMAKE_ARGS          --toolchain ${CMAKE_TOOLCHAIN_FILE}
                         --install-prefix ${OPENAL_ROOT}
+                        -DCMAKE_INSTALL_LIBDIR=lib
                         -DCMAKE_BUILD_TYPE:STRING=Release
                         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
                         -DALSOFT_UTILS:BOOL=FALSE
@@ -40,6 +41,7 @@ ExternalProject_Add(
                         -DALSOFT_UPDATE_BUILD_VERSION:BOOL=TRUE
                         -DALSOFT_STATIC_LIBGCC:BOOL=${ALSOFT_STATIC_LIBGCC}
                         -DALSOFT_STATIC_STDCXX:BOOL=${ALSOFT_STATIC_STDCXX}
+                        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     CMAKE_CACHE_ARGS    -DEXTRA_LIBS:STRINGS=${EXTRA_LIBS}
     BUILD_BYPRODUCTS    ${OPENAL_LIBRARY}
 )

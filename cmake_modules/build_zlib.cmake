@@ -15,7 +15,7 @@ set(ZLIB_INCLUDE_DIRS ${ZLIB_ROOT}/include)
 set(ZLIB_LIBRARIES z)
 if(TARGET_WIN32 OR CMAKE_HOST_WIN32 AND TARGET_WIN32)
     if(ZLIB_USE_STATIC_LIBS)
-        set(ZLIB_LIBRARIES zlibstatic)
+        set(ZLIB_LIBRARIES zs)
     else()
         set(ZLIB_LIBRARIES zlib)
     endif()
@@ -32,11 +32,13 @@ ExternalProject_Add(
     BINARY_DIR          ${ZLIB_BINARY_DIR}
     INSTALL_DIR         ${ZLIB_INSTALL_DIR}
     UPDATE_DISCONNECTED TRUE
-    CMAKE_ARGS          --install-prefix ${ZLIB_INSTALL_DIR}
+    CMAKE_ARGS          --install-prefix ${ZLIB_INSTALL_DIR} -DCMAKE_INSTALL_LIBDIR=lib
                         ${ZLIB_TOOLCHAIN_ARG}
+                        -DCMAKE_INSTALL_LIBDIR=lib
                         -DCMAKE_BUILD_TYPE:STRING=Release
                         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
                         -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                        -DZLIB_BUILD_TESTING=OFF
     BUILD_BYPRODUCTS    ${ZLIB_STATIC_LIBRARY_PATH} ${ZLIB_SHARED_LIBRARY_PATH}
 )
 

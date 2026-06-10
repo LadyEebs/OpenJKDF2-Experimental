@@ -1,12 +1,13 @@
 #include "rdColormap.h"
 
+#include "General/stdString.h"
 #include "Engine/rdroid.h"
 #include "Platform/std3D.h"
 #include "Win95/std.h"
 #include "stdPlatform.h"
 #include "General/stdColor.h"
 
-static rdTexformat rdColormap_colorInfo = {1, 0x10, 5, 6, 5, 0x0B, 5, 0, 3, 2, 3, 0, 0, 0};
+static rdTexFormat rdColormap_colorInfo = {1, 0x10, 5, 6, 5, 0x0B, 5, 0, 3, 2, 3, 0, 0, 0};
 
 int rdColormap_SetCurrent(rdColormap *colormap)
 {
@@ -39,7 +40,10 @@ rdColormap* rdColormap_Load(char *colormap_fname)
         return NULL;
     }
 
+#ifdef SITH_DEBUG_STRUCT_NAMES
+    // TODO why?
     *(int*)colormap->colormap_fname = 0;
+#endif
     if (rdColormap_LoadEntry(colormap_fname, colormap))
       return colormap;
   
@@ -63,8 +67,9 @@ int rdColormap_LoadEntry(char *colormap_fname, rdColormap *colormap)
         stdPlatform_Printf("failed to open colormap `%s`!\n", colormap_fname);
         return 0;
     }
-    _strncpy(colormap->colormap_fname, stdFileFromPath(colormap_fname), 0x1Fu);
-    colormap->colormap_fname[31] = 0;
+#ifdef SITH_DEBUG_STRUCT_NAMES
+    stdString_SafeStrCopy(colormap->colormap_fname, stdFileFromPath(colormap_fname), 32);
+#endif
     rdroid_pHS->fileRead(colormap_fptr, &header, 0x40);
     colormap->tint.x = header.tint[0];
     colormap->flags = header.flags;
@@ -177,9 +182,9 @@ LABEL_26:
     }
 
 
-    colormap->lightlevel = colorsLights;
+    colormap->lightlevel = (uint8_t*)colorsLights;
     if ( (intptr_t)colorsLights & 0xFF )
-        colormap->lightlevel = (void*)((intptr_t)colorsLights - ((intptr_t)colorsLights & 0xFF) + 0x100);
+        colormap->lightlevel = (uint8_t*)((intptr_t)colorsLights - ((intptr_t)colorsLights & 0xFF) + 0x100);
 
     rdroid_pHS->fileRead(colormap_fptr, colormap->lightlevel, 0x4000);
 
@@ -361,7 +366,7 @@ int rdColormap_Write(char *outpath, rdColormap *colormap)
     return 1;
 }
 
-int rdColormap_BuildRGB16(uint16_t *paColors16, rdColor24 *paColors24, uint8_t a4, uint8_t a5, uint8_t a6, rdTexformat *format)
+int rdColormap_BuildRGB16(uint16_t *paColors16, rdColor24 *paColors24, uint8_t a4, uint8_t a5, uint8_t a6, rdTexFormat *format)
 {
     return 1;
 }

@@ -122,8 +122,6 @@ void jkDev_Shutdown()
 
 int jkDev_Open()
 {
-    stdVBuffer **v1; // edx
-    stdBitmap *v3; // edx
     stdVBufferTexFmt a1; // [esp+0h] [ebp-4Ch] BYREF
 
     if ( jkDev_bOpened )
@@ -133,9 +131,8 @@ int jkDev_Open()
     if ( Main_bNoHUD )
         return 1;
 
-    v1 = jkHud_pMsgFontSft->bitmap->mipSurfaces;
     jkDev_log_55A4A4 = 0;
-    jkDev_BMFontHeight = (*v1)->format.height;
+    jkDev_BMFontHeight = stdFont_GetHeight(jkHud_pMsgFontSft);
 
     _memcpy(&a1, &stdDisplay_pCurVideoMode->format, sizeof(a1));
     a1.height = 5 * jkDev_BMFontHeight;
@@ -144,8 +141,7 @@ int jkDev_Open()
 #endif
 
     jkDev_vbuf = stdDisplay_VBufferNew(&a1, 1, 0, 0);
-    v3 = jkHud_pMsgFontSft->bitmap;
-    jkDev_ColorKey = v3->colorkey;
+    jkDev_ColorKey = jkHud_pMsgFontSft->pBitmap->colorkey;
 
     if ( jkDev_vbuf )
     {
@@ -354,6 +350,32 @@ void jkDev_BlitLogToScreenGPU()
 }
 #endif
 
+// For DSi
+void jkDev_PrintfLog()
+{
+    int v1; // ebx
+    int v2; // ebp
+    jkDevLogEnt* v3; // edi
+    char tmp[256];
+    
+    v2 = 0;
+    v3 = &jkDev_aEntries[0];
+    for (int i = 0; i < 5; i++)
+    {
+        if ( v2 < jkDev_log_55A4A4 /*&& v3->bDrawEntry*/ )
+        {
+            stdString_WcharToChar(tmp, v3->text, 255);
+            tmp[255] = 0;
+            stdPlatform_Printf("%s\n", tmp);
+        }
+        //if ( v3->bDrawEntry > 0 )
+        //    --v3->bDrawEntry;
+        ++v3;
+        ++v2;
+    }
+    jkDev_dword_55A9D0 = (jkDev_dword_55A9D0 + 1) % 2;
+}
+
 // MOTS altered? inlined?
 int jkDev_PrintUniString(const wchar_t *str)
 {
@@ -389,7 +411,6 @@ LABEL_7:
     ++jkDev_log_55A4A4;
     jkDev_aEntries[v6].bDrawEntry = 2;
     jkDev_aEntries[v6].field_10C = 2;
-#ifdef QOL_IMPROVEMENTS
     char tmp[256];
     char tmp2[256+2];
     stdString_WcharToChar(tmp, str, 255);
@@ -397,6 +418,7 @@ LABEL_7:
     printf("\r                                            \r");
     stdString_snprintf(tmp2, sizeof(tmp2), "%s%c", tmp, _strlen(tmp) && tmp[_strlen(tmp)-1] == '\n' ? ' ' : '\n');
     printf("%s", tmp2);
+#ifdef QUAKE_CONSOLE
     jkQuakeConsole_PrintLine(tmp2);
 #endif
     return v5;
@@ -411,7 +433,7 @@ int jkDev_DebugLog(const char *lParam)
     stdString_CharToWchar(a1, lParam, 127);
     a1[127] = 0;
     int ret = jkDev_PrintUniString(a1);
-#ifdef WIN32
+#if defined(WIN32) && !defined(SDL2_RENDER)
     if ( jkDev_hDlg )
     {
         v1 = GetDlgItem(jkDev_hDlg, 1037);

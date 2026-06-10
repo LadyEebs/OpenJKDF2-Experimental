@@ -48,6 +48,9 @@ MATH_FUNC int sithCollision_CollideHurt(sithThing *a1, rdVector3 *a2, flex_t a3,
 MATH_FUNC int sithCollision_HasLos(sithThing *thing1, sithThing *thing2, int flag);
 MATH_FUNC void sithCollision_sub_4E77A0(sithThing *thing, rdMatrix34 *a2);
 MATH_FUNC int sithCollision_DebrisPlayerCollide(sithThing *thing, sithThing *thing2, sithCollisionSearchEntry *searchEnt, int isSolid);
+sithThing* sithCollision_RaycastFromCamera(rdVector3 *pos);
+sithThing* sithCollision_RaycastSector(sithSector *sector, rdVector3 *startPos, rdVector3 *dir, flex_t dist, flex_t radius, uint32_t *pHitType);
+int sithCollision_CheckPathClear(sithSector *sector, rdVector3 *startPos, rdVector3 *endPos, flex_t radius);
 
 // Added
 sithThing* sithCollision_GetThingLookat(sithSector* sector, sithThing* sender, const rdVector3* position, const rdVector3* dir, float dist);

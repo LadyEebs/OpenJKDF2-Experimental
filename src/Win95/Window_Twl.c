@@ -13,7 +13,7 @@
 #include "Devices/sithConsole.h"
 #include "Platform/wuRegistry.h"
 #include "Main/jkQuakeConsole.h"
-#include "Gui/jkGuiRend.h"
+#include "Gui/jkGUIRend.h"
 
 #ifdef TARGET_TWL
 
@@ -40,10 +40,13 @@ int Window_lastMouseY = 0;
 int Window_xPos = 0;
 int Window_yPos = 0;
 int last_jkGame_isDDraw = 0;
+#ifdef QUAKE_CONSOLE
 int last_jkQuakeConsole_bOpen = 0;
+#endif
 int Window_menu_mouseX = 0;
 int Window_menu_mouseY = 0;
 extern int Window_needsRecreate;
+int Window_bFlipRequested = 0;
 
 void test_display()
 {
@@ -162,11 +165,15 @@ int Window_MessageLoop()
     //jkMain_GuiAdvance(); // TODO needed?
     jkGuiRend_UpdateController();
 
+    static touchPosition lastTouchXY = {0};
     touchPosition touchXY;
     touchRead(&touchXY);
-    if (touchXY.px != 0 || touchXY.py != 0) {
+    if (touchXY.px != 0 || touchXY.py != 0 || lastTouchXY.px != 0 || lastTouchXY.py != 0 || Window_bFlipRequested) {
         Window_msg_main_handler(g_hWnd, WM_PAINT, 0, 0);
+        Window_SdlUpdate();
+        Window_bFlipRequested = 0;
     }
+    lastTouchXY = touchXY;
     //if (stdPlatform_GetTimeMsec() - last_draw_ms > 1000) {
         //Window_msg_main_handler(g_hWnd, WM_PAINT, 0, 0);
         //last_draw_ms = stdPlatform_GetTimeMsec();
@@ -197,6 +204,57 @@ void Window_SdlUpdate()
         Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
         Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
         printf("escape\n");
+    }
+
+    if (stdControl_IsSystemKeyboardShowing()) {
+        consoleClear();
+    }
+
+    int16_t keyboardChar = keyboardUpdate();
+    if (keyboardChar) {
+        /*
+        DVK_FOLD      = -23, ///< Fold key (top left on the default keyboard)
+    DVK_TAB       =  9,  ///< Tab key
+    DVK_BACKSPACE =  8,  ///< Backspace
+    DVK_CAPS      = -15, ///< Caps key
+    DVK_SHIFT     = -14, ///< Shift key
+    DVK_SPACE     =  32, ///< Space key
+    DVK_MENU      = -5,  ///< Menu key
+    DVK_ENTER     =  10, ///< Enter key
+    DVK_CTRL      = -16, ///< Ctrl key
+    DVK_UP        = -17, ///< Up key
+    DVK_RIGHT     = -18, ///< Right key
+    DVK_DOWN      = -19, ///< Down key
+    DVK_LEFT      = -20, ///< Left key
+    DVK_ALT       = -26  ///< Alt key
+        */
+        if (keyboardChar == DVK_TAB) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_TAB, 0);
+            Window_msg_main_handler(g_hWnd, WM_CHAR, VK_TAB, 0);
+        }
+        else if (keyboardChar == DVK_BACKSPACE) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_BACK, 0);
+            Window_msg_main_handler(g_hWnd, WM_CHAR, VK_BACK, 0);
+        }
+        else if (keyboardChar == DVK_ENTER) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_RETURN, 0);
+            Window_msg_main_handler(g_hWnd, WM_CHAR, VK_RETURN, 0);
+        }
+        else if (keyboardChar == DVK_LEFT) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_LEFT, 0);
+        }
+        else if (keyboardChar == DVK_RIGHT) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_RIGHT, 0);
+        }
+        else if (keyboardChar == DVK_UP) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_UP, 0);
+        }
+        else if (keyboardChar == DVK_DOWN) {
+            Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_DOWN, 0);
+        }
+        else if (keyboardChar > 0) {
+            Window_msg_main_handler(g_hWnd, WM_CHAR, keyboardChar, 0);
+        }
     }
 
 #if 0
@@ -467,13 +525,16 @@ void Window_SdlUpdate()
             stdDisplay_SetMode(0, 0, 0);
             //jkMain_FixRes();
         }
+
+        jkGui_SetModeGame();
         
         Window_resized = 0;
     }
     
     static int sampleTime_delay = 0;
     int sampleTime_roundtrip = stdPlatform_GetTimeMsec() - Window_lastSampleTime;
-    //printf("total %u heap 0x%x 0x%x\n", sampleTime_roundtrip, (intptr_t)getHeapLimit() - (intptr_t)getHeapEnd(), (intptr_t)getHeapEnd() - (intptr_t)getHeapStart());
+    //printf("total %u\n", sampleTime_roundtrip);
+    //stdPlatform_PrintHeapStats();
     Window_lastSampleTime = stdPlatform_GetTimeMsec(); // TODO
 
     static int jkPlayer_enableVsync_last = 0;
@@ -543,6 +604,7 @@ void Window_SdlUpdate()
             Window_lastYRel = 0;
         }
 
+#ifdef QUAKE_CONSOLE
         if (jkQuakeConsole_bOpen && jkQuakeConsole_bOpen != last_jkQuakeConsole_bOpen) {
             //SDL_WarpMouseInWindow(displayWindow, Window_menu_mouseX, Window_menu_mouseY);
         }
@@ -566,12 +628,15 @@ void Window_SdlUpdate()
         {
             //SDL_SetRelativeMouseMode(SDL_FALSE);
         }
+#endif
     }
 
     jkPlayer_enableVsync_last = jkPlayer_enableVsync;
 
     last_jkGame_isDDraw = jkGame_isDDraw;
+#ifdef QUAKE_CONSOLE
     last_jkQuakeConsole_bOpen = jkQuakeConsole_bOpen;
+#endif
 }
 
 void Window_SdlVblank()

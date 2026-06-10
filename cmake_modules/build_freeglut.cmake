@@ -17,10 +17,12 @@ if (TARGET_COMPILE_FREEGLUT)
         UPDATE_DISCONNECTED TRUE
         CMAKE_ARGS          --toolchain ${CMAKE_TOOLCHAIN_FILE}
                             --install-prefix ${FreeGLUT_ROOT}
+                            -DCMAKE_INSTALL_LIBDIR=lib
                             -DCMAKE_BUILD_TYPE:STRING=Release
                             -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
                             -DFREEGLUT_BUILD_STATIC_LIBS:BOOL=FALSE
                             -DFREEGLUT_BUILD_DEMOS=OFF
+                            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         # We have to pass `LIBS` via `CMAKE_CACHE_ARGS` because CMake’s 3.26.3
         # ExternalProject_Add() has a bug that ruthlessly swallows `;` when used
         # with `CMAKE_ARGS`

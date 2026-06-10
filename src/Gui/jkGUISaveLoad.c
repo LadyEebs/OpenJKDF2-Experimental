@@ -14,6 +14,8 @@
 #include "Gui/jkGUITitle.h"
 #include "World/jkPlayer.h"
 #include "World/sithWorld.h"
+#include "Devices/sithControl.h"
+#include "Platform/stdControl.h"
 #include "Cog/jkCog.h"
 #include "stdPlatform.h"
 
@@ -39,7 +41,7 @@ static jkGuiElement jkGuiSaveLoad_aElements[15] = {
     {ELEMENT_END, 0, 0, 0, 0, {0}, 0, 0, 0, 0, 0, 0, {0}, 0},
 };
 
-static jkGuiMenu jkGuiSaveLoad_menu = {jkGuiSaveLoad_aElements, -1, 0xFFFF, 0xFFFF, 0xF, 0, 0, jkGui_stdBitmaps, jkGui_stdFonts, 0, 0, "thermloop01.wav", "thrmlpu2.wav", 0, 0, 0, 0, 0, 0};
+jkGuiMenu jkGuiSaveLoad_menu = {jkGuiSaveLoad_aElements, -1, 0xFFFF, 0xFFFF, 0xF, 0, 0, jkGui_stdBitmaps, jkGui_stdFonts, 0, 0, "thermloop01.wav", "thrmlpu2.wav", 0, 0, 0, 0, 0, 0};
 
 int jkGuiSaveLoad_ListClick(jkGuiElement *element, jkGuiMenu *menu, int32_t mouseX, int32_t mouseY, BOOL redraw)
 {
@@ -197,7 +199,7 @@ void jkGuiSaveLoad_PopulateList()
 {
     stdFileSearch *v0; // eax
     stdFileSearch *v1; // edi
-    int v2; // esi
+    stdFile_t v2; // esi
     wchar_t *v3; // eax
     wchar_t *v4; // ebx
     jkGuiSaveLoad_Entry *v6; // edi
@@ -219,10 +221,10 @@ void jkGuiSaveLoad_PopulateList()
             if ( __strnicmp("_JKAUTO_", a2.fpath, 8u) )
             {
                 sithGamesave_GetProfilePath(path, 128, a2.fpath);
-                v2 = pHS->fileOpen(path, "rb");
+                v2 = pLowLevelHS->fileOpen(path, "rb"); // Added: pHS -> pLowLevelHS
                 if ( v2 )
                 {
-                    if ( pHS->fileRead(v2, &saveHeader, sizeof(sithGamesave_Header)) == sizeof(sithGamesave_Header) && (saveHeader.version == JK_SAVE_VERSION || saveHeader.version == MOTS_SAVE_VERSION || saveHeader.version == OPENJKDF2_SAVE_VERSION) ) // MOTS altered: 6 -> 0x7D6
+                    if ( pLowLevelHS->fileRead(v2, &saveHeader, sizeof(sithGamesave_Header)) == sizeof(sithGamesave_Header) && (saveHeader.version == JK_SAVE_VERSION || saveHeader.version == MOTS_SAVE_VERSION || saveHeader.version == OPENJKDF2_SAVE_VERSION) ) // MOTS altered: 6 -> 0x7D6 // Added: pHS -> pLowLevelHS
                     {
                         v3 = __wcschr(saveHeader.saveName, U'~');
                         v4 = v3;
@@ -231,15 +233,14 @@ void jkGuiSaveLoad_PopulateList()
                             *v3 = 0;
                             v6 = (jkGuiSaveLoad_Entry *)pHS->alloc(sizeof(jkGuiSaveLoad_Entry));
                             _memcpy(v6, &saveHeader, sizeof(sithGamesave_Header));
-                            _strncpy(v6->fpath, a2.fpath, 0x7Fu);
-                            v6->fpath[127] = 0;
+                            stdString_SafeStrCopy(v6->fpath, a2.fpath, 128);
                             _strtolower(v6->fpath);
                             jkGuiRend_DarrayReallocStr(&jkGuiSaveLoad_DarrayEntries, v4 + 1, (intptr_t)v6);
                             v1 = v7;
                             ++jkGuiSaveLoad_numEntries;
                         }
                     }
-                    pHS->fileClose(v2);
+                    pLowLevelHS->fileClose(v2); // Added: pHS -> pLowLevelHS
                 }
             }
         }
@@ -449,6 +450,10 @@ LABEL_46:
     jkGuiRend_DarrayFree(&jkGuiSaveLoad_DarrayEntries);
     result = v3;
     jkGuiSaveLoad_numEntries = 0;
+
+    // Added: Make sure onscreen keyboard is down
+    stdControl_HideSystemKeyboard();
+
     return result;
 }
 

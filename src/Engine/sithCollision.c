@@ -12,6 +12,7 @@
 #include "World/sithSoundClass.h"
 #include "Gameplay/sithTime.h"
 #include "Engine/sithPhysics.h"
+#include "Engine/sithCamera.h"
 #include "General/stdMath.h"
 #include "Primitives/rdMath.h"
 #include "jk.h"
@@ -1519,3 +1520,105 @@ int sithCollision_PlayerCorpseCollide(sithThing* thing1, sithThing* thing2, sith
 	return 0;
 }
 #endif
+
+// Find nearest collision result from search
+static sithCollisionSearchEntry* sithCollision_FindBestResult()
+{
+    sithCollisionSearchEntry *best = NULL;
+    flex_t bestDist = 3.4e38f;
+    int numResults = sithCollision_searchNumResults[sithCollision_searchStackIdx];
+
+    for (int i = 0; i < numResults; i++)
+    {
+        sithCollisionSearchEntry *entry = &sithCollision_searchStack[sithCollision_searchStackIdx].collisions[i];
+        if ( !entry->hasBeenEnumerated )
+        {
+            if ( bestDist <= entry->distance )
+            {
+                if ( bestDist == entry->distance && best && (best->hitType & 0x18) && (entry->hitType & 4) )
+                    best = entry;
+            }
+            else
+            {
+                bestDist = entry->distance;
+                best = entry;
+            }
+        }
+    }
+    return best;
+}
+
+sithThing* sithCollision_RaycastFromCamera(rdVector3 *pos)
+{
+    rdVector3 dir;
+    rdVector3 camPos;
+
+    if ( !sithCamera_currentCamera->sector )
+        return NULL;
+
+    camPos.x = pos->x - sithCamera_currentCamera->collisionOffset.x;
+    camPos.y = sithCamera_currentCamera->vec3_1.y;
+    camPos.z = sithCamera_currentCamera->collisionOffset.z - pos->y;
+
+    rdMatrix_TransformPoint34Acc(&camPos, &sithCamera_currentCamera->viewMat);
+
+    rdVector_Sub3(&dir, &camPos, &sithCamera_currentCamera->vec3_1);
+    rdVector_Normalize3Acc(&dir);
+
+    sithCollision_SearchRadiusForThings(sithCamera_currentCamera->sector, NULL,
+        &sithCamera_currentCamera->vec3_1, &dir, 100.0f, 0.0f, 0x103);
+
+    sithCollisionSearchEntry *best = sithCollision_FindBestResult();
+    sithThing *result = NULL;
+    if ( best )
+    {
+        best->hasBeenEnumerated = 1;
+        result = best->receiver;
+    }
+
+    sithCollision_searchNumResults[sithCollision_searchStackIdx] = 0;
+    sithCollision_stackIdk[sithCollision_searchStackIdx] = 0;
+    sithCollision_searchStackIdx--;
+    return result;
+}
+
+sithThing* sithCollision_RaycastSector(sithSector *sector, rdVector3 *startPos, rdVector3 *dir, flex_t dist, flex_t radius, uint32_t *pHitType)
+{
+    sithCollision_SearchRadiusForThings(sector, NULL, startPos, dir, dist, radius, 0x103);
+
+    sithCollisionSearchEntry *best = sithCollision_FindBestResult();
+    sithThing *result = NULL;
+    if ( best )
+    {
+        best->hasBeenEnumerated = 1;
+        *pHitType = best->hitType;
+        result = best->receiver;
+    }
+
+    sithCollision_searchNumResults[sithCollision_searchStackIdx] = 0;
+    sithCollision_stackIdk[sithCollision_searchStackIdx] = 0;
+    sithCollision_searchStackIdx--;
+    return result;
+}
+
+int sithCollision_CheckPathClear(sithSector *sector, rdVector3 *startPos, rdVector3 *endPos, flex_t radius)
+{
+    rdVector3 dir;
+    rdVector_Sub3(&dir, endPos, startPos);
+    flex_t dist = rdVector_Normalize3Acc(&dir);
+
+    sithCollision_SearchRadiusForThings(sector, NULL, startPos, &dir, dist, radius, 0x12A);
+
+    sithCollisionSearchEntry *best = sithCollision_FindBestResult();
+    int result = 1;
+    if ( best )
+    {
+        best->hasBeenEnumerated = 1;
+        result = 0;
+    }
+
+    sithCollision_searchNumResults[sithCollision_searchStackIdx] = 0;
+    sithCollision_stackIdk[sithCollision_searchStackIdx] = 0;
+    sithCollision_searchStackIdx--;
+    return result;
+}

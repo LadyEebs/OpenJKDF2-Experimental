@@ -45,6 +45,16 @@ void stdInitServices(HostServices* pServices)
     stdPlatform_InitServices(pServices);
 }
 
+const char* stdGetReturnString(int code, int *table, int tableSize)
+{
+    for (int i = 0; i < tableSize; i++)
+    {
+        if ( table[i * 2] == code )
+            return (const char *)table[i * 2 + 1];
+    }
+    return "Unknown Error";
+}
+
 char* stdFileFromPath(char *fpath)
 {
     char *lastFolder;

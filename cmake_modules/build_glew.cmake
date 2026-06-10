@@ -24,10 +24,12 @@ ExternalProject_Add(
     UPDATE_DISCONNECTED TRUE
     CMAKE_ARGS          --toolchain ${CMAKE_TOOLCHAIN_FILE}
                         --install-prefix ${GLEW_ROOT}
+                        -DCMAKE_INSTALL_LIBDIR=lib
                         -DCMAKE_BUILD_TYPE:STRING=Release
                         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
                         -Dglew-cmake_BUILD_SHARED:BOOL=FALSE
                         -DONLY_LIBS:BOOL=TRUE
+                        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     BUILD_BYPRODUCTS    ${GLEW_STATIC_LIBRARY_PATH} ${GLEW_SHARED_LIBRARY_PATH}
 )
 

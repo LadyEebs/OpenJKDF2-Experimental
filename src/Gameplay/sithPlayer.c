@@ -45,6 +45,10 @@ void sithPlayer_Startup(int idx)
     }
 }
 
+void sithPlayer_Open()
+{
+}
+
 void sithPlayer_Close()
 {
     if ( sithPlayer_pLocalPlayer )
@@ -73,7 +77,7 @@ void sithPlayer_NewEntry(sithWorld *world)
         sithPlayerInfo* playerInfo = &jkPlayer_playerInfos[0];
         for (v5 = v2 + 1; v5 >= 0; v5--)
         {
-            if ( v1->type == SITH_THING_PLAYER && v3 < 32 )
+            if ( v1->type == SITH_THING_PLAYER && v3 < JKPLAYER_NUM_INFOS )
             {
                 playerInfo->playerThing = v1;
                 v1->thingflags |= SITH_TF_INVULN;
@@ -91,11 +95,29 @@ void sithPlayer_NewEntry(sithWorld *world)
         }
     }
     jkPlayer_maxPlayers = v3;
-    for (int i = jkPlayer_maxPlayers; i < 32; i++)
+    for (int i = jkPlayer_maxPlayers; i < JKPLAYER_NUM_INFOS; i++)
     {
         jkPlayer_playerInfos[i].playerThing = 0;
         jkPlayer_playerInfos[i].pSpawnSector = 0;
     }
+}
+
+int sithPlayer_GetBinItemActive(int binIdx)
+{
+    return (jkPlayer_playerInfos[playerThingIdx].iteminfo[binIdx].state & 4) >> 2;
+}
+
+int sithPlayer_GetBinItemAvailable(int binIdx)
+{
+    return (jkPlayer_playerInfos[playerThingIdx].iteminfo[binIdx].state & 8) >> 3;
+}
+
+void sithPlayer_SetBinItemActive(int binIdx, int active)
+{
+    if ( active )
+        jkPlayer_playerInfos[playerThingIdx].iteminfo[binIdx].state |= 4;
+    else
+        jkPlayer_playerInfos[playerThingIdx].iteminfo[binIdx].state &= ~4;
 }
 
 flex_t sithPlayer_GetBinAmt(int idx)

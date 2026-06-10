@@ -6,6 +6,7 @@ ExternalProject_Add(
     INSTALL_DIR         ${Protoc_ROOT}
     UPDATE_DISCONNECTED TRUE
     CMAKE_ARGS          --install-prefix ${Protoc_ROOT}
+                        -DCMAKE_INSTALL_LIBDIR=lib
                         -DCMAKE_BUILD_TYPE:STRING=Release
                         -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
                         -DCMAKE_POLICY_DEFAULT_CMP0074:STRING=NEW
@@ -15,6 +16,7 @@ ExternalProject_Add(
                         -Dprotobuf_BUILD_EXAMPLES:BOOL=FALSE
                         -Dprotobuf_BUILD_PROTOC_BINARIES:BOOL=TRUE
                         -Dprotobuf_DISABLE_RTTI:BOOL=TRUE
+                        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
                         -DZLIB_ROOT:PATH=${ZLIB_HOST_ROOT}
     BUILD_COMMAND       ${CMAKE_MAKE_PROGRAM} protoc
     DEPENDS             ${PROTOC_DEPENDS}

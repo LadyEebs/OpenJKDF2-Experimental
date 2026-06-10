@@ -61,8 +61,10 @@ void sithWeapon_Activate(sithThing *weapon, sithCog *cogCtx, flex_t fireRate, in
 flex_t sithWeapon_Deactivate(sithThing *weapon, sithCog *cogCtx, int mode);
 int sithWeapon_AutoSelect(sithThing *player, int weapIdx);
 int sithWeapon_HandleWeaponKeys(sithThing *player, flex_t a2);
+
 MATH_FUNC sithThing* sithWeapon_ProjectileAutoAim(rdMatrix34 *out, sithThing *sender, rdMatrix34 *in, rdVector3 *fireOffset, flex_t autoaimFov, flex_t autoaimMaxDist);
-MATH_FUNC sithThing* sithWeapon_FireProjectile(sithThing *sender, sithThing *projectileTemplate, sithSound *fireSound, int mode, rdVector3 *fireOffset, rdVector3 *aimError, flex_t scale, int16_t scaleFlags, float autoaimFov, float autoaimMaxDist, int extra);
+MATH_FUNC sithThing* sithWeapon_FireProjectile(sithThing *sender, sithThing *projectileTemplate, sithSound *fireSound, int mode, rdVector3 *fireOffset, rdVector3 *aimError, flex_t scale, int16_t scaleFlags, flex_t autoaimFov, flex_t autoaimMaxDist, int extra);
+
 flex_t sithWeapon_GetPriority(sithThing *player, int binIdx, int mode);
 int sithWeapon_GetCurWeaponMode();
 void sithWeapon_SyncPuppet(sithThing *player);

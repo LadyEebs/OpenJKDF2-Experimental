@@ -107,8 +107,10 @@ void sithCogFunction_Sleep(sithCog *ctx)
     // TODO this is probably an inlined func?
     if ( ctx_->flags & SITH_COG_DEBUG )
     {
+#ifdef SITH_DEBUG_STRUCT_NAMES
         _sprintf(std_genBuffer, "Cog %s: Sleeping for %f seconds.\n", ctx_->cogscript_fpath, fSecs);
         sithConsole_Print(std_genBuffer);
+#endif
     }
     ctx_->script_running = 2;
     ctx_->wakeTimeMs = sithTime_curMs + (int)(fSecs * 1000.0);
@@ -330,8 +332,10 @@ void sithCogFunction_SetPulse(sithCog *ctx)
     {
         if ( ctx->flags & SITH_COG_DEBUG )
         {
+#ifdef SITH_DEBUG_STRUCT_NAMES
             _sprintf(std_genBuffer, "Cog %s: Pulse disabled.\n", ctx->cogscript_fpath);
             sithConsole_Print(std_genBuffer);
+#endif
         }
         ctx->flags &= ~SITH_COG_PULSE_SET;
     }
@@ -339,8 +343,10 @@ void sithCogFunction_SetPulse(sithCog *ctx)
     {
         if ( ctx->flags & SITH_COG_DEBUG )
         {
+#ifdef SITH_DEBUG_STRUCT_NAMES
             _sprintf(std_genBuffer, "Cog %s: Pulse set to %f seconds.\n", ctx->cogscript_fpath, popFlex);
             sithConsole_Print(std_genBuffer);
+#endif
         }
         ctx->flags |= SITH_COG_PULSE_SET;
         ctx->pulsePeriodMs = (int)(popFlex * 1000.0);
@@ -355,8 +361,10 @@ void sithCogFunction_SetTimer(sithCog *ctx)
     {
         if ( ctx->flags & SITH_COG_DEBUG )
         {
+#ifdef SITH_DEBUG_STRUCT_NAMES
             _sprintf(std_genBuffer, "Cog %s: Timer cancelled.\n", ctx->cogscript_fpath);
             sithConsole_Print(std_genBuffer);
+#endif
         }
         ctx->flags &= ~SITH_COG_TIMER_SET;
     }
@@ -364,8 +372,10 @@ void sithCogFunction_SetTimer(sithCog *ctx)
     {
         if ( ctx->flags & SITH_COG_DEBUG )
         {
+#ifdef SITH_DEBUG_STRUCT_NAMES
             _sprintf(std_genBuffer, "Cog %s: Timer set for %f seconds.\n", ctx->cogscript_fpath, popFlex);
             sithConsole_Print(std_genBuffer);
+#endif
         }
         ctx->flags |= SITH_COG_TIMER_SET;
         ctx->field_20 = sithTime_curMs + (int)(popFlex * 1000.0);

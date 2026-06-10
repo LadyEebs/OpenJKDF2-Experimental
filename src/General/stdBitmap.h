@@ -6,10 +6,16 @@
 
 typedef struct stdBitmap
 {
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     char fpath[32];
+#endif
+#ifdef STDBITMAP_PARTIAL_LOAD
+    char fpath_full[128];
+    BOOL bLoaded;
+#endif
     int field_20;
     int palFmt;
-    rdTexformat format;
+    rdTexFormat format;
     void *palette;
     int numMips;
     int field_68;
@@ -38,7 +44,7 @@ typedef struct bitmapHeader
     uint32_t xPos;
     uint32_t yPos;
     uint32_t colorkey;
-    rdTexformat format;
+    rdTexFormat format;
     uint32_t field_58;
     uint32_t field_5C;
     uint32_t field_60;
@@ -69,17 +75,25 @@ typedef struct bitmapHeader
 stdBitmap* stdBitmap_Load(char *fpath, int bCreateDDrawSurface, int gpuMem);
 stdBitmap* stdBitmap_Load2(char *fpath, int bCreateDDrawSurface, int gpuMem); // MOTS added
 stdBitmap* stdBitmap_LoadFromFile(intptr_t fd, int bCreateDDrawSurface, int gpuMem);
-int stdBitmap_LoadEntry(char *fpath, stdBitmap *out, int bCreateDDrawSurface, int gpuMem);
-int stdBitmap_LoadEntryFromFile(intptr_t fp, stdBitmap *out, int bCreateDDrawSurface, int gpuMem);
-void stdBitmap_ConvertColorFormat(rdTexformat *formatTo, stdBitmap *bitmap);
+int stdBitmap_LoadEntry(char *fpath, stdBitmap *out, int bCreateDDrawSurface, int gpuMem, int bPartial);
+int stdBitmap_LoadEntryFromFile(intptr_t fp, stdBitmap *out, int bCreateDDrawSurface, int gpuMem, int bPartial);
+void stdBitmap_ConvertColorFormat(rdTexFormat *formatTo, stdBitmap *bitmap);
+void stdBitmap_FreeEntry(stdBitmap *pBitmap);
 void stdBitmap_Free(stdBitmap *bitmap);
 
 stdBitmap* stdBitmap_VBufferToBitmap(stdVBuffer* src, int a1, int a2);
 
-// Added
-//stdBitmap* stdBitmap_NewEntryFromRGBA(uint8_t* pixels, uint32_t width, uint32_t height, int bCreateDDrawSurface, int gpuMem);
+int stdBitmap_AppendToFile(stdFile_t fhand, stdBitmap *pBitmap);
+int stdBitmap_Write(const char *fpath, stdBitmap *pBitmap);
+void stdBitmap_MemUsage(stdBitmap *pBitmap, int mipIdx, stdVBuffer *vbuf);
+stdBitmap* stdBitmap_New(uint32_t numMips, int palFmt, int field_20, int field_68, rdTexFormat *pFormat);
+int stdBitmap_NewEntry(stdBitmap *bitmap, uint32_t numMips, int palFmt, int field_20, int field_68, rdTexFormat *pFormat);
 
-//static rdTexformat* (*stdBitmap_ConvertColorFormat)(rdTexformat *formatTo, stdBitmap *bitmap) = (void*)stdBitmap_ConvertColorFormat_ADDR;
+stdBitmap* stdBitmap_LoadPartial(char *fpath, int bCreateDDrawSurface, int gpuMem); // Added
+int stdBitmap_EnsureData(stdBitmap *pBitmap);
+int stdBitmap_UnloadData(stdBitmap* pBitmap);
+
+//static rdTexFormat* (*stdBitmap_ConvertColorFormat)(rdTexFormat *formatTo, stdBitmap *bitmap) = (void*)stdBitmap_ConvertColorFormat_ADDR;
 
 //static stdBitmap* (*stdBitmap_Load)(char *fpath, int create_ddraw_surface, int a3) = (void*)stdBitmap_Load_ADDR;
 //static void (*stdBitmap_Free)(stdBitmap *bitmap) = (void*)stdBitmap_Free_ADDR;

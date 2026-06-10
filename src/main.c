@@ -5,6 +5,8 @@
 #include "jk.h"
 #include "types.h"
 
+#include "General/stdMath.h"
+
 #ifndef NO_JK_MMAP
 #include "Cog/sithCog.h"
 #include "Cog/sithCogExec.h"
@@ -19,6 +21,9 @@
 #include "Cog/sithCogFunctionSound.h"
 #include "Cog/y.tab.h"
 #include "General/stdBitmap.h"
+#include "General/stdBmp.h"
+#include "General/util.h"
+#include "General/stdLbm.h"
 #include "General/stdMath.h"
 #include "General/stdJSON.h"
 #include "Primitives/rdVector.h"
@@ -166,7 +171,7 @@
 #include "Main/Main.h"
 #endif // NO_JK_MMAP
 
-extern char openjkdf2_aOrigCwd[1024];
+extern char openjkdf2_aOrigCwd[512];
 
 void do_hooks();
 
@@ -209,11 +214,92 @@ void crash_handler_basic(int sig);
 #include <nds/arm9/dldi.h>
 #include "Platform/TWL/dlmalloc.h"
 
-volatile int frame = 0;
-//---------------------------------------------------------------------------------
-void Vblank() {
-//---------------------------------------------------------------------------------
-    frame++;
+// Keep all of this in DTCM to avoid stalls in the IRQ handler
+FAST_DATA volatile int std3D_bEnableTwlVrr = 0;
+FAST_DATA volatile int std3D_twlLastFinishedFrame = 0;
+FAST_DATA volatile int std3D_twlFinishedFrame = 0;
+FAST_DATA volatile int std3D_stalledHblanks = 0;
+FAST_DATA volatile int std3D_twlTargetHblanks = 93;
+
+/*
+// just 50Hz
+FAST_FUNC void hblank_handler() {
+    // Don't run during the VBL period
+    if (!std3D_bEnableTwlVrr || REG_VCOUNT < 202 || REG_VCOUNT > 202)
+        return;
+    if (std3D_twlFinishedFrame != std3D_twlLastFinishedFrame && false) {
+        std3D_twlLastFinishedFrame = std3D_twlFinishedFrame;
+
+        // If we finish early or are done holding, move to the next frame
+        //REG_VCOUNT = 260;
+        std3D_stalledHblanks = 30;
+    }
+    else {
+        // Hold VCOUNT until the frame is finished
+        
+        std3D_stalledHblanks++;
+        if (std3D_stalledHblanks < 62) {
+            REG_VCOUNT = 202;
+        }
+        else {
+            std3D_stalledHblanks = 0;
+            REG_VCOUNT = 203;
+        }
+    }
+}
+*/
+
+// VRR implementation for NDS:
+// ---
+// Since we can change the VCOUNT register, we can both advance
+// VCOUNT from 193 -> 214 (~65Hz), or we can delay VCOUNT down to about ~45Hz.
+//
+// Rather than setting discrete refresh rates, we adjust VCOUNT
+// slightly depending on when the frame gets finished, possibly multiple times
+// per frame. 
+//
+// If the frame is not finished for multiple vsyncs, the screen will
+// default to the lowest non-flickering refresh rate (~45Hz).
+//
+FAST_FUNC void hblank_handler() {
+    // GBATek says the safe period is from 202..212,
+    // but it seems to actually be 193..214 --
+    // unless the GPU is doing a lot of work, then it seems to bump to 202
+    const int hblankMin = 202;
+    const int hblankMax = 214;
+    int vcountCur = REG_VCOUNT;
+    if (!std3D_bEnableTwlVrr || vcountCur < hblankMin || vcountCur >= hblankMax)
+        return;
+
+    // If the GPU is busy, let vcount keep going until we can hijack it safely
+    // (if this is not checked, the screen will output corrupt triangles/frames
+    //  in high-tri areas)
+    if (GFX_STATUS & (1<<27)) {
+        ;
+    }
+    else if (std3D_twlFinishedFrame != std3D_twlLastFinishedFrame) {
+        std3D_twlLastFinishedFrame = std3D_twlFinishedFrame;
+
+        // If we finish early or are done holding, move to the next frame
+        // and skip ahead
+        REG_VCOUNT = hblankMax;
+    }
+    else {
+        // Hold VCOUNT until the frame is finished
+        
+        // 62 hblanks = 4ms = 50Hz, scanlines start to show
+        // 62*2 hblanks = 8ms = ~40Hz, flickers
+        // 93 hblanks = 6ms = ~45Hz?
+
+        std3D_stalledHblanks++;
+        if (std3D_stalledHblanks > std3D_twlTargetHblanks+(hblankMax-hblankMin)) {
+            REG_VCOUNT = hblankMax;
+            std3D_stalledHblanks = 0;
+        }
+        else {
+            REG_VCOUNT = vcountCur;
+        }
+    }
 }
 #endif
 
@@ -231,14 +317,23 @@ void* __attribute__((weak)) __memcpy_chk(void * dest, const void * src, size_t l
 #endif // WIN64_MINGW
 
 #ifdef TARGET_TWL
-mspace openjkdf2_mem_alt_mspace;
-mspace openjkdf2_mem_main_mspace;
+extern mspace openjkdf2_mem_alt_mspace;
+extern mspace openjkdf2_mem_main_mspace;
 
-intptr_t openjkdf2_mem_alt_mspace_start;
-intptr_t openjkdf2_mem_alt_mspace_end;
-intptr_t openjkdf2_mem_main_mspace_start;
-intptr_t openjkdf2_mem_main_mspace_end;
+extern intptr_t openjkdf2_mem_alt_mspace_start;
+extern intptr_t openjkdf2_mem_alt_mspace_end;
+extern intptr_t openjkdf2_mem_main_mspace_start;
+extern intptr_t openjkdf2_mem_main_mspace_end;
+#ifdef __cplusplus
+extern "C"
+{
 #endif
+    extern void debugRamEnableCache();
+    extern void nwramEnableCache();
+#ifdef __cplusplus
+}
+#endif
+#endif // TARGET_TWL
 
 int main(int argc, char** argv)
 {
@@ -265,11 +360,37 @@ int main(int argc, char** argv)
     );
 #endif // ARCH_WASM
 
-#ifdef TARGET_TWL
-    extern int32_t openjkdf2_mem_alt_mspace_valid;
+#if 0
+    int numSamples = 700;
+    int sprevi = 1<<16; // Radius.
+    int sprev2i = 0; // 284 = 180deg
+    for (int i = 0; i <= numSamples; i++) {
+        int cor = (sprevi - sprev2i);
+        int sir = (sprev2i + sprevi) * (3.14159/568.85); // optional, for rescale
+        printf( "%d: %d %d, %f %f\n", i, sir, cor, (flex32_t)flexdirect(sir), (flex32_t)flexdirect(cor));
+        int si = (sprevi<<1)-(sprevi>>13)-sprev2i; // controls omega
+        sprev2i = sprevi;
+        sprevi = si;
+    }
 
+
+    for (int i = 0; i < 360; i++) {
+        flex_t sinTest, cosTest;
+        stdMath_SinCosVeryApproximate(i, &sinTest, &cosTest);
+
+        flex_t sinTest2, cosTest2;
+        stdMath_SinCos(i, &sinTest2, &cosTest2);
+
+        printf("%d: %f %f %f %f\n", i, (flex32_t)sinTest, (flex32_t)cosTest, (flex32_t)sinTest2, (flex32_t)cosTest2);
+    }
+#endif
+
+#ifdef TARGET_TWL
     REG_SQRTCNT = SQRT_64;
     REG_DIVCNT = DIV_64_32;
+
+    irqSet(IRQ_HBLANK, hblank_handler);
+    irqEnable(IRQ_HBLANK);
 
     defaultExceptionHandler();
     consoleDebugInit(DebugDevice_NOCASH);
@@ -277,30 +398,75 @@ int main(int argc, char** argv)
     lcdMainOnTop();
 
     videoSetMode(MODE_0_3D);
-    consoleInit( NULL, 0, BgType_Text4bpp, BgSize_T_256x256, 23, 2, false, true );
-    consoleDemoInit();
+
+    videoSetModeSub(MODE_0_2D);
+    vramSetBankH(VRAM_H_SUB_BG);
+    vramSetBankI(VRAM_I_SUB_BG_0x06208000);
+    //setBrightness(2, 0);
+
+    consoleInit(NULL, 0, BgType_Text4bpp, BgSize_T_256x256, 23, 2, false, true);
 
     printf("Waddup\n");
 
     if (isDSiMode()) {
-        *(u32*)0x4004008 |= 0x8F;
-        REG_EXMEMCNT &= ~(1<<15);
+        *(u32*)0x4004008 |= 0x8F; // Use revised DSi circuits
+        //REG_EXMEMCNT &= ~(1<<15); // ARM9 gets memory priority (don't use, causes audio chirping)
 
-        setCpuClock(1); 
+        //setCpuClock(1);
+        debugRamEnableCache();
+        nwramEnableCache();
+    }
+    else {
+        sysSetCartOwner(BUS_OWNER_ARM9);
     }
 
-    if (peripheralSlot2Init(SLOT2_PERIPHERAL_EXTRAM)) {
+    // TODO: DS mode slot2 can't r/w u8s
+#if 0
+    if (!isDSiMode()) {
+        *((vu16*)0x09FC00B4) = 0x00A5;
+        *((vu16*)0x09FC0000) = 0x6;
+
+        peripheralSlot2DisableCache();
+
+        size_t alt_sz = 0x2000000 - 0x1000;
+        openjkdf2_mem_alt_mspace_start = (intptr_t)0x08000000;
+        openjkdf2_mem_alt_mspace_end = openjkdf2_mem_alt_mspace_start + alt_sz;
+
+        for (int i = 0; i < 10; i++) {
+            strcpy((char*)(openjkdf2_mem_alt_mspace_start + (i*0x1000)), "Testing if the RAM is sticking.\n");
+            printf("%.100s\n", (const char*)(openjkdf2_mem_alt_mspace_start + (i*0x1000)));
+        }
+
+        *((vu16*)0x08000000) = 0xDAAD;
+        *((vu8*)0x08000002) = 0xd5;
+        *((vu8*)0x08000003) = 0xd5;
+        *((vu32*)0x08000004) = 0xF00FDAD5;
+        printf("%08x %08x %08x %08x %02x %04x %08x\n", *((u32*)openjkdf2_mem_alt_mspace_start + 0), *((u32*)openjkdf2_mem_alt_mspace_start + 1), *((u32*)openjkdf2_mem_alt_mspace_start + 2), *((u32*)openjkdf2_mem_alt_mspace_start + 3));
+        printf("%02x %04x %08x\n", *((vu8*)0x08000002), *((vu16*)0x08000000), *((vu32*)0x08000004));
+        
+
+        openjkdf2_mem_alt_mspace = create_mspace_with_base((void*)openjkdf2_mem_alt_mspace_start, alt_sz, 0);
+
+        printf("Added extra 0x%zx bytes to heap from %s.\n", alt_sz, "EDGBA");
+
+        openjkdf2_bIsLowMemoryPlatform = 1;
+        openjkdf2_bIsExtraLowMemoryPlatform = 0;
+    } 
+    else 
+#endif
+
+    // TODO: DS mode slot2 can't r/w u8s
+    if (isDSiMode() && peripheralSlot2Init(SLOT2_PERIPHERAL_EXTRAM)) {
         peripheralSlot2Open(SLOT2_PERIPHERAL_EXTRAM);
         peripheralSlot2EnableCache(true);
 
         size_t alt_sz = peripheralSlot2RamSize() - 0x1000;
         openjkdf2_mem_alt_mspace_start = (intptr_t)peripheralSlot2RamStart();
-        openjkdf2_mem_alt_mspace_end = openjkdf2_mem_alt_mspace_start + alt_sz;
+        openjkdf2_mem_alt_mspace_end = openjkdf2_mem_alt_mspace_start + alt_sz;        
 
         openjkdf2_mem_alt_mspace = create_mspace_with_base((void*)openjkdf2_mem_alt_mspace_start, alt_sz, 0);
-        openjkdf2_mem_alt_mspace_valid = 1;
 
-        printf("Added extra 0x%zx bytes to heap.\n", alt_sz);
+        printf("Added extra 0x%zx bytes to heap from %s.\n", alt_sz, peripheralSlot2GetName());
 
         openjkdf2_bIsLowMemoryPlatform = 1;
         openjkdf2_bIsExtraLowMemoryPlatform = 0;
@@ -333,7 +499,7 @@ int main(int argc, char** argv)
 
     printf("heap free=0x%x\n  allocated=0x%x\n", (intptr_t)getHeapLimit() - (intptr_t)getHeapEnd(), (intptr_t)getHeapEnd() - (intptr_t)getHeapStart());
 
-    printf("heap start=0x%p\n  end=0x%p\n  limit=0x%p\n", (intptr_t)getHeapStart(), (intptr_t)getHeapEnd(), (intptr_t)getHeapLimit());
+    printf("heap start=%p\n  end=%p\n  limit=%p\n", (intptr_t)getHeapStart(), (intptr_t)getHeapEnd(), (intptr_t)getHeapLimit());
 
     printf("ext heap start=%p, size=%x\n", peripheralSlot2RamStart(), peripheralSlot2RamSize());
     //*(u32*)0x0D000000 = 0x12345678;
@@ -366,11 +532,12 @@ int main(int argc, char** argv)
     }
 #endif
 
+#ifdef TARGET_TWL
     scanKeys();
     u16 keys_held = keysHeld();
 
     if (!!(keys_held & KEY_B)) {
-        Main_bMotsCompat = 1;
+        Main_bMotsCompat = !Main_bMotsCompat;
     }
 
     const char* tmpDir = fatGetDefaultDrive();
@@ -379,6 +546,7 @@ int main(int argc, char** argv)
     char *cwd = getcwd(NULL, 0);
         printf("Current dir: %s\n\n", cwd);
         free(cwd);
+#endif
 
 #if 0
     FILE* test = fopen("sd:/test_write.txt", "wb");
@@ -395,11 +563,18 @@ int main(int argc, char** argv)
 
 #endif
 #ifdef WIN64_STANDALONE
+    int skipConsoleWindow = 0;
+    if ((SDL_GetHintBoolean("SteamClientLaunch", 0) || SDL_GetHintBoolean("SteamOS", 0) || SDL_GetHintBoolean("SteamDeck", 0)) && SDL_GetHintBoolean("SteamGamepadUI", 0)) {
+        skipConsoleWindow = 1;
+    }
+
     FILE* fp;
-    AllocConsole();
-    freopen_s(&fp, "CONIN$", "r", stdin);
-    freopen_s(&fp, "CONOUT$", "w", stdout);
-    freopen_s(&fp, "CONOUT$", "w", stdout);
+    if (!skipConsoleWindow) {
+        AllocConsole();
+        freopen_s(&fp, "CONIN$", "r", stdin);
+        freopen_s(&fp, "CONOUT$", "w", stdout);
+        freopen_s(&fp, "CONOUT$", "w", stdout);
+    }
 
     int can_has_crashdumps = 1;
 
@@ -567,6 +742,16 @@ int main(int argc, char** argv)
     PHYSFS_deinit();
 #endif
 
+#ifdef TARGET_TWL
+    while (1) {
+        scanKeys();
+        u16 keys_held = keysHeld();
+        if (!!(keys_held & KEY_A)) {
+            break;
+        }
+    }
+#endif
+
     return 1;
 }
 
@@ -723,8 +908,15 @@ void do_hooks()
 #endif // LINUX
     
     // stdPlatform
-    hook_function(stdPlatform_InitServices_ADDR, stdPlatform_InitServices);
     hook_function(stdPlatform_Startup_ADDR, stdPlatform_Startup);
+    hook_function(stdPlatform_Assert_ADDR, stdPlatform_Assert);
+    hook_function(stdPlatform_AllocHandle_ADDR, stdPlatform_AllocHandle);
+    hook_function(stdPlatform_FreeHandle_ADDR, stdPlatform_FreeHandle);
+    hook_function(stdPlatform_ReallocHandle_ADDR, stdPlatform_ReallocHandle);
+    hook_function(stdPlatform_LockHandle_ADDR, stdPlatform_LockHandle);
+    hook_function(stdPlatform_UnlockHandle_ADDR, stdPlatform_UnlockHandle);
+    hook_function(stdPlatform_InitServices_ADDR, stdPlatform_InitServices);
+    hook_function(stdPlatform_GetDateTime_ADDR, stdPlatform_GetDateTime);
     
     // jkMain
     hook_function(jkMain_GuiAdvance_ADDR, jkMain_GuiAdvance);
@@ -835,6 +1027,23 @@ void do_hooks()
     hook_function(sithComm_ClearMsgTmpBuf_ADDR, sithComm_ClearMsgTmpBuf);
     hook_function(sithComm_cogMsg_Reset_ADDR, sithComm_cogMsg_Reset);
 
+    // sithMulti
+    hook_function(sithMulti_map_init_related_ADDR, sithMulti_map_init_related);
+    hook_function(sithMulti_sub_4CA3B0_ADDR, sithMulti_ResetNetState);
+    hook_function(sithMulti_sub_4CA410_ADDR, sithMulti_CleanupThings);
+    hook_function(sithMulti_sendmsgidk4_ADDR, sithMulti_sendmsgidk4);
+    hook_function(sithMulti_ProcessJoin_unused_ADDR, sithMulti_ProcessJoin_unused);
+    hook_function(sithMulti_Send36_ADDR, sithMulti_Send36);
+
+    // sithCog
+    hook_function(sithCog_FreeEntry_ADDR, sithCog_FreeEntry);
+    hook_function(sithCog_Free2_ADDR, sithCog_Free2);
+    hook_function(sithCog_InitScripts_ADDR, sithCog_InitScripts);
+    hook_function(sithCog_InitCogs_ADDR, sithCog_InitCogs);
+    hook_function(sithCog_ThingFromSymbolidk_ADDR, sithCog_ThingFromSymbolidk);
+    hook_function(sithCog_Thingidk_ADDR, sithCog_Thingidk);
+    hook_function(sithCog_Sectoridk_ADDR, sithCog_Sectoridk);
+
     // sithCogVm
     hook_function(sithCogExec_Exec_ADDR, sithCogExec_Exec);
     hook_function(sithCogExec_ExecCog_ADDR, sithCogExec_ExecCog);
@@ -869,8 +1078,14 @@ void do_hooks()
     hook_function(stdBitmap_LoadFromFile_ADDR, stdBitmap_LoadFromFile);
     hook_function(stdBitmap_LoadEntry_ADDR, stdBitmap_LoadEntry);
     //hook_function(stdBitmap_LoadEntryFromFile_ADDR, stdBitmap_LoadEntryFromFile);
-    hook_function(stdBitmap_ConvertColorFormat_ADDR, stdBitmap_ConvertColorFormat);
     hook_function(stdBitmap_Free_ADDR, stdBitmap_Free);
+    hook_function(stdBitmap_FreeEntry_ADDR, stdBitmap_FreeEntry);
+    hook_function(stdBitmap_AppendToFile_ADDR, stdBitmap_AppendToFile);
+    hook_function(stdBitmap_Write_ADDR, stdBitmap_Write);
+    hook_function(stdBitmap_ConvertColorFormat_ADDR, stdBitmap_ConvertColorFormat);
+    hook_function(stdBitmap_New_ADDR, stdBitmap_New);
+    hook_function(stdBitmap_NewEntry_ADDR, stdBitmap_NewEntry);
+    hook_function(stdBitmap_MemUsage_ADDR, stdBitmap_MemUsage);
     
     // stdMath
     hook_function(stdMath_FlexPower_ADDR, stdMath_FlexPower);
@@ -1009,15 +1224,24 @@ void do_hooks()
     hook_function(stdStartup_ADDR, stdStartup);
     hook_function(stdShutdown_ADDR, stdShutdown);
     hook_function(stdInitServices_ADDR, stdInitServices);
+    hook_function(stdGetReturnString_ADDR, stdGetReturnString);
     hook_function(stdCalcBitPos_ADDR, stdCalcBitPos);
     hook_function(stdReadRaw_ADDR, stdReadRaw);
     hook_function(stdFGetc_ADDR, stdFGetc);
     hook_function(stdFPutc_ADDR, stdFPutc);
     
     // stdColor
-    hook_function(stdColor_Indexed8ToRGB16_ADDR, stdColor_Indexed8ToRGB16);
-    hook_function(stdColor_ColorConvertOnePixel_ADDR, stdColor_ColorConvertOnePixel);
+    hook_function(stdColor_LoadPalette_ADDR, stdColor_LoadPalette);
+    hook_function(stdColor_GammaCorrect_ADDR, stdColor_GammaCorrect);
+    hook_function(stdColor_FindClosest_ADDR, stdColor_FindClosest);
+    hook_function(stdColor_RGBtoHSV_ADDR, stdColor_RGBtoHSV);
+    hook_function(stdColor_HSVtoRGB_ADDR, stdColor_HSVtoRGB);
+    hook_function(stdColor_BuildRGB16LUT_ADDR, stdColor_BuildRGB16LUT);
+    hook_function(stdColor_BuildRGBAKEY16LUT_ADDR, stdColor_BuildRGBAKEY16LUT);
+    hook_function(stdColor_BuildRGBA16LUT_ADDR, stdColor_BuildRGBA16LUT);
     hook_function(stdColor_ColorConvertOneRow_ADDR, stdColor_ColorConvertOneRow);
+    hook_function(stdColor_ColorConvertOnePixel_ADDR, stdColor_ColorConvertOnePixel);
+    hook_function(stdColor_Indexed8ToRGB16_ADDR, stdColor_Indexed8ToRGB16);
     
     // stdConffile
     hook_function(stdConffile_OpenRead_ADDR, stdConffile_OpenRead);
@@ -1035,15 +1259,26 @@ void do_hooks()
     hook_function(stdConffile_GetFileHandle_ADDR, stdConffile_GetFileHandle);
     
     // stdFont
+    hook_function(stdFont_New_ADDR, stdFont_New);
     hook_function(stdFont_Load_ADDR, stdFont_Load);
+    hook_function(stdFont_Write_ADDR, stdFont_Write);
+    hook_function(stdFont_Free_ADDR, stdFont_Free);
     hook_function(stdFont_Draw1_ADDR, stdFont_Draw1);
     hook_function(stdFont_Draw2_ADDR, stdFont_Draw2);
     hook_function(stdFont_Draw3_ADDR, stdFont_Draw3);
-    hook_function(stdFont_sub_4352C0_ADDR, stdFont_sub_4352C0);
-    hook_function(stdFont_sub_435810_ADDR, stdFont_sub_435810);
+    hook_function(stdFont_Draw4_ADDR, stdFont_Draw4);
     hook_function(stdFont_sub_434EC0_ADDR, stdFont_sub_434EC0);
-    hook_function(stdFont_Free_ADDR, stdFont_Free);
     hook_function(stdFont_DrawAscii_ADDR, stdFont_DrawAscii);
+    hook_function(stdFont_sub_435190_ADDR, stdFont_sub_435190);
+    hook_function(stdFont_sub_4352C0_ADDR, stdFont_sub_4352C0);
+    hook_function(stdFont_sub_435570_ADDR, stdFont_sub_435570);
+    hook_function(stdFont_sub_4355B0_ADDR, stdFont_sub_4355B0);
+    hook_function(stdFont_sub_4355F0_ADDR, stdFont_sub_4355F0);
+    hook_function(stdFont_sub_4356B0_ADDR, stdFont_sub_4356B0);
+    hook_function(stdFont_sub_4357C0_ADDR, stdFont_sub_4357C0);
+    hook_function(stdFont_sub_435810_ADDR, stdFont_sub_435810);
+    hook_function(stdFont_sub_4358D0_ADDR, stdFont_sub_4358D0);
+    hook_function(stdFont_sub_435950_ADDR, stdFont_sub_435950);
     
     // stdFnames
     hook_function(stdFnames_FindMedName_ADDR, stdFnames_FindMedName);
@@ -1063,9 +1298,15 @@ void do_hooks()
     
     // stdFileUtil
     hook_function(stdFileUtil_NewFind_ADDR, stdFileUtil_NewFind);
-    hook_function(stdFileUtil_FindNext_ADDR, stdFileUtil_FindNext);
     hook_function(stdFileUtil_DisposeFind_ADDR, stdFileUtil_DisposeFind);
+    hook_function(stdFileUtil_FindReset_ADDR, stdFileUtil_FindReset);
+    hook_function(stdFileUtil_FindNext_ADDR, stdFileUtil_FindNext);
+    hook_function(stdFileUtil_FindQuick_ADDR, stdFileUtil_FindQuick);
+    hook_function(stdFileUtil_CountMatches_ADDR, stdFileUtil_CountMatches);
     hook_function(stdFileUtil_MkDir_ADDR, stdFileUtil_MkDir);
+    hook_function(stdFileUtil_DirExists_ADDR, stdFileUtil_DirExists);
+    hook_function(stdFileUtil_RmDir_ADDR, stdFileUtil_RmDir);
+    hook_function(stdFileUtil_DelFile_ADDR, stdFileUtil_DelFile);
     
     // stdGob
     hook_function(stdGob_Startup_ADDR, stdGob_Startup);
@@ -1117,11 +1358,27 @@ void do_hooks()
     hook_function(stdLinklist_GetTail_ADDR, stdLinklist_GetTail);
 
     // stdPalEffects
+    hook_function(stdPalEffects_Open_ADDR, stdPalEffects_Open);
+    hook_function(stdPalEffects_Close_ADDR, stdPalEffects_Close);
+    hook_function(stdPalEffects_NewRequest_ADDR, stdPalEffects_NewRequest);
     hook_function(stdPalEffects_FreeRequest_ADDR, stdPalEffects_FreeRequest);
+    hook_function(stdPalEffects_GetEffectPointer_ADDR, stdPalEffects_GetEffectPointer);
+    hook_function(stdPalEffects_FlushAllEffects_ADDR, stdPalEffects_FlushAllEffects);
+    hook_function(stdPalEffects_SetPaletteFunc_ADDR, stdPalEffects_SetPaletteFunc);
+    hook_function(stdPalEffects_RefreshPalette_ADDR, stdPalEffects_RefreshPalette);
+    hook_function(stdPalEffects_ResetEffectsState_ADDR, stdPalEffects_ResetEffectsState);
+    hook_function(stdPalEffects_ResetEffect_ADDR, stdPalEffects_ResetEffect);
+    hook_function(stdPalEffects_UpdatePalette_ADDR, stdPalEffects_UpdatePalette);
+    hook_function(stdPalEffects_GatherEffects_ADDR, stdPalEffects_GatherEffects);
+    hook_function(stdPalEffects_SetUnk_ADDR, stdPalEffects_SetStateBools);
     hook_function(stdPalEffects_SetFilter_ADDR, stdPalEffects_SetFilter);
     hook_function(stdPalEffects_SetTint_ADDR, stdPalEffects_SetTint);
     hook_function(stdPalEffects_SetAdd_ADDR, stdPalEffects_SetAdd);
     hook_function(stdPalEffects_SetFade_ADDR, stdPalEffects_SetFade);
+    hook_function(stdPalEffects_ApplyFilter_ADDR, stdPalEffects_ApplyFilter);
+    hook_function(stdPalEffects_ApplyTint_ADDR, stdPalEffects_ApplyTint);
+    hook_function(stdPalEffects_ApplyAdd_ADDR, stdPalEffects_ApplyAdd);
+    hook_function(stdPalEffects_ApplyFade_ADDR, stdPalEffects_ApplyFade);
     
     // stdString
     hook_function(stdString_FastCopy_ADDR, stdString_FastCopy);
@@ -1141,11 +1398,28 @@ void do_hooks()
     hook_function(stdStrTable_Free_ADDR, stdStrTable_Free);
     hook_function(stdStrTable_GetUniString_ADDR, stdStrTable_GetUniString);
     hook_function(stdStrTable_GetStringWithFallback_ADDR, stdStrTable_GetStringWithFallback);
-    
+    hook_function(stdStrTable_ParseLine_ADDR, stdStrTable_ParseLine);
+    hook_function(stdStrTable_ParseUniLine_ADDR, stdStrTable_ParseUniLine);
+
     // stdPcx
     hook_function(stdPcx_Load_ADDR, stdPcx_Load);
     hook_function(stdPcx_Write_ADDR, stdPcx_Write);
-    
+
+    // stdBmp
+    hook_function(stdBmp_Load_ADDR, stdBmp_Load);
+    hook_function(stdBmp_LoadEntryFromFile_ADDR, stdBmp_LoadEntryFromFile);
+    hook_function(stdBmp_Write_ADDR, stdBmp_Write);
+
+    // stdLbm
+    hook_function(stdLbm_Compress_ADDR, stdLbm_Compress);
+
+    // util
+    hook_function(util_FileExists_ADDR, util_FileExists);
+    hook_function(util_unkcomparison1_ADDR, util_RectsOverlap);
+    hook_function(util_unkcomparison2_ADDR, util_RectsOverlapExclusive);
+    hook_function(util_unkcomparison3_ADDR, util_RectUnion);
+    hook_function(util_Weirdchecksum_ADDR, util_Weirdchecksum);
+
     // sithStrTable
     hook_function(sithStrTable_Startup_ADDR, sithStrTable_Startup);
     hook_function(sithStrTable_Shutdown_ADDR, sithStrTable_Shutdown);
@@ -1343,7 +1617,7 @@ void do_hooks()
     hook_function(rdClip_Line3Ortho_ADDR, rdClip_Line3Ortho);
     hook_function(rdClip_Line3_ADDR, rdClip_Line3);
     
-    hook_function(rdClip_SphereInFrustrum_ADDR, rdClip_SphereInFrustrum);
+    hook_function(rdClip_SphereInFrustum_ADDR, rdClip_SphereInFrustum);
     
     //hook_function(rdClip_Face3W_ADDR, rdClip_Face3W);
     //hook_function(rdClip_Face3GT_ADDR, rdClip_Face3GT);
@@ -1424,6 +1698,10 @@ void do_hooks()
 
 #if 0
     // rdPuppet
+    hook_function(rdPuppet_FreeEntry_ADDR, rdPuppet_FreeEntry);
+    hook_function(rdPuppet_SetPause_ADDR, rdPuppet_SetPause);
+    hook_function(rdPuppet_SetTrackNoise_ADDR, rdPuppet_SetTrackNoise);
+    hook_function(rdPuppet_SetTrackPriority_ADDR, rdPuppet_SetTrackPriority);
     hook_function(rdPuppet_BuildJointMatrices_ADDR, rdPuppet_BuildJointMatrices);
     //hook_function(rdPuppet_UpdateTracks_ADDR, rdPuppet_UpdateTracks);
     hook_function(rdPuppet_AddTrack_ADDR, rdPuppet_AddTrack);
@@ -1563,6 +1841,10 @@ void do_hooks()
     hook_function(sithMain_AutoSave_ADDR, sithMain_AutoSave);
     
     // sithAnimClass
+    hook_function(sithAnimClass_Load_ADDR, sithAnimClass_Load);
+    hook_function(sithAnimClass_LoadEntry_ADDR, sithAnimClass_LoadEntry);
+    hook_function(sithAnimClass_LoadPupEntry_ADDR, sithAnimClass_LoadPupEntry);
+    hook_function(sithAnimClass_New_ADDR, sithAnimClass_New);
     hook_function(sithAnimClass_Free_ADDR, sithAnimClass_Free);
     
     // sithCamera
@@ -1583,7 +1865,9 @@ void do_hooks()
     hook_function(sithControl_Tick_ADDR, sithControl_Tick);
     hook_function(sithControl_AddInputHandler_ADDR, sithControl_AddInputHandler);
     hook_function(sithControl_HandlePlayer_ADDR, sithControl_HandlePlayer);
-    
+    hook_function(sithControl_SetFuncType_ADDR, sithControl_SetFuncType);
+    hook_function(sithControl_sub_4D7C30_ADDR, sithControl_ClearAllBindings);
+
     // sithPlayerActions
     hook_function(sithPlayerActions_Activate_ADDR, sithPlayerActions_Activate);
     hook_function(sithPlayerActions_JumpWithVel_ADDR, sithPlayerActions_JumpWithVel);
@@ -1601,6 +1885,9 @@ void do_hooks()
     hook_function(sithThing_FreeEverything_ADDR, sithThing_FreeEverything);
     hook_function(sithThing_sub_4CD100_ADDR, sithThing_sub_4CD100);
     hook_function(sithThing_DoesRdThingInit_ADDR, sithThing_DoesRdThingInit);
+
+    hook_function(sithThing_CreateThingOfType_ADDR, sithThing_CreateThingOfType);
+
     hook_function(sithThing_InstantiateFromTemplate_ADDR, sithThing_InstantiateFromTemplate);
     hook_function(sithThing_SetPosAndRot_ADDR, sithThing_SetPosAndRot);
     hook_function(sithThing_LeaveSector_ADDR, sithThing_LeaveSector);
@@ -1626,16 +1913,25 @@ void do_hooks()
     // sithSector
     hook_function(sithAIAwareness_Startup_ADDR, sithAIAwareness_Startup);
     hook_function(sithAIAwareness_Shutdown_ADDR, sithAIAwareness_Shutdown);
+    hook_function(sithAIAwareness_sub_4F2B10_ADDR, sithAIAwareness_FlushEntries);
     hook_function(sithPhysics_ApplyDrag_ADDR, sithPhysics_ApplyDrag);
     hook_function(sithPhysics_ThingPhysGeneral_ADDR, sithPhysics_ThingPhysGeneral);
     hook_function(sithPhysics_ThingPhysPlayer_ADDR, sithPhysics_ThingPhysPlayer);
     hook_function(sithRenderSky_Update_ADDR, sithRenderSky_Update);
+    hook_function(sithSector_New_ADDR, sithSector_New);
+    hook_function(sithSector_NewEntry_ADDR, sithSector_NewEntry);
     hook_function(sithSector_Free_ADDR, sithSector_Free);
+    hook_function(sithPlayer_Open_ADDR, sithPlayer_Open);
+    hook_function(sithPlayer_sub_4C93B0_ADDR, sithPlayer_SetBinItemActive);
+    hook_function(sithPlayer_sub_4C93F0_ADDR, sithPlayer_GetBinItemActive);
+    hook_function(sithPlayer_idk2_ADDR, sithPlayer_GetBinItemAvailable);
     hook_function(sithRenderSky_TransformHorizontal_ADDR, sithRenderSky_TransformHorizontal);
     hook_function(sithPhysics_ThingSetLook_ADDR, sithPhysics_ThingSetLook);
     hook_function(sithPhysics_ThingApplyForce_ADDR, sithPhysics_ThingApplyForce);
     hook_function(sithRenderSky_TransformVertical_ADDR, sithRenderSky_TransformVertical);
     hook_function(sithAIAwareness_AddEntry_ADDR, sithAIAwareness_AddEntry);
+    hook_function(sithAIAwareness_Tick_ADDR, sithAIAwareness_Tick);
+    hook_function(sithAIAwareness_sub_4F2C30_ADDR, sithAIAwareness_sub_4F2C30);
     hook_function(sithPhysics_ThingGetInsertOffsetZ_ADDR, sithPhysics_ThingGetInsertOffsetZ);
     hook_function(sithSector_GetPtrFromIdx_ADDR, sithSector_GetPtrFromIdx);
 
@@ -1644,30 +1940,30 @@ void do_hooks()
     hook_function(sithDSSThing_ProcessPos_ADDR, sithDSSThing_ProcessPos);
 
 #if 0
-    hook_function(sithDSSThing_SendSyncThingFull_ADDR, sithDSSThing_SendSyncThingFull);
-    hook_function(sithDSSThing_SendPlaySoundPos_ADDR, sithDSSThing_SendPlaySoundPos);
-    hook_function(sithDSSThing_ProcessSyncThingFull_ADDR, sithDSSThing_ProcessSyncThingFull);
-    hook_function(sithDSSThing_ProcessPlaySoundPos_ADDR, sithDSSThing_ProcessPlaySoundPos);
+    //hook_function(sithDSSThing_SendSyncThingFull_ADDR, sithDSSThing_SendSyncThingFull); // TODO: not yet decompiled
+    //hook_function(sithDSSThing_SendPlaySoundPos_ADDR, sithDSSThing_SendPlaySoundPos); // TODO: not yet decompiled
+    //hook_function(sithDSSThing_ProcessSyncThingFull_ADDR, sithDSSThing_ProcessSyncThingFull); // TODO: not yet decompiled
+    //hook_function(sithDSSThing_ProcessPlaySoundPos_ADDR, sithDSSThing_ProcessPlaySoundPos); // TODO: not yet decompiled
     hook_function(sithDSSThing_SendSyncThingAttachment_ADDR, sithDSSThing_SendSyncThingAttachment);
 #endif
 
 #if 0
     hook_function(sithDSS_SendSyncPuppet_ADDR, sithDSS_SendSyncPuppet);
-    hook_function(sithDSS_SendSyncAI_ADDR, sithDSS_SendSyncAI);
-    hook_function(sithDSS_SendSyncSurface_ADDR, sithDSS_SendSyncSurface);
-    hook_function(sithDSS_SendSyncSector_ADDR, sithDSS_SendSyncSector);
-    hook_function(sithDSS_SendSyncItemDesc_ADDR, sithDSS_SendSyncItemDesc);
-    hook_function(sithDSS_SendStopAnim_ADDR, sithDSS_SendStopAnim);
+    //hook_function(sithDSS_SendSyncAI_ADDR, sithDSS_SendSyncAI); // TODO: not yet decompiled
+    //hook_function(sithDSS_SendSyncSurface_ADDR, sithDSS_SendSyncSurface); // TODO: not yet decompiled
+    //hook_function(sithDSS_SendSyncSector_ADDR, sithDSS_SendSyncSector); // TODO: not yet decompiled
+    //hook_function(sithDSS_SendSyncItemDesc_ADDR, sithDSS_SendSyncItemDesc); // TODO: not yet decompiled
+    //hook_function(sithDSS_SendStopAnim_ADDR, sithDSS_SendStopAnim); // TODO: not yet decompiled
     hook_function(sithDSS_SendSyncTimers_ADDR, sithDSS_SendSyncTimers);
     hook_function(sithDSS_SendSyncPalEffects_ADDR, sithDSS_SendSyncPalEffects);
     hook_function(sithDSS_SendSyncCameras_ADDR, sithDSS_SendSyncCameras);
     hook_function(sithDSS_SendMisc_ADDR, sithDSS_SendMisc);
     hook_function(sithDSS_ProcessSyncPuppet_ADDR, sithDSS_ProcessSyncPuppet);
-    hook_function(sithDSS_ProcessSyncAI_ADDR, sithDSS_ProcessSyncAI);
-    hook_function(sithDSS_ProcessSyncSurface_ADDR, sithDSS_ProcessSyncSurface);
-    hook_function(sithDSS_ProcessSyncSector_ADDR, sithDSS_ProcessSyncSector);
-    hook_function(sithDSS_ProcessSyncItemDesc_ADDR, sithDSS_ProcessSyncItemDesc);
-    hook_function(sithDSS_ProcessStopAnim_ADDR, sithDSS_ProcessStopAnim);
+    //hook_function(sithDSS_ProcessSyncAI_ADDR, sithDSS_ProcessSyncAI); // TODO: not yet decompiled
+    //hook_function(sithDSS_ProcessSyncSurface_ADDR, sithDSS_ProcessSyncSurface); // TODO: not yet decompiled
+    //hook_function(sithDSS_ProcessSyncSector_ADDR, sithDSS_ProcessSyncSector); // TODO: not yet decompiled
+    //hook_function(sithDSS_ProcessSyncItemDesc_ADDR, sithDSS_ProcessSyncItemDesc); // TODO: not yet decompiled
+    //hook_function(sithDSS_ProcessStopAnim_ADDR, sithDSS_ProcessStopAnim); // TODO: not yet decompiled
     hook_function(sithDSS_ProcessSyncTimers_ADDR, sithDSS_ProcessSyncTimers);
     hook_function(sithDSS_ProcessSyncPalEffects_ADDR, sithDSS_ProcessSyncPalEffects);
     hook_function(sithDSS_ProcessSyncCameras_ADDR, sithDSS_ProcessSyncCameras);
@@ -1716,14 +2012,15 @@ void do_hooks()
     // sithIntersect
 #if 0
     hook_function(sithIntersect_IsSphereInSector_ADDR, sithIntersect_IsSphereInSector);
-    hook_function(sithIntersect_sub_5080D0_ADDR, sithIntersect_sub_5080D0);
-    hook_function(sithIntersect_sub_508540_ADDR, sithIntersect_sub_508540);
+    //hook_function(sithIntersect_sub_5080D0_ADDR, sithIntersect_sub_5080D0); // TODO: not yet decompiled
+    //hook_function(sithIntersect_sub_508540_ADDR, sithIntersect_sub_508540); // TODO: not yet decompiled
     hook_function(sithIntersect_sub_508D20_ADDR, sithIntersect_sub_508D20);
     hook_function(sithIntersect_SphereHit_ADDR, sithIntersect_SphereHit);
     hook_function(sithIntersect_sub_508750_ADDR, sithIntersect_sub_508750);
     hook_function(sithIntersect_sub_5090B0_ADDR, sithIntersect_sub_5090B0);
     hook_function(sithIntersect_sub_508400_ADDR, sithIntersect_sub_508400);
     hook_function(sithIntersect_sub_508990_ADDR, sithIntersect_sub_508990);
+    hook_function(sithIntersect_sub_508070_ADDR, sithIntersect_CheckFaceIntersection);
 #endif
 
     // sithTime
@@ -1835,6 +2132,8 @@ void do_hooks()
     hook_function(sithPhysics_ThingTick_ADDR, sithPhysics_ThingTick);
     
     // sithSurface
+    hook_function(sithSurface_New_ADDR, sithSurface_New);
+    hook_function(sithSurface_sub_4E5AD0_ADDR, sithSurface_AllocateAdjoins);
     hook_function(sithSurface_Free_ADDR, sithSurface_Free);
     hook_function(sithSurface_SurfaceLightAnim_ADDR, sithSurface_SurfaceLightAnim);
     hook_function(sithSurface_SlideWall_ADDR, sithSurface_SlideWall);
@@ -1864,11 +2163,21 @@ void do_hooks()
     hook_function(sithTemplate_CreateEntry_ADDR, sithTemplate_CreateEntry);
     
     // sithTrackThing
+    hook_function(sithTrackThing_SkipToFrame_ADDR, sithTrackThing_SkipToFrame);
+    hook_function(sithTrackThing_MoveToFrame_ADDR, sithTrackThing_MoveToFrame);
     hook_function(sithTrackThing_RotatePivot_ADDR, sithTrackThing_RotatePivot);
     hook_function(sithTrackThing_Rotate_ADDR, sithTrackThing_Rotate);
-    hook_function(sithTrackThing_SkipToFrame_ADDR, sithTrackThing_SkipToFrame);
+    hook_function(sithTrackThing_Arrivedidk_ADDR, sithTrackThing_Arrivedidk);
+    hook_function(sithTrackThing_sub_4FACC0_ADDR, sithTrackThing_CalcMoveDirection);
+    hook_function(sithTrackThing_PrepareForOrient_ADDR, sithTrackThing_PrepareForOrient);
+    hook_function(sithTrackThing_Tick_ADDR, sithTrackThing_Tick);
+    hook_function(sithTrackThing_LoadPathParams_ADDR, sithTrackThing_LoadPathParams);
+    hook_function(sithTrackThing_BlockedIdk_ADDR, sithTrackThing_BlockedIdk);
+    hook_function(sithTrackThing_StoppedMoving_ADDR, sithTrackThing_StoppedMoving);
+    hook_function(sithTrackThing_Stop_ADDR, sithTrackThing_Stop);
     hook_function(sithTrackThing_PathMovePause_ADDR, sithTrackThing_PathMovePause);
     hook_function(sithTrackThing_PathMoveResume_ADDR, sithTrackThing_PathMoveResume);
+    hook_function(sithTrackThing_idkpathmove_ADDR, sithTrackThing_idkpathmove);
     
     // jkPlayer
     hook_function(jkPlayer_LoadAutosave_ADDR, jkPlayer_LoadAutosave);
@@ -1918,6 +2227,8 @@ void do_hooks()
     hook_function(jkPlayer_SetRank_ADDR, jkPlayer_SetRank);
     
     // jkSaber
+    hook_function(jkSaber_Startup_ADDR, jkSaber_Startup);
+    hook_function(jkSaber_Shutdown_ADDR, jkSaber_Shutdown);
     hook_function(jkSaber_InitializeSaberInfo_ADDR, jkSaber_InitializeSaberInfo);
     hook_function(jkSaber_PolylineRand_ADDR, jkSaber_PolylineRand);
     hook_function(jkSaber_Draw_ADDR, jkSaber_Draw);
@@ -1943,11 +2254,18 @@ void do_hooks()
     hook_function(jkSmack_SmackPlay_ADDR, jkSmack_SmackPlay);
     
     // jkGame
-    hook_function(jkGame_Startup_ADDR, jkGame_Startup);
-    hook_function(jkGame_ParseSection_ADDR, jkGame_ParseSection);
+    hook_function(jkGame_SetDefaultSettings_ADDR, jkGame_SetDefaultSettings);
+    hook_function(jkGame_ForceRefresh_ADDR, jkGame_ForceRefresh);
     hook_function(jkGame_Update_ADDR, jkGame_Update);
+    hook_function(jkGame_cam_idk_maybe_ADDR, jkGame_PrecalcViewSizes);
     hook_function(jkGame_ScreensizeIncrease_ADDR, jkGame_ScreensizeIncrease);
     hook_function(jkGame_ScreensizeDecrease_ADDR, jkGame_ScreensizeDecrease);
+    hook_function(jkGame_Gamma_ADDR, jkGame_Gamma);
+    hook_function(jkGame_ddraw_idk_palettes_ADDR, jkGame_ddraw_idk_palettes);
+    hook_function(jkGame_nullsub_36_ADDR, jkGame_nullsub_36);
+    hook_function(jkGame_Startup_ADDR, jkGame_Startup);
+    hook_function(jkGame_Shutdown_ADDR, jkGame_Shutdown);
+    hook_function(jkGame_ParseSection_ADDR, jkGame_ParseSection);
     
     // jkGob
     hook_function(jkGob_Startup_ADDR, jkGob_Startup);
@@ -1997,6 +2315,9 @@ void do_hooks()
     hook_function(sithCollision_CollideHurt_ADDR, sithCollision_CollideHurt);
     hook_function(sithCollision_HasLos_ADDR, sithCollision_HasLos);
     hook_function(sithCollision_DebrisPlayerCollide_ADDR, sithCollision_DebrisPlayerCollide);
+    hook_function(sithCollision_sub_4E6FB0_ADDR, sithCollision_RaycastFromCamera);
+    hook_function(sithCollision_sub_4E7310_ADDR, sithCollision_RaycastSector);
+    hook_function(sithCollision_sub_4E73F0_ADDR, sithCollision_CheckPathClear);
 #endif
     
     // sithActor
@@ -2134,7 +2455,7 @@ void do_hooks()
     hook_function(sithSound_LoadFileData_ADDR, sithSound_LoadFileData);
     hook_function(sithSound_UnloadData_ADDR, sithSound_UnloadData);
     hook_function(sithSound_LoadData_ADDR, sithSound_LoadData);
-    hook_function(sithSound_StopAll_ADDR, sithSound_StopAll);
+    //hook_function(sithSound_StopAll_ADDR, sithSound_StopAll); // TODO: not yet decompiled
     hook_function(sithSound_InitFromPath_ADDR, sithSound_InitFromPath);
     
     // sithSoundClass
@@ -2284,8 +2605,8 @@ void do_hooks()
     hook_function(jkGuiRend_InvokeClicked_ADDR, jkGuiRend_InvokeClicked);
     hook_function(jkGuiRend_PlayClickSound_ADDR, jkGuiRend_PlayClickSound);
     hook_function(jkGuiRend_RenderFocused_ADDR, jkGuiRend_RenderFocused);
-    hook_function(jkGuiRend_RenderIdk2_ADDR, jkGuiRend_RenderIdk2);
-    hook_function(jkGuiRend_RenderAll_ADDR, jkGuiRend_RenderAll);
+    //hook_function(jkGuiRend_RenderIdk2_ADDR, jkGuiRend_RenderIdk2); // TODO: renamed to jkGuiRend_RenderIdk2_alt, needs _ADDR
+    //hook_function(jkGuiRend_RenderAll_ADDR, jkGuiRend_RenderAll); // TODO: not yet decompiled
     hook_function(jkGuiRend_ClickableMouseover_ADDR, jkGuiRend_ClickableMouseover);
     hook_function(jkGuiRend_MouseMovedCallback_ADDR, jkGuiRend_MouseMovedCallback);
     hook_function(jkGuiRend_SetVisibleAndDraw_ADDR, jkGuiRend_SetVisibleAndDraw);
@@ -2496,6 +2817,25 @@ void do_hooks()
 
     // sithCommand
     hook_function(sithCommand_Startup_ADDR, sithCommand_Startup);
+    hook_function(sithCommand_CmdTick_ADDR, sithCommand_CmdTick);
+    hook_function(sithCommand_CmdSession_ADDR, sithCommand_CmdSession);
+    hook_function(sithCommand_CheatSetDebugFlags_ADDR, sithCommand_CheatSetDebugFlags);
+    hook_function(sithCommand_CmdCogTrace_ADDR, sithCommand_CmdCogTrace);
+    hook_function(sithCommand_CmdCogPause_ADDR, sithCommand_CmdCogPause);
+    hook_function(sithCommand_CmdCogList_ADDR, sithCommand_CmdCogList);
+    hook_function(sithCommand_CmdFly_ADDR, sithCommand_CmdFly);
+    hook_function(sithCommand_CmdMem_ADDR, sithCommand_CmdMem);
+    hook_function(sithCommand_CmdDynamicMem_ADDR, sithCommand_CmdDynamicMem);
+    hook_function(sithCommand_CmdMemDump_ADDR, sithCommand_CmdMemDump);
+    hook_function(sithCommand_CmdMatList_ADDR, sithCommand_CmdMatList);
+    hook_function(sithCommand_CmdCoords_ADDR, sithCommand_CmdCoords);
+    hook_function(sithCommand_CmdWarp_ADDR, sithCommand_CmdWarp);
+    hook_function(sithCommand_CmdActivate_ADDR, sithCommand_CmdActivate);
+    hook_function(sithCommand_CmdJump_ADDR, sithCommand_CmdJump);
+    hook_function(sithCommand_CmdPlayers_ADDR, sithCommand_CmdPlayers);
+    hook_function(sithCommand_CmdPing_ADDR, sithCommand_CmdPing);
+    hook_function(sithCommand_CmdKick_ADDR, sithCommand_CmdKick);
+    hook_function(sithCommand_matlist_sort_ADDR, sithCommand_matlist_sort);
 
     //hook_function(Darray_sub_520CB0_ADDR, Darray_sub_520CB0);
     // test saber time
@@ -2508,8 +2848,8 @@ void do_hooks()
     //hook_function(Window_DefaultHandler_ADDR, Window_DefaultHandler);
     hook_function(Window_MessageLoop_ADDR, Window_MessageLoop);
     hook_function(Window_msg_main_handler_ADDR, Window_msg_main_handler);
-    hook_function(sithControl_GetAxis_ADDR, sithControl_GetAxis);
-    hook_function(sithControl_ReadAxisStuff_ADDR, sithControl_ReadAxisStuff);
+    //hook_function(sithControl_GetAxis_ADDR, sithControl_GetAxis); // TODO: not yet decompiled
+    //hook_function(sithControl_ReadAxisStuff_ADDR, sithControl_ReadAxisStuff); // TODO: not yet decompiled
     hook_function(sithControl_ReadFunctionMap_ADDR, sithControl_ReadFunctionMap);
 
     hook_function(stdControl_Open_ADDR, stdControl_Open);
@@ -2520,7 +2860,7 @@ void do_hooks()
     hook_function(stdControl_ReadControls_ADDR, stdControl_ReadControls);
     hook_function(stdControl_FinishRead_ADDR, stdControl_FinishRead);
     hook_function(stdControl_ReadAxis_ADDR, stdControl_ReadAxis);
-    hook_function(sithControl_GetAxis2_ADDR, sithControl_GetAxis2);
+    //hook_function(sithControl_GetAxis2_ADDR, sithControl_GetAxis2); // TODO: not yet decompiled
     
     hook_function(stdDisplay_Startup_ADDR, stdDisplay_Startup);
     hook_function(stdDisplay_VBufferFill_ADDR, stdDisplay_VBufferFill);
@@ -2714,6 +3054,10 @@ void do_hooks()
     hook_function_inv(rdKeyframe_FreeJoints_ADDR, rdKeyframe_FreeJoints);
 #endif
 #endif
+
+    // ========================================
+    // ========================================
+
 #endif // !NO_JK_MMAP
 }
 #endif // WIN64_STANDALONE

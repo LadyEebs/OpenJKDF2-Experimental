@@ -312,16 +312,6 @@ int sithMain_Tick()
         
     }
 #endif
-    
-#ifdef TARGET_TWL
-    // Fallback to stepped 30Hz physics if ms delta is very high
-    if (sithTime_deltaMs > 55) {
-        jkPlayer_bJankyPhysics = 0;
-    }
-    else {
-        jkPlayer_bJankyPhysics = 1;
-    }
-#endif
 
     sithMain_tickStartMs = stdPlatform_GetTimeMsec(); // Added: perf analyzing
 
@@ -329,6 +319,16 @@ int sithMain_Tick()
     {
         sithTime_Tick();
         sithComm_Sync();
+
+#ifdef TARGET_TWL
+        // Fallback to stepped 30Hz physics if ms delta is very high
+        if (sithTime_deltaMs > 100) {
+            jkPlayer_bJankyPhysics = 0;
+        }
+        else {
+            jkPlayer_bJankyPhysics = 1;
+        }
+#endif
 
 #ifdef FIXED_TIMESTEP_PHYS
         if (NEEDS_STEPPED_PHYS) {
@@ -488,9 +488,10 @@ int sithMain_Tick()
 void sithMain_UpdateCamera()
 {
 #if defined(TARGET_TWL)
-    jkPlayer_fov = 90.0;
+    jkPlayer_fov = 98; // 90deg vertical, 106deg horizontal stock
     jkPlayer_bJankyPhysics = 1;
     jkPlayer_fovIsVertical = 0;
+    jkPlayer_enableOrigAspect = 0;
 #endif
 
     if ( (g_submodeFlags & SITH_SUBMODE_JOINING) == 0 )
@@ -503,13 +504,21 @@ void sithMain_UpdateCamera()
             // Set screen aspect ratio
             flex_t aspect = sithCamera_currentCamera->rdCam.canvas->half_screen_height / sithCamera_currentCamera->rdCam.canvas->half_screen_width;
 #if defined(TARGET_TWL)
+            //aspect = 192.0/256.0;
+            //const flex_t canvasWidth = 256.0;
+            //const flex_t canvasHeight = 192.0;
+            //aspect = 1.0;
             aspect = 192.0/256.0;
-            sithCamera_currentCamera->rdCam.canvas->half_screen_width = 256.0;
-            sithCamera_currentCamera->rdCam.canvas->half_screen_height = 192.0;
+            const flex_t canvasWidth = 256.0;
+            const flex_t canvasHeight = 192.0;
+            sithCamera_currentCamera->rdCam.canvas->half_screen_width = canvasWidth/2;
+            sithCamera_currentCamera->rdCam.canvas->half_screen_height = canvasHeight/2;
+            sithCamera_currentCamera->rdCam.canvas->widthMinusOne = canvasWidth - 1.0;
+            sithCamera_currentCamera->rdCam.canvas->heightMinusOne = canvasHeight - 1.0;
             static flex_t sithMain_UpdateCamera_lastFov = 90.0;
             static void* sithMain_UpdateCamera_lastCamera = NULL;
 
-            if (aspect != sithMain_lastAspect || jkPlayer_fov != sithCamera_currentCamera->rdCam.fov || jkPlayer_fov != sithMain_UpdateCamera_lastFov || sithMain_UpdateCamera_lastCamera != sithCamera_currentCamera) {
+            //if (aspect != sithMain_lastAspect || jkPlayer_fov != sithCamera_currentCamera->rdCam.fov || jkPlayer_fov != sithMain_UpdateCamera_lastFov || sithMain_UpdateCamera_lastCamera != sithCamera_currentCamera) {
 #endif
                 if (!Main_bMotsCompat)
                 {
@@ -527,7 +536,7 @@ void sithMain_UpdateCamera()
                     rdCamera_SetOrthoScale(&sithCamera_currentCamera->rdCam, 250.0);
                 }
 #if defined(TARGET_TWL)
-            }
+            //}
 #endif
 
             sithMain_lastAspect = aspect;

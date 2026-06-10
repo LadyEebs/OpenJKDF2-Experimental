@@ -35,10 +35,13 @@
 #define stdMath_Sqrt_ADDR (0x00433670)
 
 MATH_FUNC flex_t stdMath_FlexPower(flex_t num, int32_t exp);
-MATH_FUNC flex_t stdMath_NormalizeAngle(flex_t angle);
-MATH_FUNC flex_t stdMath_NormalizeAngleAcute(flex_t angle);
-MATH_FUNC flex_t stdMath_NormalizeDeltaAngle(flex_t a1, flex_t a2);
-MATH_FUNC void stdMath_SinCos(flex_t angle, flex_t *pSinOut, flex_t *pCosOut);
+MATH_FUNC FAST_FUNC flex_t stdMath_NormalizeAngle(flex_t angle);
+MATH_FUNC FAST_FUNC flex_t stdMath_NormalizeAngleAcute(flex_t angle);
+MATH_FUNC FAST_FUNC flex_t stdMath_NormalizeDeltaAngle(flex_t a1, flex_t a2);
+#ifdef EXPERIMENTAL_FIXED_POINT
+MATH_FUNC FAST_FUNC void stdMath_SinCosVeryApproximate(flex_t angle, flex_t *pSinOut, flex_t *pCosOut);
+#endif
+MATH_FUNC FAST_FUNC void stdMath_SinCos(flex_t angle, flex_t *pSinOut, flex_t *pCosOut);
 MATH_FUNC flex_t stdMath_Tan(flex_t a1);
 MATH_FUNC flex_t stdMath_ArcSin1(flex_t val);
 MATH_FUNC flex_t stdMath_ArcSin2(flex_t val);
@@ -88,7 +91,7 @@ static inline flex_t stdMath_Saturate(flex_t val)
 	return stdMath_Clamp(val, 0.0f, 1.0f);
 }
 
-static inline flex_t stdMath_Fabs(flex_t val)
+ALWAYS_INLINE static inline flex_t stdMath_Fabs(flex_t val)
 {
     //return fabs(val);
     return (val < 0.0) ? -val : val;
@@ -138,7 +141,7 @@ static inline uint8_t stdMath_ClampU8(uint8_t val, uint8_t valMin, uint8_t valMa
 #define stdMath_Min(a,b) ((a)<(b)?(a):(b))
 #define stdMath_Max(a,b) ((a)>(b)?(a):(b))
 
-#ifdef TARGET_TWL
+#if defined(TARGET_TWL) && defined(EXPERIMENTAL_FIXED_POINT)
 static inline flex_t divflex_mine(flex_t num, flex_t den)
 {
     REG_DIV_NUMER = ((s64)num.to_raw()) << FIXED_POINT_DECIMAL_BITS;

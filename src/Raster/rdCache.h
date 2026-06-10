@@ -32,20 +32,23 @@ MATH_FUNC void rdCache_FinishFrame();
 MATH_FUNC void rdCache_Reset();
 void rdCache_ClearFrameCounters();
 rdProcEntry *rdCache_GetProcEntry();
-
-MATH_FUNC int rdCache_SendFaceListToHardware();
+MATH_FUNC FAST_FUNC int rdCache_SendFaceListToHardware();
 
 void rdCache_ResetRenderList();
 MATH_FUNC void rdCache_DrawRenderList();
+#ifndef RDCACHE_RENDER_NGONS
 int rdCache_TriCompare(const void* a_, const void* b_);
+#else
+int rdCache_NGonCompare(const void* a_, const void* b_);
+#endif
 
 #ifdef RENDER_DROID2
-void rdCache_Flush(const char* label);
+MATH_FUNC void rdCache_Flush(const char* label);
 
 void rdCache_AddDrawCall(rdPrimitiveType_t type, std3D_DrawCallState* pDrawCallState, rdVertex* paVertices, int numVertices);
 
 #else
-void rdCache_Flush();
+MATH_FUNC void rdCache_Flush();
 #endif
 
 int rdCache_ProcFaceCompareByDistance(rdProcEntry *a, rdProcEntry *b);

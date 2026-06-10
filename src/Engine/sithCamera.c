@@ -190,7 +190,9 @@ int sithCamera_NewEntry(sithCamera *camera, uint32_t a2, uint32_t a3, flex_t fov
     rdVector_Zero3(&camera->vec3_1);
     rdVector_Zero3(&camera->viewPYR);
     rdVector_Zero3(&camera->collisionOffset);
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
     rdVector_Zero3(&camera->unused1);
+#endif
     rdMatrix_Identity34(&camera->viewMat);
 
 #ifdef JKM_CAMERA
@@ -569,7 +571,6 @@ int sithCamera_SetCurrentCamera(sithCamera *camera)
     rdCamera_SetCurrent(&camera->rdCam);
     if ( camera->cameraPerspective == 32 )
     {
-        
         rdMatrix_Copy34(&sithCamera_focusMat, &sithCamera_currentCamera->primaryFocus->lookOrientation);
         rot.x = 0.0;
         rot.y = -45.0;

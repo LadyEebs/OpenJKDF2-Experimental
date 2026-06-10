@@ -7,6 +7,7 @@
 #include "General/stdFnames.h"
 #include "stdPlatform.h"
 #include "Win95/Windows.h"
+#include "Win95/std.h"
 #include "Main/sithMain.h"
 #include "General/util.h"
 #include "Gui/jkGUIDialog.h"
@@ -196,9 +197,24 @@ int jkRes_ReadKeyFromFile(const char* fpath)
 {
     int keyval;
 
-    stdFile_t fd = pHS->fileOpen(fpath, "rb");
-    if (!fd)
-        return 0;
+    // HACK
+    if (!pLowLevelHS || !pLowLevelHS->fileOpen) {
+        pLowLevelHS = (HostServices *)&lowLevelHS;
+        stdInitServices(&lowLevelHS);
+    }
+
+    stdFile_t fd = (stdFile_t)0;
+    if (!pHS || !(fd = pHS->fileOpen(fpath, "rb"), fd)) {
+        // Added: pLowLevelHS for DSi
+        fd = pLowLevelHS->fileOpen(fpath, "rb");
+        if (!fd) {
+            return 0;
+        }
+        keyval = 0;
+        pLowLevelHS->fileRead(fd, &keyval, 4);
+        pLowLevelHS->fileClose(fd);
+        return keyval;
+    }
 
     keyval = 0;
     pHS->fileRead(fd, &keyval, 4);
@@ -255,7 +271,7 @@ int jkRes_LoadNew(jkResGobDirectory *resGob, char *name, int a3)
         v15 = stdFileUtil_NewFind("mods", 3, JKRES_GOB_EXT);
         while (stdFileUtil_FindNext(v15, &v18))
         {
-            if ( resGob->numGobs >= 0x40u )
+            if ( resGob->numGobs >= STDGOB_MAX_GOBS )
                 break;
             if ( v18.fpath[0] != '.' )
             {
@@ -272,7 +288,7 @@ int jkRes_LoadNew(jkResGobDirectory *resGob, char *name, int a3)
     v15 = stdFileUtil_NewFind(name, 3, JKRES_GOB_EXT);
     while (stdFileUtil_FindNext(v15, &v18))
     {
-        if ( resGob->numGobs >= 0x40u )
+        if ( resGob->numGobs >= STDGOB_MAX_GOBS )
             break;
         if ( v18.fpath[0] != '.' )
         {
@@ -297,9 +313,9 @@ int jkRes_NewGob(jkResGobDirectory *gobFullpath, char *gobFolder, char *gobFname
     
     gobFullpath->numGobs = 0;
     stdString_snprintf(jkRes_idkGobPath, 0x80u, "%s%c%s", gobFolder, LEC_PATH_SEPARATOR_CHR, gobFname);
-    if ( util_FileExists(jkRes_idkGobPath) )
+    if ( util_FileExistsLowLevel(jkRes_idkGobPath) ) // Added: util_FileExists -> util_FileExistsLowLevel
     {
-        if ( gobFullpath->numGobs < 0x40u )
+        if ( gobFullpath->numGobs < STDGOB_MAX_GOBS )
         {
             gobFullpath->gobs[gobFullpath->numGobs] = stdGob_Load(jkRes_idkGobPath, 16, 0);
             if ( gobFullpath->gobs[gobFullpath->numGobs] )
@@ -482,6 +498,10 @@ stdFile_t jkRes_FileOpen(const char *fpath, const char *mode)
     if ( resIdx >= 0x20 )
         return (stdFile_t)0;
     v6 = 0;
+
+#ifndef TARGET_TWL
+    // Try in the EXE root (not in resource/), ex "3do\key\kysabrf2.key"
+    // This was also used for `player/...` and `controls/...`
     fhand = pLowLevelHS->fileOpen(fpath, mode);
     if ( fhand )
     {
@@ -493,12 +513,15 @@ stdFile_t jkRes_FileOpen(const char *fpath, const char *mode)
         v6 = 1;
     }
     else
+#endif
     {
         for (v19 = 0; v19 < 5; v19++)
         {
             v11 = jkRes_gCtx.aGobDirectories[v19].name;
-            if (!v11) continue;
+            if (!v11 || !v11[0]) continue; // Added: Don't check in the root directory on Linux
 
+            // Try in episode/[episode name], resource/, etc
+            // ex: "episode\JK1\3do\key\kysabrf2.key", "resource/3do\key\kysabrf2.key"
             stdString_snprintf(jkRes_idkGobPath, 0x80u, "%s%c%s", v11, LEC_PATH_SEPARATOR_CHR, fpath);
             v12 = pLowLevelHS->fileOpen(jkRes_idkGobPath, mode);
             if ( v12 )
@@ -510,6 +533,8 @@ stdFile_t jkRes_FileOpen(const char *fpath, const char *mode)
                 jkRes_aFiles[resIdx].bOpened = 1;
                 v6 = 1;
             }
+
+            // Try in the GOB itself
             if ( !v6 )
             {
                 for (v18 = 0; v18 < jkRes_gCtx.aGobDirectories[v19].numGobs; v18++)

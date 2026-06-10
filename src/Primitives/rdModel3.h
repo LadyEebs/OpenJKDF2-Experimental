@@ -222,7 +222,10 @@ MATH_FUNC int rdModel3_ReplaceMesh(rdModel3 *model, int geosetIdx, int meshIdx, 
 MATH_FUNC int rdModel3_Draw(rdThing *thing, rdMatrix34 *matrix_4_3);
 MATH_FUNC void rdModel3_DrawHNode(rdHierarchyNode *pNode);
 MATH_FUNC void rdModel3_DrawMesh(rdMesh *meshIn, rdMatrix34 *mat);
-MATH_FUNC int rdModel3_DrawFace(rdFace *face, int lightFlags);
+MATH_FUNC FAST_FUNC int rdModel3_DrawFace(rdFace *face, int lightFlags);
+
+// Added: Data preloading
+void rdModel3_EnsureMaterialData(rdThing *pRdThing);
 
 #ifdef RENDER_DROID2
 void rdModel3_DrawOccluders(rdThing* pThing, rdMatrix34* pMat);

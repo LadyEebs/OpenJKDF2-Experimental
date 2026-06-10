@@ -35,7 +35,8 @@ int sithCommand_CmdCogList(stdDebugConsoleCmd *pCmd, const char *pArgStr);
 int sithCommand_CmdMem(stdDebugConsoleCmd *pCmd, const char *pArgStr);
 int sithCommand_CmdDynamicMem(stdDebugConsoleCmd *pCmd, const char *pArgStr);
 int sithCommand_CmdMemDump(stdDebugConsoleCmd *pCmd, const char *pArgStr);
-// Matlist
+int sithCommand_CmdMatList(stdDebugConsoleCmd *pCmd, const char *pArgStr);
+int sithCommand_matlist_sort(const void *a, const void *b);
 int sithCommand_CmdCoords(stdDebugConsoleCmd *pCmd, const char *pArgStr);
 int sithCommand_CmdFly(stdDebugConsoleCmd *pCmd, const char *pArgStr);
 int sithCommand_CmdWarp(stdDebugConsoleCmd *pCmd, const char *pArgStr);

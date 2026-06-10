@@ -45,6 +45,7 @@ void stdStartup(HostServices* pServices);
 void stdShutdown();
 void stdInitServices(HostServices* pServices);
 
+const char* stdGetReturnString(int code, int *table, int tableSize);
 char* stdFileFromPath(char *fpath);
 int stdCalcBitPos(signed int val);
 int stdReadRaw(char *fpath, void *out, signed int len);

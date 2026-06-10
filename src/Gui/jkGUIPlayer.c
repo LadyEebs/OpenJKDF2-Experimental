@@ -25,13 +25,13 @@
 static int jkGuiPlayer_bInitted = 0;
 
 static wchar_t jkGuiPlayer_awTmp_555D28[0x100] = {0};
-static char* jkGuiPlayer_GuiDifficulties[3] = {"GUI_EASY", "GUI_MED", "GUI_HARD"};
+static const char* jkGuiPlayer_GuiDifficulties[3] = {"GUI_EASY", "GUI_MED", "GUI_HARD"};
 
 static int32_t jkGuiPlayer_menuSelectIdk[2] = {0xFA, 0};
 static int32_t jkGuiPlayer_menuSelectIdk2[2] = {0xd, 0xe};
 
 static jkGuiElement jkGuiPlayer_menuSelectElements[8] = {
-    {ELEMENT_TEXT, 0, 0, 0, 3, {0, 0x19A, 0x280, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
+    {ELEMENT_TEXT, 0, 0, 0, 3, {0, 410, 0x280, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
     {ELEMENT_TEXT, 0, 5, "GUI_CHOOSEPLAYER", 3, {0, 0x82, 0x280, 0x28}, 1, 0, 0, 0, 0, 0, {0}, 0},
     {ELEMENT_LISTBOX, 1, 0, 0, 0, {0x82, 0xC8, 0x17C, 0xB4}, 1, 0, 0, 0, 0, jkGuiPlayer_menuSelectIdk2, {0}, 0},
     {ELEMENT_TEXTBUTTON, -1, 2, "GUI_CANCEL", 3, {0, 0x1AE, 0xA0, 0x28}, 1, 0, 0, 0, 0, 0, {0}, 0},
@@ -44,7 +44,7 @@ static jkGuiElement jkGuiPlayer_menuSelectElements[8] = {
 static jkGuiMenu jkGuiPlayer_menuSelect = {jkGuiPlayer_menuSelectElements, 0, 0xFFFF, 0xFFFF, 0xF, 0, 0, jkGui_stdBitmaps, jkGui_stdFonts, (intptr_t)jkGuiPlayer_menuSelectIdk, 0, "thermloop01.wav", "thrmlpu2.wav", 0, 0, 0, 0, 0,0};
 
 static jkGuiElement jkGuiPlayer_menuNewElements[12] = {
-    { ELEMENT_TEXT, 0, 0, 0, 3, {0, 0x19A, 280, 14}, 1, 0, 0, 0, 0, 0, {0}, 0},
+    { ELEMENT_TEXT, 0, 0, 0, 3, {0, 410, 280, 14}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_TEXT, 0, 5, "GUI_NEWPLAYER", 3, {0, 0x82, 0x280, 0x28}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_TEXT, 0, 0, "GUI_NAME", 2, {0xC8, 0xD2, 0xC8, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_TEXTBOX, 0, 0, 0, 10, {0xC8, 0xF0, 0xC8, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
@@ -52,7 +52,7 @@ static jkGuiElement jkGuiPlayer_menuNewElements[12] = {
     { ELEMENT_CHECKBOX, 0, 0, "GUI_EASY", 0, {0xC8, 0x136, 0xC8, 0x14}, 1, 0, 0, 0, jkGuiPlayer_DifficultyDraw, 0, {0}, 0},
     { ELEMENT_CHECKBOX, 0, 0, "GUI_MED", 0, {0xC8, 0x154, 0xC8, 0x14}, 1, 0, 0, 0, jkGuiPlayer_DifficultyDraw, 0, {0}, 0},
     { ELEMENT_CHECKBOX, 0, 0, "GUI_HARD", 0, {0xC8, 0x172, 0xC8, 0x14}, 1, 0, 0, 0, jkGuiPlayer_DifficultyDraw, 0, {0}, 0},
-    { ELEMENT_TEXT, 0, 0, 0, 3, {0, 0x19A, 0x280, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
+    { ELEMENT_TEXT, 0, 0, 0, 3, {0, 410, 0x280, 0x14}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_TEXTBUTTON, -1, 2, "GUI_CANCEL", 3, {0x14, 0x1AE, 0xC8, 0x28}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_TEXTBUTTON, 1, 2, "GUI_OK", 3, {0x1A4, 0x1AE, 0xC8, 0x28}, 1, 0, 0, 0, 0, 0, {0}, 0},
     { ELEMENT_END, 0, 0, 0, 0, {0}, 0, 0, 0, 0, 0, 0, {0}, 0},
@@ -62,6 +62,20 @@ static jkGuiMenu jkGuiPlayer_menuNew = {jkGuiPlayer_menuNewElements, 0, 0xFFFF, 
 
 int jkGuiPlayer_Startup()
 {
+    jkGui_InitMenu(&jkGuiPlayer_menuSelect, jkGui_stdBitmaps[JKGUI_BM_BK_MAIN], jkGui_stdBitmaps16[JKGUI_BM_BK_MAIN]);
+    jkGui_InitMenu(&jkGuiPlayer_menuNew, jkGui_stdBitmaps[JKGUI_BM_BK_MAIN], jkGui_stdBitmaps16[JKGUI_BM_BK_MAIN]);
+
+#ifdef JKGUI_SMOL_SCREEN
+    for (int i = 1; i < 3; i++) {
+        jkGuiPlayer_menuSelectElements[i].rect = jkGuiPlayer_menuSelectElements[i].rectOrig;
+        jkGuiPlayer_menuSelectElements[i].bIsSmolDirty = 1; 
+    }
+    for (int i = 1; i < 8; i++) {
+        jkGuiPlayer_menuNewElements[i].rect = jkGuiPlayer_menuNewElements[i].rectOrig;
+        jkGuiPlayer_menuNewElements[i].bIsSmolDirty = 1; 
+    }
+#endif
+
     // MOTS added: Move the UI stuff around for MoTS
     if (Main_bMotsCompat) {
         jkGuiPlayer_menuSelectElements[1].rect.y = 0xAF;
@@ -84,6 +98,12 @@ int jkGuiPlayer_Startup()
     jkGui_InitMenu(&jkGuiPlayer_menuSelect, jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
     jkGui_InitMenu(&jkGuiPlayer_menuNew, jkGui_stdBitmaps[JKGUI_BM_BK_MAIN]);
 #endif
+
+#ifdef JKGUI_SMOL_SCREEN
+    jkGui_SmolScreenFixup(&jkGuiPlayer_menuSelect, 0);
+    jkGui_SmolScreenFixup(&jkGuiPlayer_menuNew, 0);
+#endif
+
     jkGuiPlayer_bInitted = 1;
     return 1;
 }
@@ -127,7 +147,7 @@ int jkGuiPlayer_sub_410640(Darray *array, jkGuiElement *element)
             do
             {
                 stdString_snprintf(jkl_fname, 128, "player%c%s%c%s.plr", LEC_PATH_SEPARATOR_CHR, searchRes.fpath, LEC_PATH_SEPARATOR_CHR, searchRes.fpath);
-                if ( searchRes.is_subdirectory && searchRes.fpath[0] != '.' && util_FileExists(jkl_fname) )
+                if ( searchRes.is_subdirectory && searchRes.fpath[0] != '.' && util_FileExistsLowLevel(jkl_fname) ) // Added: util_FileExists -> util_FileExistsLowLevel
                 {
                     _memset(tmp, 0, sizeof(tmp));
                     stdString_CharToWchar(tmp, searchRes.fpath, 255);
@@ -135,7 +155,7 @@ int jkGuiPlayer_sub_410640(Darray *array, jkGuiElement *element)
                     wchar_t tab[2] = {'\t', 0};
                     __wcscat(tmp, tab);
                     
-                    if ( stdConffile_OpenRead(jkl_fname) )
+                    if ( stdConffile_OpenReadBypass(jkl_fname) )
                     {
                         if ( stdConffile_ReadLine() && _sscanf(stdConffile_aLine, "version %d", &v8) == 1 && v8 == 1 && stdConffile_ReadLine() )
                         {
@@ -313,7 +333,7 @@ void jkGuiPlayer_ShowNewPlayer(int a1)
                         v19[127] = 0;
                         stdFnames_MakePath(v21, 128, "player", v19);
                         stdString_snprintf(v21, 128, "player%c%s%c%s.plr", LEC_PATH_SEPARATOR_CHR, v19, LEC_PATH_SEPARATOR_CHR, v19);
-                        if ( !util_FileExists(v21) )
+                        if ( !util_FileExistsLowLevel(v21) ) // Added: util_FileExists -> util_FileExistsLowLevel
                             continue;
                         v6 = 1;
                         v8 = jkStrings_GetUniStringWithFallback("ERR_PLAYER_ALREADY_EXISTS");

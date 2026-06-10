@@ -32,9 +32,11 @@ ExternalProject_Add(
     BINARY_DIR          ${ZLIB_HOST_BINARY_DIR}
     INSTALL_DIR         ${ZLIB_HOST_INSTALL_DIR}
     UPDATE_DISCONNECTED TRUE
-    CMAKE_ARGS          --install-prefix ${ZLIB_HOST_INSTALL_DIR}
+    CMAKE_ARGS          --install-prefix ${ZLIB_HOST_INSTALL_DIR} -DCMAKE_INSTALL_LIBDIR=lib
                         ${ZLIB_HOST_TOOLCHAIN_ARG}
+                        -DCMAKE_INSTALL_LIBDIR=lib
                         -DCMAKE_BUILD_TYPE:STRING=Release
+                        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     BUILD_BYPRODUCTS    ${ZLIB_HOST_STATIC_LIBRARY_PATH} ${ZLIB_HOST_DYNAMIC_LIBRARY_PATH} ${ZLIB_HOST_IMPORT_LIBRARY_PATH}
 )
 

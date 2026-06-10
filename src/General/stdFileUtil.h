@@ -43,6 +43,11 @@ typedef struct stdFileSearchResult
 stdFileSearch* stdFileUtil_NewFind(const char *path, int a2, const char *extension);
 int stdFileUtil_FindNext(stdFileSearch *a1, stdFileSearchResult *a2);
 void stdFileUtil_DisposeFind(stdFileSearch *search);
+void stdFileUtil_FindReset(stdFileSearch *search);
+int stdFileUtil_FindQuick(const char *path, int type, const char *extension, stdFileSearchResult *result);
+int stdFileUtil_CountMatches(const char *path, int type, const char *extension);
+int stdFileUtil_DirExists(const char *path);
+void stdFileUtil_RmDir(const char *path);
 
 int stdFileUtil_DelFile(char* lpFileName);
 int stdFileUtil_Deltree(const char* lpPathName);

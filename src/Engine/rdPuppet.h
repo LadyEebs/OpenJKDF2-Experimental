@@ -25,7 +25,11 @@
 
 rdPuppet* rdPuppet_New(rdThing *thing);
 void rdPuppet_Free(rdPuppet *puppet);
-MATH_FUNC void rdPuppet_BuildJointMatrices(rdThing *thing, rdMatrix34 *matrix);
+void rdPuppet_FreeEntry();
+void rdPuppet_SetPause(rdPuppet *puppet, int paused);
+void rdPuppet_SetTrackNoise(rdPuppet *puppet, int trackNum, flex_t noise);
+void rdPuppet_SetTrackPriority(rdPuppet *puppet, int trackNum, int lowPri, int highPri);
+MATH_FUNC FAST_FUNC void rdPuppet_BuildJointMatrices(rdThing *thing, rdMatrix34 *matrix);
 int rdPuppet_ResetTrack(rdPuppet *puppet, int trackNum);
 MATH_FUNC int rdPuppet_UpdateTracks(rdPuppet *puppet, flex_t a2);
 int rdPuppet_AddTrack(rdPuppet *puppet, rdKeyframe *keyframe, int lowPri, int highPri);

@@ -14,19 +14,17 @@ int stdPalEffects_Open(stdPalEffectSetPaletteFunc_t a1, stdPalEffectSetPaletteFu
 int stdPalEffects_Open(stdPalEffectSetPaletteFunc_t a1)
 #endif
 {
-    stdPalEffects_setPalette = a1;
+    stdPalEffects_SetPaletteFunc(a1);
 #ifdef TILE_SW_RASTER
 	stdPalEffects_setPaletteCube = a2;
 #endif
+
     _memset(stdPalEffects_aEffects, 0, sizeof(stdPalEffects_aEffects));
     _memset(&stdPalEffects_state, 0, sizeof(stdPalEffects_state));
     _memset(&stdPalEffects_state.effect, 0, sizeof(stdPalEffects_state.effect));
     stdPalEffects_numEffectRequests = 0;
     stdPalEffects_state.effect.fade = 1.0;
-    stdPalEffects_state.field_4 = 1;
-    stdPalEffects_state.field_8 = 1;
-    stdPalEffects_state.field_C = 1;
-    stdPalEffects_state.field_10 = 1;
+    stdPalEffects_SetStateBools(1, 1, 1, 1);
     return 1;
 }
 
@@ -602,3 +600,63 @@ void stdPalEffects_UpdatePaletteCube(const void* palette)
 }
 
 #endif
+
+void stdPalEffects_SetPaletteFunc(stdPalEffectSetPaletteFunc_t func)
+{
+    stdPalEffects_setPalette = func;
+}
+
+void stdPalEffects_SetStateBools(int a1, int a2, int a3, int a4)
+{
+    stdPalEffects_state.field_4 = a1;
+    stdPalEffects_state.field_8 = a2;
+    stdPalEffects_state.field_C = a3;
+    stdPalEffects_state.field_10 = a4;
+}
+
+void stdPalEffects_ApplyFilter(rdColor24 *aPalette, int filterR, int filterG, int filterB)
+{
+    uint8_t *p = (uint8_t *)aPalette;
+    for (int i = 0; i < 0x300; i += 3)
+    {
+        if ( filterR == 0 )
+            p[i] = p[i] >> 2;
+        if ( filterG == 0 )
+            p[i + 1] = p[i + 1] >> 2;
+        if ( filterB == 0 )
+            p[i + 2] = p[i + 2] >> 2;
+    }
+}
+
+void stdPalEffects_ApplyAdd(rdColor24 *aPalette, int addR, int addG, int addB)
+{
+    uint8_t *p = (uint8_t *)aPalette;
+    for (int i = 0; i < 0x300; i += 3)
+    {
+        int r = addR + p[i];
+        if ( r < 0 ) r = 0;
+        else if ( r > 255 ) r = 255;
+        p[i] = (uint8_t)r;
+
+        int g = addG + p[i + 1];
+        if ( g < 0 ) g = 0;
+        else if ( g > 255 ) g = 255;
+        p[i + 1] = (uint8_t)g;
+
+        int b = addB + p[i + 2];
+        if ( b < 0 ) b = 0;
+        else if ( b > 255 ) b = 255;
+        p[i + 2] = (uint8_t)b;
+    }
+}
+
+void stdPalEffects_ApplyFade(rdColor24 *aPalette, flex_t fade)
+{
+    uint8_t *p = (uint8_t *)aPalette;
+    for (int i = 0; i < 0x300; i += 3)
+    {
+        p[i]     = (__int64)((flex_d_t)p[i] * fade);
+        p[i + 1] = (__int64)((flex_d_t)p[i + 1] * fade);
+        p[i + 2] = (__int64)((flex_d_t)p[i + 2] * fade);
+    }
+}

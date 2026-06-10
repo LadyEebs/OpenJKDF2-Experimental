@@ -111,7 +111,9 @@ int jkHud_Open()
         *bitmapIter->pBitmap = v3;
         if ( !v3 )
             Windows_GameErrorMsgbox("ERR_CANNOT_LOAD_FILE %s", tmp);
+#ifndef RDMATERIAL_MINIMIZE_STRUCTS
         stdBitmap_ConvertColorFormat(&Video_format.format, v3);
+#endif
         ++bitmapIter;
     }
 
@@ -143,7 +145,9 @@ int jkHud_Open()
         *fontIter->pFont = v5;
         if ( !v5 )
             Windows_GameErrorMsgbox("ERR_CANNOT_LOAD_FILE %s", tmp);
-        stdBitmap_ConvertColorFormat(&Video_format.format, v5->bitmap);
+#ifndef RDMATERIAL_MINIMIZE_STRUCTS
+        stdBitmap_ConvertColorFormat(&Video_format.format, v5->pBitmap);
+#endif
         ++fontIter;
     }
     jkHud_leftBlitX = 0;
@@ -204,11 +208,7 @@ void jkHud_Close()
 {
     if ( jkHud_bChatOpen )
     {
-        jkHud_chatStrPos = 0;
-        jkHud_bChatOpen = 0;
-        jkDev_sub_41FC90(103);
-        stdControl_Flush();
-        stdControl_bDisableKeyboard = 0;
+        jkHud_idk_time(); // Inlined
     }
     if ( !Main_bNoHUD )
     {
@@ -250,6 +250,10 @@ int jkHud_ClearRects(int unk)
     int v8; // eax
     int result; // eax
     rdRect a4; // [esp+Ch] [ebp-10h] BYREF
+
+    // Added: no crashing
+    if (!jkHud_bOpened)
+        return 1;
 
     v0 = Video_pCanvas->xStart;
     v1 = 0;
@@ -384,6 +388,7 @@ void jkHud_Draw()
 
 	STD_BEGIN_PROFILER_LABEL();
 
+#ifdef SITH_DEBUG_STRUCT_NAMES
     if ( Main_bDispStats )
     {
         playerThing = sithWorld_pCurrentWorld->playerThing;
@@ -423,6 +428,7 @@ void jkHud_Draw()
         }
         jkDev_sub_41FC40(0x66, std_genBuffer);
     }
+#endif
 
 #if defined(SDL2_RENDER) && !defined(TILE_SW_RASTER)
     jkHud_DrawGPU();
@@ -778,7 +784,7 @@ void jkHud_Draw()
         {
             a4.width = 9;
             a4.x = jkHud_rectViewScores.x + 20;
-            a4.height = (*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height - 2;
+            a4.height = stdFont_GetHeight(jkHud_pMsgFontSft) - 2;
             v49 = jkStrings_GetUniStringWithFallback("HUD_TEAMSCORESTITLE");
             stdFont_Draw4(
                 Video_pMenuBuffer,
@@ -858,7 +864,7 @@ LABEL_116:
                             stdFont_Draw1(Video_pMenuBuffer, jkHud_pMsgFontSft, jkHud_rectViewScores.x + 90, v53, jkHud_rectViewScores.width, a6, 1);
                             jk_snwprintf(a6, 0x80u, L"%4d", v54->score);
                             stdFont_Draw1(Video_pMenuBuffer, jkHud_pMsgFontSft, jkHud_rectViewScores.x + 150, v53, jkHud_rectViewScores.width, a6, 1);
-                            v53 += (*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height + jkHud_pMsgFontSft->marginY;
+                            v53 += stdFont_GetHeight(jkHud_pMsgFontSft) + jkHud_pMsgFontSft->marginY;
                             break;
                     }
                 }
@@ -870,7 +876,7 @@ LABEL_116:
         {
             a4.x = jkHud_rectViewScores.x;
             a4.width = 9;
-            a4.height = (*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height - 2;
+            a4.height = stdFont_GetHeight(jkHud_pMsgFontSft) - 2;
             v42 = jkStrings_GetUniStringWithFallback("HUD_PLAYERSCORES");
             stdFont_Draw4(
                 Video_pMenuBuffer,
@@ -910,7 +916,7 @@ LABEL_116:
                     jk_snwprintf(a6, 0x80u, L"%4d", v46->score);
                     stdFont_Draw1(Video_pMenuBuffer, jkHud_pMsgFontSft, jkHud_rectViewScores.x + 190, v44, jkHud_rectViewScores.width, a6, 1);
                     ++v46;
-                    v44 += (*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height + jkHud_pMsgFontSft->marginY;
+                    v44 += stdFont_GetHeight(jkHud_pMsgFontSft) + jkHud_pMsgFontSft->marginY;
                     if ( ++v45 >= jkHud_numPlayers )
                         break;
                     v43 = jkHud_dword_553ED0;
@@ -1433,7 +1439,7 @@ void jkHud_DrawGPU()
         {
             a4.width = HUD_SCALED(9);
             a4.x = jkHud_rectViewScores.x + HUD_SCALED(20);
-            a4.height = HUD_SCALED((*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height - 2);
+            a4.height = HUD_SCALED(stdFont_GetHeight(jkHud_pMsgFontSft) - 2);
             v49 = jkStrings_GetUniStringWithFallback("HUD_TEAMSCORESTITLE");
             stdFont_Draw4GPU(
                 jkHud_pMsgFontSft,
@@ -1514,7 +1520,7 @@ LABEL_116:
                             stdFont_Draw1GPU(jkHud_pMsgFontSft, jkHud_rectViewScores.x + HUD_SCALED(90), v53, jkHud_rectViewScores.width, a6, 1, jkPlayer_hudScale);
                             jk_snwprintf(a6, 0x80u, L"%4d", v54->score);
                             stdFont_Draw1GPU(jkHud_pMsgFontSft, jkHud_rectViewScores.x + HUD_SCALED(150), v53, jkHud_rectViewScores.width, a6, 1, jkPlayer_hudScale);
-                            v53 += HUD_SCALED((*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height + jkHud_pMsgFontSft->marginY);
+                            v53 += HUD_SCALED(stdFont_GetHeight(jkHud_pMsgFontSft) + jkHud_pMsgFontSft->marginY);
                             break;
                     }
                 }
@@ -1526,7 +1532,7 @@ LABEL_116:
         {
             a4.x = jkHud_rectViewScores.x;
             a4.width = HUD_SCALED(9);
-            a4.height = HUD_SCALED((*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height - 2);
+            a4.height = HUD_SCALED(stdFont_GetHeight(jkHud_pMsgFontSft) - 2);
             v42 = jkStrings_GetUniStringWithFallback("HUD_PLAYERSCORES");
             stdFont_Draw4GPU(
                 jkHud_pMsgFontSft,
@@ -1567,7 +1573,7 @@ LABEL_116:
                     jk_snwprintf(a6, 0x80u, L"%4d", v46->score);
                     stdFont_Draw1GPU(jkHud_pMsgFontSft, jkHud_rectViewScores.x + HUD_SCALED(190), v44, jkHud_rectViewScores.width, a6, 1, jkPlayer_hudScale);
                     ++v46;
-                    v44 += HUD_SCALED((*jkHud_pMsgFontSft->bitmap->mipSurfaces)->format.height + jkHud_pMsgFontSft->marginY);
+                    v44 += HUD_SCALED(stdFont_GetHeight(jkHud_pMsgFontSft) + jkHud_pMsgFontSft->marginY);
                     if ( ++v45 >= jkHud_numPlayers )
                         break;
                     v43 = jkHud_dword_553ED0;
@@ -1697,6 +1703,9 @@ int jkHud_Chat()
     wchar_t *v3; // [esp-8h] [ebp-108h]
     wchar_t tmp[256]; // [esp+0h] [ebp-100h] BYREF
 
+    // Added: Android/similar
+    stdControl_ShowSystemKeyboard();
+
     jkHud_bChatOpen = 1;
     jkHud_chatStr[0] = 0;
     jkHud_chatStrPos = 0;
@@ -1745,11 +1754,7 @@ void jkHud_SendChat(char a1)
                 sithConsole_TryCommand(jkHud_chatStr);
             }
         }
-        jkHud_chatStrPos = 0;
-        jkHud_bChatOpen = 0;
-        jkDev_sub_41FC90(103);
-        stdControl_Flush();
-        stdControl_bDisableKeyboard = 0;
+        jkHud_idk_time(); // Inlined
     }
     else
     {
@@ -1864,6 +1869,9 @@ void jkHud_idk_time()
     jkDev_sub_41FC90(103);
     stdControl_Flush();
     stdControl_bDisableKeyboard = 0;
+
+    // Added: Android/similar
+    stdControl_HideSystemKeyboard();
 }
 
 int jkHud_chat2()
@@ -1890,15 +1898,15 @@ int jkHud_chat2()
 }
 
 #ifdef QOL_IMPROVEMENTS
-BOOL jkHud_shouldCrosshairBeShownForWeapon(sithThing *player)
-{
-	int currentWeapon = sithInventory_GetCurWeapon(player);
-	
-	if(currentWeapon == SITHBIN_FISTS)
-		return jkPlayer_setCrosshairOnFist;
+BOOL jkHud_shouldCrosshairBeShownForWeapon(sithThing *player) {
+  int currentWeapon = sithInventory_GetCurWeapon(player);
+  if (currentWeapon == SITHBIN_FISTS || MOTS_ONLY_FLAG(currentWeapon == SITHBIN_MOTS_FISTS)) {
+    return jkPlayer_setCrosshairOnFist;
+  }
 
-	if(currentWeapon == SITHBIN_LIGHTSABER)
-		return jkPlayer_setCrosshairOnLightsaber;
+  if (currentWeapon == SITHBIN_LIGHTSABER || MOTS_ONLY_FLAG(currentWeapon == SITHBIN_MOTS_LIGHTSABER)){
+    return jkPlayer_setCrosshairOnLightsaber;
+  }
 
 	if (Main_bMotsCompat)
 	{

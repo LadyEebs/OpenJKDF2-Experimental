@@ -24,6 +24,8 @@ int sithSector_GetIdxFromPtr(sithSector *sector);
 void sithSector_SetAdjoins(sithSector *sector);
 void sithSector_UnsetAdjoins(sithSector *sector);
 int sithSector_GetThingsCount(sithSector *sector);
+int sithSector_New(sithWorld *world, int num);
+void sithSector_NewEntry(sithSector *sector, int idx);
 void sithSector_Free(sithWorld *world);
 int sithSector_GetNumPlayers(sithSector *sector);
 sithSector* sithSector_GetPtrFromIdx(int idx);

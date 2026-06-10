@@ -2,6 +2,7 @@
 
 #include "Engine/rdroid.h"
 #include "General/stdConffile.h"
+#include "General/stdString.h"
 #include "stdPlatform.h"
 #include "Primitives/rdVector.h"
 #include "Primitives/rdMatrix.h"
@@ -13,6 +14,9 @@
 #include "Engine/rdColormap.h"
 #include "Primitives/rdPrimit3.h"
 #include "Primitives/rdDebug.h"
+
+int thingFrustumCull;
+int meshFrustumCull;
 
 model3Loader_t rdModel3_RegisterLoader(model3Loader_t loader)
 {
@@ -36,8 +40,7 @@ void rdModel3_ClearFrameCounters()
 int rdModel3_NewEntry(rdModel3 *model)
 {
     _memset(model, 0, sizeof(rdModel3));
-    _strncpy(model->filename, "UNKNOWN", 0x1Fu);
-    model->filename[31] = 0;
+    stdString_SafeStrCopy(model->filename, "UNKNOWN", 32);
     model->geosetSelect = 0;
     return 0;
 }
@@ -154,8 +157,7 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
     int geoset_num;
 
     rdModel3_NewEntry(model);
-    _strncpy(model->filename, stdFileFromPath(model_fpath), 0x1Fu);
-    model->filename[31] = 0;
+    stdString_SafeStrCopy(model->filename, stdFileFromPath(model_fpath), 32);
     if ( !stdConffile_OpenRead(model_fpath) )
         return 0;
 
@@ -255,8 +257,7 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
             if ( _sscanf(stdConffile_aLine, " name %s", std_genBuffer) != 1 )
                 goto fail;
 
-            _strncpy(mesh->name, std_genBuffer, 0x1Fu);
-            mesh->name[31] = 0;
+            stdString_SafeStrCopy(mesh->name, std_genBuffer, 32);
 
             if ( !stdConffile_ReadLine()
               || _sscanf(stdConffile_aLine, " radius %f", &radius) != 1
@@ -274,6 +275,10 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
             }
             mesh->radius = radius; // FLEXTODO
             
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+            pSithHS->suggestHeap(HEAP_FAST);
+#endif
+
             mesh->vertices = 0;
             mesh->vertices_i = 0;
             mesh->vertices_unk = 0;
@@ -367,6 +372,9 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
                 if ( !mesh->vertexNormals )
                     goto fail;
             }
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+            pSithHS->suggestHeap(HEAP_ANY);
+#endif
             for (v29 = 0; v29 < mesh->numVertices; v29++ )
             {
                 
@@ -412,7 +420,15 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
                 tmpTxt = _strtok(0, " \t");
                 v36 = _atoi(tmpTxt);
                 face->num = j;
-                face->material = (v36 == -1) ? 0 : model->materials[v36];
+                // Added: model->numMaterials bounds
+                if (v36 > model->numMaterials) {
+                    v36 = model->numMaterials-1;
+                }
+                else if (v36 < 0 && v36 != -1) {
+                    v36 = 0;
+                }
+                face->material = (v36 == -1 || !model->numMaterials) ? 0 : model->materials[v36]; // Added: model->numMaterials check
+                rdMaterial_EnsureMetadata(face->material); // Added: we don't need VBuffers yet
                 tmpTxt = _strtok(0, " \t");
                 if ( _sscanf(tmpTxt, "%x", &face->type) != 1 )
                     goto fail;
@@ -462,6 +478,7 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
                         _strtok(0, " \t,");
                     }
                 }
+                rdMaterial_OptionalFree(face->material); // Added
                 face++;
             }
 
@@ -588,6 +605,9 @@ int rdModel3_Load(char *model_fpath, rdModel3 *model)
     return 1;
 
 fail:
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+    pSithHS->suggestHeap(HEAP_ANY);
+#endif
     stdConffile_Close();
     return 0;
 }
@@ -1259,19 +1279,38 @@ int rdModel3_Draw(rdThing *thing, rdMatrix34 *matrix_4_3)
     rdHierarchyNode *rootNode;
     int meshIdx;
     rdHierarchyNode *node;
-    rdVector3 vertex_out;
-
+    
     pCurThing = thing;
     pCurModel3 = thing->model3;
-    rdMatrix_TransformPoint34(&vertex_out, &matrix_4_3->scale, &rdCamera_pCurCamera->view_matrix);
-    if ( rdroid_curCullFlags & 2 )
-        frustumCull = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, pCurModel3->radius);
-    else
+    
+    if (rdroid_curCullFlags & 2) {
+        rdVector3 vertex_out;
+        rdClipFrustum* pThingFrustum = rdCamera_pCurCamera->pClipFrustum;
+
+        // Moved this in here, it's not used elsewhere
+        rdMatrix_TransformPoint34(&vertex_out, &matrix_4_3->scale, &rdCamera_pCurCamera->view_matrix);
+        frustumCull = rdClip_SphereInFrustum(pThingFrustum, &vertex_out, pCurModel3->radius);
+#ifdef SITHRENDER_SPHERE_TEST_SURFACES
+        extern rdClipFrustum sithRender_absoluteMaxFrustum;
+
+        if (frustumCull == SPHERE_CLIPPING_EDGE) {
+            frustumCull = rdClip_SphereInFrustum(&sithRender_absoluteMaxFrustum, &vertex_out, pCurModel3->radius);
+        }
+#endif
+    }
+    else {
         frustumCull = thing->clippingIdk;
-    thingFrustrumCull = frustumCull;
-    if ( frustumCull == 2 )
+    }
+    thingFrustumCull = frustumCull;
+    if (frustumCull == SPHERE_FULLY_OUTSIDE) {
         return 0;
-    thingFrustrumCull = 1;
+    }
+
+    // LEC HACK: Amputated joints can't do frustum culling?
+#ifndef TARGET_TWL
+    thingFrustumCull = SPHERE_CLIPPING_EDGE;
+#endif
+
     if ( thing->geosetSelect == -1 )
     {
         geosetNum = pCurModel3->geosetSelect;
@@ -1365,8 +1404,19 @@ void rdModel3_DrawHNode(rdHierarchyNode *pNode)
             if (pParent) // Added: nullptr check
                 rdModel3_pCurGeoset->meshes[pNode->meshIdx].radius = rdModel3_pCurGeoset->meshes[pParent->meshIdx].radius;
         }
-        
+
+#ifdef TARGET_TWL
+        // Added: HACK: Force enemy weapons to not have textures
+        int geoMode = curGeometryMode;
+        if (!strcmp(pNode->name, "weapon")) {
+            curGeometryMode = RD_GEOMODE_SOLIDCOLOR;
+        }
+#endif
         rdModel3_DrawMesh(&rdModel3_pCurGeoset->meshes[pNode->meshIdx], &pCurThing->hierarchyNodeMatrices[pNode->idx]);
+
+#ifdef TARGET_TWL
+        curGeometryMode = geoMode;
+#endif
     }
 
     iter = pNode->child;
@@ -1383,22 +1433,42 @@ void rdModel3_DrawMesh(rdMesh *meshIn, rdMatrix34 *mat)
 {
     rdLight **pGeoLight;
     rdVector3 vertex;
-    rdVector3 vertex_out;
     rdMatrix34 matInv;
     rdMatrix34 out;
 
     pCurMesh = meshIn;
     if ( !meshIn->geometryMode )
         return;
+    
+#ifdef RENDER_DROID2
+	rdVector3 vertex_out;
+	rdMatrix_TransformPoint34(&vertex_out, &mat->scale, &rdCamera_pCurCamera->view_matrix);
+#endif
 
-    rdMatrix_TransformPoint34(&vertex_out, &mat->scale, &rdCamera_pCurCamera->view_matrix);
-    if ( thingFrustrumCull )
-        meshFrustrumCull = rdroid_curCullFlags & 1 ? rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, pCurMesh->radius) : 1;
-    else
-        meshFrustrumCull = 0;
+    if (thingFrustumCull != SPHERE_FULLY_INSIDE) {
+        rdClipFrustum* pMeshFrustum = rdCamera_pCurCamera->pClipFrustum;
 
-    if ( meshFrustrumCull == 2 )
+        // Moved this in here, it's not used elsewhere
+	#ifndef RENDER_DROID2
+		rdVector3 vertex_out;
+        rdMatrix_TransformPoint34(&vertex_out, &mat->scale, &rdCamera_pCurCamera->view_matrix);
+	#endif
+        meshFrustumCull = (rdroid_curCullFlags & 1) ? rdClip_SphereInFrustum(pMeshFrustum, &vertex_out, pCurMesh->radius) : SPHERE_CLIPPING_EDGE;
+#ifdef SITHRENDER_SPHERE_TEST_SURFACES
+        extern rdClipFrustum sithRender_absoluteMaxFrustum;
+
+        if (meshFrustumCull == SPHERE_CLIPPING_EDGE) {
+            meshFrustumCull = rdClip_SphereInFrustum(&sithRender_absoluteMaxFrustum, &vertex_out, pCurMesh->radius);
+        }
+#endif
+    }
+    else {
+        meshFrustumCull = SPHERE_FULLY_INSIDE;
+    }
+
+    if (meshFrustumCull == SPHERE_FULLY_OUTSIDE) {
         return;
+    }
 
     rdMatrix_Multiply34(&out, &rdCamera_pCurCamera->view_matrix, mat);
     rdMatrix_TransformPointLst34(&out, pCurMesh->vertices, aView, pCurMesh->numVertices);
@@ -1425,8 +1495,8 @@ void rdModel3_DrawMesh(rdMesh *meshIn, rdMatrix34 *mat)
 
 // This function = 1ms or so
 #ifdef TARGET_TWL
-    //thingFrustrumCull = 0;
-    //meshFrustrumCull = 0;
+    //thingFrustumCull = 0;
+    //meshFrustumCull = 0;
     // TODO: Check if it's really that expensive
     rdModel3_lightingMode = RD_LIGHTMODE_DIFFUSE;
 #endif
@@ -1436,10 +1506,10 @@ void rdModel3_DrawMesh(rdMesh *meshIn, rdMatrix34 *mat)
         rdModel3_textureMode = curTextureMode;
 
     vertexSrc.paDynamicLight = pCurMesh->vertices_unk;
-    vertexSrc.verticesProjected = aView;
+    vertexSrc.vertices = aView;
     vertexSrc.vertexUVs = pCurMesh->vertexUVs;
     vertexSrc.intensities = 0;
-    vertexDst.verticesProjected = aFaceVerts;
+    vertexDst.vertices = aFaceVerts;
 
     if (rdModel3_lightingMode == RD_LIGHTMODE_FULLYLIT)
     {
@@ -1872,7 +1942,7 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
 
     // MOTS added
     if ((face->type & 0x10) != 0) {
-        procEntry->lightingMode = RD_LIGHTMODE_NOTLIT;
+        lightingMode = RD_LIGHTMODE_NOTLIT;
     }
 
     // Added: safeguard
@@ -1897,8 +1967,8 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
 
     // MOTS added: RGB
     if ((rdGetVertexColorMode() == 0) || (procEntry->lightingMode == RD_LIGHTMODE_DIFFUSE)) {
-        if ( meshFrustrumCull )
-            rdPrimit3_ClipFace(rdCamera_pCurCamera->pClipFrustum, geometryMode, lightingMode, textureMode, (rdVertexIdxInfo *)&vertexSrc, &vertexDst, &face->clipIdk);
+        if (meshFrustumCull != SPHERE_FULLY_INSIDE)
+            rdPrimit3_ClipFace(rdCamera_pCurCamera->pClipFrustum, geometryMode, lightingMode, textureMode, &vertexSrc, &vertexDst, &face->clipIdk);
         else
             rdPrimit3_NoClipFace(geometryMode, lightingMode, textureMode, &vertexSrc, &vertexDst, &face->clipIdk);
     }
@@ -1910,7 +1980,7 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
         vertexDst.paGreenIntensities = procEntry->paGreenIntensities;
         vertexDst.paBlueIntensities = procEntry->paBlueIntensities;
         //printf("%p %p %p, %p %p %p\n", vertexSrc.paRedIntensities, vertexSrc.paGreenIntensities, vertexSrc.paBlueIntensities, vertexDst.paRedIntensities, vertexDst.paGreenIntensities, vertexDst.paBlueIntensities);
-        if ( meshFrustrumCull )
+        if (meshFrustumCull != SPHERE_FULLY_INSIDE)
             rdPrimit3_ClipFaceRGB(rdCamera_pCurCamera->pClipFrustum, geometryMode, lightingMode, textureMode, &vertexSrc, &vertexDst, &face->clipIdk);
         else
             rdPrimit3_NoClipFaceRGB(geometryMode, lightingMode, textureMode, &vertexSrc, &vertexDst, &face->clipIdk);
@@ -1945,10 +2015,11 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
                       rdCamera_pCurCamera->attenuationMin);
         }
     }
+	
 #ifdef VIEW_SPACE_GBUFFER
-	memcpy(procEntry->vertexVS, vertexDst.verticesProjected, sizeof(rdVector3) * vertexDst.numVertices);
+	memcpy(procEntry->vertexVS, vertexDst.vertices, sizeof(rdVector3) * vertexDst.numVertices);
 #endif
-    rdCamera_pCurCamera->fnProjectLst(vertexDst.verticesOrig, vertexDst.verticesProjected, vertexDst.numVertices);
+    rdCamera_pCurCamera->fnProjectLst(vertexDst.verticesOrig, vertexDst.vertices, vertexDst.numVertices);
 
 #ifdef RGB_AMBIENT
 	if (rdroid_curRenderOptions & RD_USE_AMBIENT_LIGHT)
@@ -1970,12 +2041,19 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
 
     int isIdentityMap = (rdColormap_pCurMap == rdColormap_pIdentityMap);
     procEntry->wallCel = face->wallCel;
+#if defined(TARGET_TWL)
+    if ( procEntry->lightingMode == 3 )
+    {
+        procEntry->light_level_static = *procEntry->vertexIntensities;
+    }
+    // These are software renderer optimizations, skip
+#elif !defined(SDL2_RENDER)
 #ifdef RGB_AMBIENT
 	if (procEntry->ambientLight.x < 1.0 || procEntry->ambientLight.y < 1.0 || procEntry->ambientLight.z < 1.0)
 #else
 	if ( procEntry->ambientLight < 1.0 )
 #endif
-    {
+        {
         if ( procEntry->lightingMode == RD_LIGHTMODE_DIFFUSE )
         {
             if ( procEntry->light_level_static >= 1.0 && isIdentityMap )
@@ -1986,22 +2064,19 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
             {
                 procEntry->lightingMode = RD_LIGHTMODE_NOTLIT;
             }
-            goto LABEL_44;
         }
-        if ( (rdGetVertexColorMode() != 0) || procEntry->lightingMode != RD_LIGHTMODE_GOURAUD )
-            goto LABEL_44;
+        else if (rdGetVertexColorMode() == 0 && procEntry->lightingMode == RD_LIGHTMODE_GOURAUD) {
+            for (int i = 1; i < vertexDst.numVertices; i++ )
+            {
+                    flex_t level = procEntry->vertexIntensities[i] - procEntry->vertexIntensities[0];
+                    if ( level < 0.0 )
+                        level = -level;
 
-        for (int i = 1; i < vertexDst.numVertices; i++ )
-        {
-                flex_t level = procEntry->vertexIntensities[i] - procEntry->vertexIntensities[0];
-                if ( level < 0.0 )
-                    level = -level;
-
-                if ( level > 0.015625 )
-                    goto LABEL_44;
-        }
-        
-        if ( procEntry->vertexIntensities[0] != 1.0 )
+                    if ( level > 0.015625 )
+                        break;
+            }
+        }        
+        else if (rdGetVertexColorMode() == 0 && procEntry->vertexIntensities[0] != 1.0 ) // TODO: Re-decompile this for MoTS
         {
             if ( procEntry->vertexIntensities[0] == 0.0 )
             {
@@ -2013,27 +2088,28 @@ int rdModel3_DrawFace(rdFace *face, int lightFlags)
                 procEntry->lightingMode = RD_LIGHTMODE_DIFFUSE;
                 procEntry->light_level_static = procEntry->vertexIntensities[0];
             }
-            goto LABEL_44;
         }
-        if ( isIdentityMap )
+        else if (rdGetVertexColorMode() == 0 && isIdentityMap )
         {
             procEntry->lightingMode = RD_LIGHTMODE_FULLYLIT;
-            goto LABEL_44;
         }
-
-        procEntry->lightingMode = RD_LIGHTMODE_DIFFUSE;
-        procEntry->light_level_static = 1.0;
-        goto LABEL_44;
+        else if (rdGetVertexColorMode() == 0) { // TODO: Re-decompile this for MoTS
+            procEntry->lightingMode = RD_LIGHTMODE_DIFFUSE;
+            procEntry->light_level_static = 1.0;
+        }
     }
-    if ( !isIdentityMap )
+    else if ( !isIdentityMap )
     {
         procEntry->lightingMode = RD_LIGHTMODE_DIFFUSE;
         procEntry->light_level_static = 1.0;
-        goto LABEL_44;
     }
-    procEntry->lightingMode = RD_LIGHTMODE_FULLYLIT;
+    else {
+        procEntry->lightingMode = RD_LIGHTMODE_FULLYLIT;
+    }
+#else
+    // Nothing for SDL2
+#endif
 
-LABEL_44:
     flags = 1;
     if ( procEntry->geometryMode >= 4 )
         flags = 3;
@@ -2062,7 +2138,7 @@ void rdModel3_DrawMeshOccluder(rdMesh* meshIn, rdMatrix34* mat)
 		return;
 	rdVector3 vertex_out;
 	rdMatrix_TransformPoint34(&vertex_out, &mat->scale, &rdCamera_pCurCamera->view_matrix);
-	int cullFlag = rdroid_curCullFlags & 1 ? rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, meshIn->radius) : 1;
+	int cullFlag = rdroid_curCullFlags & 1 ? rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, meshIn->radius) : 1;
 	if (cullFlag == 2)
 		return;
 	rdAddOccluder(&mat->scale, meshIn->radius);
@@ -2109,3 +2185,21 @@ void rdModel3_DrawOccluders(rdThing* pThing, rdMatrix34* pMat)
 	rdModel3_DrawMeshNodeOccluder(pThing, geoset, model3->hierarchyNodes);
 }
 #endif
+
+// Added: Data preloading
+void rdModel3_EnsureMaterialData(rdThing *pRdThing) {
+    rdModel3* pModel3 = NULL;
+
+    if (!pRdThing) {
+        return;
+    }
+    pModel3 = pRdThing->model3;
+    if (!pModel3 || !pModel3->materials) {
+        return;
+    }
+
+    for (int i = 0; i < pModel3->numMaterials; i++)
+    {
+        rdMaterial_EnsureData(pModel3->materials[i]);
+    }
+}

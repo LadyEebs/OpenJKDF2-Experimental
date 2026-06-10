@@ -8,6 +8,7 @@
 #include "Gameplay/sithEvent.h"
 #include "General/stdString.h"
 #include "General/stdStrTable.h"
+#include "Win95/std.h"
 #include "Main/jkDev.h"
 #include "Main/jkEpisode.h"
 #include "Main/jkRes.h"
@@ -83,7 +84,9 @@ int jkDSS_Startup()
         sithComm_SetMsgFunc(DSS_SABERINFO2, jkDSS_ProcessSetSaberInfo);
     }
     sithComm_SetMsgFunc(DSS_SETTEAM, jkDSS_ProcessSetTeam);
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
     sithComm_SetMsgFunc(DSS_JOINING, jkGuiMultiplayer_CogMsgHandleJoining);
+#endif
     sithGamesave_Setidk(jkDSS_playerconfig_idksync, jkDSS_player_thingsidkfunc, jkDSS_nullsub_2, jkDSS_Write, jkDSS_Load);
     sithMulti_SetHandleridk(jkDSS_idk4);
 
@@ -298,7 +301,12 @@ void jkDSS_SendSetSaberInfoMots(sithThing *thing, int personality)
 
     NETMSG_PUSHS32(thing->thing_id);
     NETMSG_PUSHSTR(thing->rdthing.model3->filename, 0x20);
+#ifdef SITH_DEBUG_STRUCT_NAMES
     NETMSG_PUSHSTR(thing->soundclass->snd_fname, 0x20);
+#else
+    const char* dummy = "ky.snd";
+    NETMSG_PUSHSTR(dummy, 0x20);
+#endif
     NETMSG_PUSHSTR(thing->playerInfo->polyline.edgeFace.material->mat_fpath, 0x20);
     NETMSG_PUSHSTR(thing->playerInfo->polyline.tipFace.material->mat_fpath, 0x20);
     NETMSG_PUSHS16(personality);
@@ -391,9 +399,20 @@ void jkDSS_SendSetSaberInfo(sithThing *thing)
 
     NETMSG_PUSHS32(thing->thing_id);
     NETMSG_PUSHSTR(thing->rdthing.model3->filename, 0x20);
+#ifdef SITH_DEBUG_STRUCT_NAMES
     NETMSG_PUSHSTR(thing->soundclass->snd_fname, 0x20);
+#else
+    const char* dummy = "ky.snd";
+    NETMSG_PUSHSTR(dummy, 0x20);
+#endif
+
+#ifdef SITH_DEBUG_STRUCT_NAMES
     NETMSG_PUSHSTR(thing->playerInfo->polyline.edgeFace.material->mat_fpath, 0x20);
     NETMSG_PUSHSTR(thing->playerInfo->polyline.tipFace.material->mat_fpath, 0x20);
+#else
+    NETMSG_PUSHSTR(stdFileFromPath(thing->playerInfo->polyline.edgeFace.material->mat_fpath), 0x20);
+    NETMSG_PUSHSTR(stdFileFromPath(thing->playerInfo->polyline.tipFace.material->mat_fpath), 0x20);
+#endif
 
     NETMSG_END(DSS_SABERINFO2);
     
@@ -436,10 +455,8 @@ int jkDSS_ProcessSetSaberInfo(sithCogMsg *msg)
             return 1;
         if ( (sithNet_MultiModeFlags & MULTIMODEFLAG_AUTO_TEAM) != 0 )
         {
-            _strncpy(model_3do_fname, jkDSS_aKyTeamModels[v11->teamNum], 0x1Fu);
-            model_3do_fname[31] = 0;
-            _strncpy(v14, "ky.snd", 0x1Fu);
-            v14[31] = 0;
+            stdString_SafeStrCopy(model_3do_fname, jkDSS_aKyTeamModels[v11->teamNum], 32);
+            stdString_SafeStrCopy(v14, "ky.snd", 32);
         }
     }
     rdModel3* v5 = sithModel_LoadEntry(model_3do_fname, 1);

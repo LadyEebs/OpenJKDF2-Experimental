@@ -38,7 +38,8 @@ int rdThing_SetParticleCloud(rdThing *thing, rdParticle *particle);
 #if defined(DECAL_RENDERING) || defined(RENDER_DROID2)
 int rdThing_SetDecal(rdThing* thing, rdDecal* decal);
 #endif
-int rdThing_Draw(rdThing *thing, rdMatrix34 *m);
-void rdThing_AccumulateMatrices(rdThing *thing, rdHierarchyNode *node, rdMatrix34 *acc);
+
+MATH_FUNC int rdThing_Draw(rdThing *thing, rdMatrix34 *m);
+MATH_FUNC FAST_FUNC void rdThing_AccumulateMatrices(rdThing *thing, rdHierarchyNode *node, rdMatrix34 *acc);
 
 #endif // _RDTHING_H

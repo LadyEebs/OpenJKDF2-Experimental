@@ -640,6 +640,9 @@ int jkGuiMultiplayer_ShowSynchronizing()
     int v0; // esi
     void *v2; // [esp-4h] [ebp-8h]
 
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]);
+
     v2 = jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]->palette;
     g_submodeFlags |= SITH_SUBMODE_JOINING;
 	jkGuiRend_UpdateAudio();
@@ -923,7 +926,12 @@ int jkGuiMultiplayer_Show2()
             result = stdComm_dword_8321F8 - 2;
             if ( stdComm_dword_8321F8 != 2 )
                 return result;
+
             g_submodeFlags |= SITH_SUBMODE_JOINING;
+			
+			// Added
+            stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]);
+			
 			jkGuiRend_UpdateAudio();
 			jkGui_SetModeMenu(jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]->palette);
             jkGuiMultiplayer_aElements4[1].wstr = jkStrings_GetUniStringWithFallback("GUINET_WAITHOSTSETTINGS");
@@ -1030,6 +1038,9 @@ int jkGuiMultiplayer_ShowWaitHostSettings()
 {
     int v0; // esi
     void *v2; // [esp-4h] [ebp-8h]
+
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]);
 
     v2 = jkGui_stdBitmaps[JKGUI_BM_BK_MULTI]->palette;
     g_submodeFlags |= SITH_SUBMODE_JOINING;

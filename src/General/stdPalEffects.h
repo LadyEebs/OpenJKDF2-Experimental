@@ -52,6 +52,11 @@ MATH_FUNC void stdPalEffects_UpdatePalette(const void *palette);
 void stdPalEffects_GatherEffects();
 MATH_FUNC void stdPalEffects_ApplyTint(rdColor24 *aPalette, flex_t tintR, flex_t tintG, flex_t tintB);
 void stdPalEffects_ResetEffect(stdPalEffect *effect);
+void stdPalEffects_SetPaletteFunc(stdPalEffectSetPaletteFunc_t func);
+void stdPalEffects_SetStateBools(int a1, int a2, int a3, int a4);
+void stdPalEffects_ApplyFilter(rdColor24 *aPalette, int filterR, int filterG, int filterB);
+void stdPalEffects_ApplyAdd(rdColor24 *aPalette, int addR, int addG, int addB);
+void stdPalEffects_ApplyFade(rdColor24 *aPalette, flex_t fade);
 
 //static int (*stdPalEffects_Open)(void *a1) = (void*)stdPalEffects_Open_ADDR;
 //static void (*stdPalEffects_Close)() = (void*)stdPalEffects_Close_ADDR;

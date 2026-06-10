@@ -14,7 +14,10 @@
 #ifndef SMK_HUFFTREE_H
 #define SMK_HUFFTREE_H
 
+#include <stdint.h>
+
 #include "smk_bitstream.h"
+#include "engine_config.h"
 
 /** Tree node structures - Forward declaration */
 struct smk_huff8_t;
@@ -38,7 +41,7 @@ struct smk_huff8_t* _smk_huff8_build(struct smk_bit_t* bs);
 	jumps to error label if problems occur. */
 #define smk_huff8_lookup(bs,t,s) \
 { \
-	if ((short)(s = _smk_huff8_lookup(bs, t)) < 0) \
+	if ((int16_t)(s = _smk_huff8_lookup(bs, t)) < 0) \
 	{ \
 		fprintf(stderr, "libsmacker::smk_huff8_lookup(" #bs ", " #t ", " #s ") - ERROR (file: %s, line: %lu)\n", __FILE__, (unsigned long)__LINE__); \
 		goto error; \
@@ -46,7 +49,7 @@ struct smk_huff8_t* _smk_huff8_build(struct smk_bit_t* bs);
 }
 /** Look up an 8-bit value in the referenced tree by following a bitstream
 	returns -1 on error */
-short _smk_huff8_lookup(struct smk_bit_t* bs, const struct smk_huff8_t* t);
+FAST_FUNC int16_t _smk_huff8_lookup(struct smk_bit_t* bs, const struct smk_huff8_t* t);
 
 /** function to recursively delete an 8-bit huffman tree */
 void smk_huff8_free(struct smk_huff8_t* t);
@@ -77,7 +80,7 @@ struct smk_huff16_t* _smk_huff16_build(struct smk_bit_t* bs);
 }
 /** Look up a 16-bit value in the bigtree by following a bitstream
 	returns -1 on error */
-long _smk_huff16_lookup(struct smk_bit_t* bs, struct smk_huff16_t* big);
+FAST_FUNC uint16_t _smk_huff16_lookup(struct smk_bit_t* bs, struct smk_huff16_t* big);
 
 /** Reset the cache in a 16-bit tree */
 void smk_huff16_reset(struct smk_huff16_t* big);

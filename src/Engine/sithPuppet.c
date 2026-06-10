@@ -176,10 +176,11 @@ sithPuppet* sithPuppet_NewEntry(sithThing *thing)
 
     v1 = (sithPuppet *)pSithHS->alloc(sizeof(sithPuppet));
     thing->puppet = v1;
+
     if ( !v1 )
 	{
         thing->animclass = 0;
-		return NULL;
+		return NULL;  // Added
 	}
 
     _memset(v1, 0, sizeof(sithPuppet));
@@ -1049,7 +1050,7 @@ void sithPuppet_DebugDrawJointNames(sithThing* pThing)
 		rdVector3 viewPos;
 		rdMatrix_TransformPoint34(&viewPos, &pos, &rdCamera_pCurCamera->view_matrix);
 
-		int clipResult = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &viewPos, 0.05f);
+		int clipResult = rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &viewPos, 0.05f);
 		if (clipResult == 2)
 			continue;
 

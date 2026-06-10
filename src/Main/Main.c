@@ -118,7 +118,7 @@ char Main_strEpisode[129];
 char Main_strMap[128+4];
 #endif
 
-#ifdef QOL_IMPROVEMENTS
+#if defined(QOL_IMPROVEMENTS) && !defined(TARGET_NO_MULTIPLAYER_MENUS)
 int Main_StartupDedicated(int bFullyDedicated)
 {
     char* pRemoveExt;
@@ -174,7 +174,9 @@ int Main_StartupDedicated(int bFullyDedicated)
     stdString_SafeWStrCopy(jkGuiMultiplayer_mpcInfo.name, L"", 32);
     stdString_SafeStrCopy(jkGuiMultiplayer_mpcInfo.model, "ky.3do", 32);
     stdString_SafeStrCopy(jkGuiMultiplayer_mpcInfo.soundClass, "ky.snd", 32);
+#ifndef OPTIMIZE_OUT_UNUSED_FIELDS
     //stdString_SafeStrCopy(jkGuiMultiplayer_mpcInfo.gap80, "", 32);
+#endif
     stdString_SafeStrCopy(jkGuiMultiplayer_mpcInfo.sideMat, "sabergreen1.mat", 32);
     stdString_SafeStrCopy(jkGuiMultiplayer_mpcInfo.tipMat, "sabergreen0.mat", 32);
     jkGuiMultiplayer_mpcInfo.jediRank = 0;
@@ -436,10 +438,12 @@ int Main_Startup(const char *cmdline)
 		std3D_FindClosestDevice(Video_modeStruct.Video_8605C8, 0);
 	#endif
 
-        jkGuiRend_Startup();
-        jkGui_Startup();
+        jkGuiRend_Startup(); // B15E8
+        jkGui_Startup(); // 15C6D1
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
         jkGuiMultiplayer_Startup();
         jkGuiNetHost_Startup();
+#endif
         jkGuiSetup_Startup();
         jkGuiDisplay_Startup();
         jkGuiForce_Startup();
@@ -455,14 +459,18 @@ int Main_Startup(const char *cmdline)
         jkGuiControlOptions_Startup();
         jkGuiObjectives_Startup();
         jkGuiSingleTally_Startup();
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
         jkGuiMultiTally_Startup();
         jkGuiBuildMulti_StartupEditCharacter();
+#endif
         jkGuiTitle_Startup();
         jkGuiGeneral_Startup();
         jkGuiGameplay_Startup();
         jkGuiDecision_Startup();
         jkGuiSingleplayer_Startup();
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
         jkGuiBuildMulti_Startup();
+#endif
         jkGuiSaveLoad_Startup();
         jkGuiControlSaveLoad_Startup();
 #ifdef QOL_IMPROVEMENTS
@@ -499,7 +507,7 @@ int Main_Startup(const char *cmdline)
 
         if (jkRes_LoadCD(0))
         {
-#ifdef QOL_IMPROVEMENTS
+#if defined(QOL_IMPROVEMENTS) && !defined(TARGET_NO_MULTIPLAYER_MENUS)
             if (Main_bDedicatedServer || Main_bAutostart) {
                 if (Main_StartupDedicated(Main_bDedicatedServer))
                 {
@@ -528,12 +536,16 @@ void Main_Shutdown()
     stdPlatform_Printf("OpenJKDF2: %s\n", __func__);
 
     std3D_Shutdown(); // Added
+#ifdef QUAKE_CONSOLE
     jkQuakeConsole_Shutdown();
+#endif
 
     jkSmack_Shutdown();
     jkGuiControlSaveLoad_Shutdown();
     jkGuiSaveLoad_Shutdown();
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
     jkGuiBuildMulti_Shutdown();
+#endif
     jkGuiSingleplayer_Shutdown();
     jkGuiDecision_Shutdown();
     jkGuiGameplay_Shutdown();
@@ -549,8 +561,10 @@ void Main_Shutdown()
     jkGuiForce_Shutdown();
     jkGuiDisplay_Shutdown();
     jkGuiSetup_Shutdown();
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
     jkGuiNetHost_Shutdown();
     jkGuiMultiplayer_Shutdown();
+#endif
     jkGuiMain_Shutdown();
     jkGuiPlayer_Shutdown();
     jkGuiSound_Shutdown();

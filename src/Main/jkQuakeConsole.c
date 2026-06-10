@@ -5,6 +5,7 @@
 #include "General/stdFont.h"
 #include "General/stdString.h"
 #include "General/stdLinklist.h"
+#include "General/stdSingleLinklist.h"
 #include "Win95/stdDisplay.h"
 #include "Devices/sithConsole.h"
 #include "Win95/WinIdk.h"
@@ -89,7 +90,7 @@ void jkQuakeConsole_Startup()
     int largestW = 0;
     for (int i = 0; i < num; i++)
     {
-        int w = jkQuakeConsole_pFont->charsetHead.pEntries[i].field_4;
+        int w = jkQuakeConsole_pFont->charsetHead.pEntries[i].glyphWidth;
         char theChar = i + jkQuakeConsole_pFont->charsetHead.charFirst;
         averageW += w;
         if (w > largestW && theChar != ' ' && theChar != '\t') {
@@ -101,7 +102,7 @@ void jkQuakeConsole_Startup()
     jkQuakeConsole_pFont->monospaceW = (averageW + averageW + largestW) / 3;
     for (int i = 0; i < num; i++)
     {
-        //jkQuakeConsole_pFont->charsetHead.pEntries[i].field_4 = largestW;
+        //jkQuakeConsole_pFont->charsetHead.pEntries[i].glyphWidth = largestW;
     }
 
     Window_AddMsgHandler(jkQuakeConsole_WmHandler);
@@ -177,7 +178,7 @@ void jkQuakeConsole_Render()
 
     flex_t screenW = Video_menuBuffer.format.width;
     flex_t screenH = Video_menuBuffer.format.height;
-    flex_t fontHeight = ((*jkQuakeConsole_pFont->bitmap->mipSurfaces)->format.height + jkQuakeConsole_pFont->marginY) * jkPlayer_hudScale;
+    flex_t fontHeight = ((*jkQuakeConsole_pFont->pBitmap->mipSurfaces)->format.height + jkQuakeConsole_pFont->marginY) * jkPlayer_hudScale;
     if (fontHeight <= 0.0) {
         fontHeight = 1.0;
     }
@@ -332,7 +333,7 @@ int jkQuakeConsole_AutocompleteCheats()
     int bPrintOnce = 0;
     for (int i = 0; i < jkDev_cheatHashtable->numBuckets; i++)
     {
-        stdLinklist* pIter = &jkDev_cheatHashtable->buckets[i];
+        tHashLink* pIter = &jkDev_cheatHashtable->buckets[i];
         while (pIter)
         {
             if (pIter->key) {
@@ -357,7 +358,7 @@ int jkQuakeConsole_AutocompleteConsoleCmds()
     int bPrintOnce = 0;
     for (int i = 0; i < sithConsole_pCmdHashtable->numBuckets; i++)
     {
-        stdLinklist* pIter = &sithConsole_pCmdHashtable->buckets[i];
+        tHashLink* pIter = &sithConsole_pCmdHashtable->buckets[i];
         while (pIter)
         {
             if (pIter->key) {
@@ -381,6 +382,7 @@ int jkQuakeConsole_AutocompleteTemplates()
 
     int bPrintOnce = 0;
 
+#ifdef SITH_DEBUG_STRUCT_NAMES
     if (sithWorld_pStatic && sithWorld_pStatic->templates) 
     {
         for (int i = 0; i < sithWorld_pStatic->numTemplatesLoaded; i++)
@@ -429,6 +431,7 @@ int jkQuakeConsole_AutocompleteTemplates()
             }
         }
     }
+#endif
     return bPrintOnce;
 }
 
@@ -721,11 +724,15 @@ int jkQuakeConsole_WmHandler(HWND a1, UINT msg, WPARAM wParam, HWND a4, LRESULT 
             if (wParam == VK_SHIFT || wParam == VK_LSHIFT || wParam == VK_RSHIFT) {
                 jkQuakeConsole_bShiftHeld = 1;
             }
-            else if (wParam == VK_OEM_3 && !repeats && (!sithNet_isMulti || jkQuakeConsole_bShiftHeld)) // `/~ key
+            else if ((wParam == VK_OEM_3 || (wParam == VK_ESCAPE && jkQuakeConsole_bShiftHeld)) && !repeats && (!sithNet_isMulti || jkQuakeConsole_bShiftHeld)) // `/~ key
             {
                 jkQuakeConsole_bOpen = !jkQuakeConsole_bOpen;
                 if (jkQuakeConsole_bOpen) {
+                    stdControl_ShowSystemKeyboard();
                     jkQuakeConsole_ResetShade();
+                }
+                else {
+                    stdControl_HideSystemKeyboard();
                 }
                 stdControl_ToggleCursor(!jkQuakeConsole_bOpen);
                 *a5 = 1;
@@ -734,7 +741,7 @@ int jkQuakeConsole_WmHandler(HWND a1, UINT msg, WPARAM wParam, HWND a4, LRESULT 
             else if (wParam == VK_UP || wParam == VK_DOWN || wParam == VK_LEFT || wParam == VK_RIGHT || wParam == VK_DELETE) { // 
                 jkQuakeConsole_SendInput(wParam, 0);
             }
-            else if (!jkHud_bChatOpen && !jkQuakeConsole_bOpen) {
+            else if (!jkHud_bChatOpen && !jkQuakeConsole_bOpen && !stdControl_IsSystemKeyboardShowing()) {
                 sithCommand_HandleBinds(wParam);
             }
 
@@ -758,7 +765,7 @@ int jkQuakeConsole_WmHandler(HWND a1, UINT msg, WPARAM wParam, HWND a4, LRESULT 
                 *a5 = 1;
                 return 1;
             }
-            else if (!jkHud_bChatOpen && !jkQuakeConsole_bOpen) {
+            else if (!jkHud_bChatOpen && !jkQuakeConsole_bOpen && !stdControl_IsSystemKeyboardShowing()) {
                 sithCommand_HandleBinds(wParam);
             }
             break;

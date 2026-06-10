@@ -262,10 +262,14 @@ uint8_t stdControl_aDebounce[JK_NUM_KEYS];
 #define SDL2_MAX_BINARY_THRESH (0x5000)
 
 #define QUIRK_NINTENDO_TRIGGER_AXIS_TO_BUTTON (1)
+#define QUIRK_ODIN_CONTROLLLER (2)
 
 static uint32_t stdControl_aJoystickQuirks[JK_NUM_JOYSTICKS] = {0};
 //static SDL_Joystick *pJoysticks[JK_NUM_JOYSTICKS] = {0};
 static int stdControl_aJoystickNumAxes[JK_NUM_JOYSTICKS] = {0};
+static int stdControl_bKeyboardBeingShown = 0;
+int stdControl_bControllerEscapeKey = 0;
+int stdControl_bControllerEscapeKey_last = 0;
 
 // Added: SDL2
 void stdControl_SetSDLKeydown(int keyNum, int bDown, uint32_t readTime)
@@ -691,13 +695,16 @@ void stdControl_ReadControls()
 
     if (!stdControl_bControlsActive)
         return;
+#ifdef QUAKE_CONSOLE
     if (jkQuakeConsole_bOpen) return; // Hijack input to console
+#endif
 
     // HACK
     stdControl_bHasJoysticks = 1; // HACK
     stdControl_aJoystickNumAxes[0] = 1;
     stdControl_aJoystickMaxButtons[0] = 7;
     stdControl_aAxisEnabled[0] = 1;
+    stdControl_aAxisEnabled[1] = 1;
     stdControl_aJoystickExists[0] = 1;
     sithWeapon_controlOptions &= ~(1 << 5); // Enable joystick
 
@@ -715,16 +722,16 @@ void stdControl_ReadControls()
 
     u16 keysPressed = keysDown();
 
-    _memset(stdControl_aInput1, 0, sizeof(int) * JK_NUM_KEYS);
+    //_memset(stdControl_aInput1, 0, sizeof(int) * JK_NUM_KEYS);
     stdControl_bControlsIdle = 1;
-    _memset(stdControl_aInput2, 0, sizeof(int) * JK_NUM_KEYS);
+    //_memset(stdControl_aInput2, 0, sizeof(int) * JK_NUM_KEYS);
     stdControl_curReadTime = stdPlatform_GetTimeMsec();
     stdControl_msDelta = stdControl_curReadTime - stdControl_msLast;
     if (stdControl_msDelta != 0)
         khz = 1.0 / (flex_d_t)(__int64)(stdControl_msDelta);
     else
         khz = 1.0;
-    _memset(stdControl_aAxisPos, 0, sizeof(int) * JK_NUM_AXES);
+    //_memset(stdControl_aAxisPos, 0, sizeof(int) * JK_NUM_AXES);
     stdControl_updateKHz = khz;
     stdControl_updateHz = khz * 1000.0;
 
@@ -761,8 +768,8 @@ void stdControl_ReadControls()
         stdControl_SetKeydown(KEY_JOY1_B2, !!(keys_held & KEY_B) /* button val */, stdControl_curReadTime);
         stdControl_SetKeydown(KEY_JOY1_B3, !!(keys_held & KEY_X) /* button val */, stdControl_curReadTime);
         stdControl_SetKeydown(KEY_JOY1_B4, !!(keys_held & KEY_Y) /* button val */, stdControl_curReadTime);
-        stdControl_SetKeydown(KEY_JOY1_B5, !!(keys_held & KEY_L) /* button val */, stdControl_curReadTime);
-        stdControl_SetKeydown(KEY_JOY1_B6, !!(keys_held & KEY_R) /* button val */, stdControl_curReadTime);
+        stdControl_SetKeydown(KEY_JOY1_B10, !!(keys_held & KEY_L) /* button val */, stdControl_curReadTime);
+        stdControl_SetKeydown(KEY_JOY1_B11, !!(keys_held & KEY_R) /* button val */, stdControl_curReadTime);
         stdControl_SetKeydown(KEY_JOY1_B7, !!(keys_held & KEY_SELECT) /* button val */, stdControl_curReadTime);
         //stdControl_SetKeydown(KEY_JOY1_B8, !!(keys_held & KEY_START) /* button val */, stdControl_curReadTime);
 
@@ -796,9 +803,11 @@ void stdControl_ReadControls()
             int sampleTime_roundtrip = stdPlatform_GetTimeMsec() - sampleTime_last;
             //stdPlatform_Printf("total %u heap 0x%x 0x%x\n", sampleTime_roundtrip, (intptr_t)getHeapLimit() - (intptr_t)getHeapEnd(), (intptr_t)getHeapEnd() - (intptr_t)getHeapStart());
         }
-        if (keysPressed & KEY_SELECT) {
+//#ifdef DEBUG_QOL_CHEATS
+        if ((keysPressed & (KEY_X)) && (keys_held & KEY_SELECT)) {
             jkDev_CmdNoclip(NULL, NULL);
         }
+//#endif
         sampleTime_last = stdPlatform_GetTimeMsec();
     }
 
@@ -807,8 +816,8 @@ void stdControl_ReadControls()
     touchRead(&touchXY);
     if (touchXY.px != 0 || touchXY.py != 0) {
         if (lastTouchXY.px != 0 || lastTouchXY.py != 0) {
-            Window_lastXRel = touchXY.px - lastTouchXY.px;
-            Window_lastYRel = touchXY.py - lastTouchXY.py;
+            Window_lastXRel = (touchXY.px - lastTouchXY.px) * 2;
+            Window_lastYRel = (touchXY.py - lastTouchXY.py) * 2;
         }
     }
     lastTouchXY = touchXY;
@@ -821,7 +830,9 @@ void stdControl_ReadMouse()
 {
     if (!stdControl_bReadMouse)
         return;
+#ifdef QUAKE_CONSOLE
     if (jkQuakeConsole_bOpen) return; // Hijack input to console
+#endif
 
     stdControl_aAxisPos[AXIS_MOUSE_Z] = Window_mouseWheelY; // TODO
     stdControl_aAxisPos[AXIS_MOUSE_X] = Window_lastXRel; // TODO
@@ -864,4 +875,29 @@ void stdControl_ReadMouse()
     stdControl_SetKeydown(KEY_MOUSE_B4, !!(buttons & SDL_BUTTON_X1MASK), stdControl_curReadTime);
     stdControl_SetKeydown(KEY_MOUSE_B5, !!(buttons & SDL_BUTTON_X2MASK), stdControl_curReadTime);
 #endif
+}
+
+void stdControl_ShowSystemKeyboard() {
+    if (stdControl_bKeyboardBeingShown) {
+        return;
+    }
+    stdControl_bKeyboardBeingShown = 1;
+
+    // Initializes demo keyboard and loads graphics to VRAM
+    consoleClear();
+    keyboardDemoInit();
+    keyboardShow();
+}
+
+void stdControl_HideSystemKeyboard() {
+    if (!stdControl_bKeyboardBeingShown) {
+        return;
+    }
+    stdControl_bKeyboardBeingShown = 0;
+    keyboardHide();
+    keyboardExit(); // Unload VRAM graphics
+}
+
+BOOL stdControl_IsSystemKeyboardShowing() {
+    return stdControl_bKeyboardBeingShown;
 }

@@ -1,6 +1,7 @@
 #include "sithAI.h"
 
 #include "General/stdMath.h"
+#include "General/crc32.h"
 #include "World/sithThing.h"
 #include "Engine/sithCollision.h"
 #include "World/sithActor.h"
@@ -19,6 +20,7 @@
 #include "Engine/sithRender.h"
 #include "Engine/sithPhysics.h"
 #include "General/stdHashTable.h"
+#include "General/stdString.h"
 #include "Main/jkGame.h"
 #include "Cog/sithCogExec.h"
 #include "Cog/sithCog.h"
@@ -79,6 +81,7 @@ int sithAI_Startup()
 
     sithAICmd_Startup();
 
+    // TODO: what is this inline?
     _memset(sithAI_actors, 0, sizeof(sithActor) * SITHAI_MAX_ACTORS);
 
     v1 = SITHAI_MAX_ACTORS-1;
@@ -111,6 +114,7 @@ int sithAI_Startup()
         --v1;
     }
     while ( (intptr_t)v3 >= (intptr_t)sithAI_actors );
+    // end inline
 
     sithAI_bInit = 1;
     return 1;
@@ -179,6 +183,7 @@ void sithAI_Close()
     if (sithAI_bOpened)
         return;
     
+    // TODO: what is this inline?
     v0 = sithAI_inittedActors;
     _memset(sithAI_actors, 0, sizeof(sithActor) * SITHAI_MAX_ACTORS);
 
@@ -213,6 +218,7 @@ void sithAI_Close()
         --v1;
     }
     while ( (intptr_t)v3 >= (intptr_t)sithAI_actors );
+    // end inline
     
     sithAI_bOpened = 0;
 }
@@ -453,9 +459,12 @@ void sithAI_RegisterCommand(const char *cmdName, sithAICommandFunc_t func, int p
 
     sithAICommand* aiCmd = &sithAI_commandList[sithAI_numCommands];
 
-    _strncpy(aiCmd->name, cmdName, 0x1Fu);
-    aiCmd->name[31] = 0;
-    
+#ifndef SITHAI_CRC32_INSTINCTS
+    stdString_SafeStrCopy(aiCmd->name, cmdName, 32);
+#else
+    aiCmd->namecrc = stdCrc32(cmdName, strlen(cmdName));
+#endif
+
     aiCmd->func = func;
     aiCmd->param1 = param1;
     aiCmd->param2 = param2;
@@ -468,9 +477,17 @@ sithAICommand* sithAI_FindCommand(const char *cmdName)
     if ( !sithAI_numCommands )
         return NULL;
 
+#ifdef SITHAI_CRC32_INSTINCTS
+    uint32_t cmdNameCrc = stdCrc32(cmdName, strlen(cmdName));
+#endif
+
     for (uint32_t i = 0; i < sithAI_numCommands; i++)
     {
+#ifndef SITHAI_CRC32_INSTINCTS
         if (!_strcmp(cmdName, sithAI_commandList[i].name))
+#else
+        if (sithAI_commandList[i].namecrc == cmdNameCrc)
+#endif
             return &sithAI_commandList[i];
     }
 
@@ -483,6 +500,7 @@ int sithAI_PrintThings(stdDebugConsoleCmd* a, const char* b)
     sithActor *i; // esi
     sithAIClass *v3; // ecx
 
+#ifdef SITH_DEBUG_STRUCT_NAMES
     if ( sithAI_bOpened )
     {
         sithConsole_Print("Active AI things:\n");
@@ -514,6 +532,7 @@ int sithAI_PrintThings(stdDebugConsoleCmd* a, const char* b)
         sithConsole_Print("AI system not open.\n");
         return 0;
     }
+#endif
 }
 
 int sithAI_PrintThingStatus(stdDebugConsoleCmd* a1, const char *idxStr)
@@ -521,10 +540,11 @@ int sithAI_PrintThingStatus(stdDebugConsoleCmd* a1, const char *idxStr)
     uint32_t v2; // ebx
     sithThing *v3; // eax
     sithActor *v4; // edi
-    int result; // eax
+    int result = 1; // eax
     int v7; // [esp+3Ch] [ebp-8h]
     int actorIdx; // [esp+40h] [ebp-4h] BYREF
 
+#ifdef SITH_DEBUG_STRUCT_NAMES
     v2 = 0;
     if ( idxStr && sithAI_bOpened && _sscanf(idxStr, "%d", &actorIdx) == 1 && actorIdx <= sithAI_inittedActors )
     {
@@ -583,6 +603,7 @@ int sithAI_PrintThingStatus(stdDebugConsoleCmd* a1, const char *idxStr)
         result = 0;
     }
     return result;
+#endif // SITH_DEBUG_STRUCT_NAMES
 }
 
 int sithAI_LoadThingActorParams(stdConffileArg *arg, sithThing *thing, int param)
@@ -1344,7 +1365,7 @@ void sithAI_SetRandomThingLook(rdMatrix34 *a1, sithThing *a2, rdVector3 *a3, fle
     }
 }
 
-void sithAI_RandomFireVector(rdVector3 *out, flex_t magnitude)
+MATH_FUNC void sithAI_RandomFireVector(rdVector3 *out, flex_t magnitude)
 {
     out->x = ((flex_d_t)_frand() - 0.5) * magnitude + out->x;
     out->y = ((flex_d_t)_frand() - 0.5) * magnitude + out->y;
@@ -1563,7 +1584,7 @@ void sithAI_GetThingsInView(sithSector *a1, rdMatrix34 *a2, flex_t a3)
                   && (!v9
                    || !v7->surface->surfaceInfo.face.geometryMode
                    || (v7->surface->surfaceInfo.face.type & 2)
-                   || (v8 && (v8->texture_ptr->alpha_en & 1) != 0)) // Added: searchSurface nullptr check
+                   || (v8 && v8->texture_ptr && (v8->texture_ptr->alpha_en & 1) != 0)) // Added: searchSurface nullptr check, v8->texture_ptr nullptr check
                   && rdVector_Dot3(&a2->lvec, &v7->surface->surfaceInfo.face.normal) < 0.0 )
                 {
                     a3a = v7->mirror->dist + v7->dist + a3;

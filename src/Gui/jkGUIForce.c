@@ -299,7 +299,12 @@ void jkGuiForce_ForceStarsDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffe
     int spendStars = (int)sithPlayer_GetBinAmt(SITHBIN_SPEND_STARS);
     if ( spendStars <= 0 )
     {
-        stdFont_Draw4(vbuf, jkGui_stdFonts[2], element->rect.x, element->rect.y, element->rect.width, element->rect.height, 3, jkStrings_GetUniStringWithFallback("GUI_NO_STARS"), 1);
+#ifndef JKGUI_SMOL_SCREEN
+        const int fontIdx = 2;
+#else
+        const int fontIdx = 12;
+#endif
+        stdFont_Draw4(vbuf, jkGui_stdFonts[fontIdx], element->rect.x, element->rect.y, element->rect.width, element->rect.height, 3, jkStrings_GetUniStringWithFallback("GUI_NO_STARS"), 1);
     }
     else
     {
@@ -346,9 +351,16 @@ void jkGuiForce_ForceStarsDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffe
                 stdDisplay_VBufferCopy(vbuf, psVar1->mipSurfaces[3], pFpElement->rect.x, pFpElement->rect.y, &local_10, 1);
             }
 
-            int x_left = pFpElement->rect.x - jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars]->format.width - 19;
-            int x_right =  pFpElement->rect.x + pFpElement->rect.width + 19;
-            int y = pFpElement->rect.y + 3;
+#ifndef JKGUI_SMOL_SCREEN
+            const int shift_left = 19;
+            const int shift_extra = 3;
+#else
+            const int shift_left = 7;
+            const int shift_extra = 1;
+#endif
+            int x_left = pFpElement->rect.x - jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars]->format.width - shift_left;
+            int x_right =  pFpElement->rect.x + pFpElement->rect.width + shift_left;
+            int y = pFpElement->rect.y + shift_extra;
             stdDisplay_VBufferCopy(vbuf, jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars + 5], x_left, y, NULL,1);
 
             if (i == EIDX_MOTS_DEFENSE) 
@@ -370,14 +382,24 @@ void jkGuiForce_ForceStarsDraw(jkGuiElement *element, jkGuiMenu *menu, stdVBuffe
                     numStars += 8; // Dark side
                 }
 
+#ifndef JKGUI_SMOL_SCREEN
+                const int shift_left = 19;
+                const int shift_extra = 3;
+                const int screen_half = 320;
+#else
+                const int shift_left = 7;
+                const int shift_extra = 1;
+                const int screen_half = 128;
+#endif
+
                 // Show the number of force stars next to each button
                 int x;
-                if (jkGuiForce_pElements[i].rect.x >= 320 )
-                    x = jkGuiForce_pElements[i].rect.width + jkGuiForce_pElements[i].rect.x + 19;
+                if (jkGuiForce_pElements[i].rect.x >= screen_half )
+                    x = jkGuiForce_pElements[i].rect.width + jkGuiForce_pElements[i].rect.x + shift_left;
                 else
-                    x = jkGuiForce_pElements[i].rect.x - jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars]->format.width - 19;
+                    x = jkGuiForce_pElements[i].rect.x - jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars]->format.width - shift_left;
 
-                stdDisplay_VBufferCopy(vbuf, jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars], x, jkGuiForce_pElements[i].rect.y + 3, NULL, 1);
+                stdDisplay_VBufferCopy(vbuf, jkGuiForce_aBitmaps[IDX_FOSTARS]->mipSurfaces[numStars], x, jkGuiForce_pElements[i].rect.y + shift_extra, NULL, 1);
             }
         }
     }
@@ -508,12 +530,24 @@ int jkGuiForce_Show(int bCanSpendStars, int isMulti, int a4, wchar_t* a5, int *p
     jkGuiForce_bCanSpendStars = bCanSpendStars;
     jkGuiForce_isMulti = isMulti;
 
+	// Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_FORCE]);
+
 	jkGuiRend_UpdateAudio();
 	jkGui_SetModeMenu(jkGui_stdBitmaps[JKGUI_BM_BK_FORCE]->palette);
     
     jkGuiForce_pElements[EIDX_NAMETEXT].wstr = jkPlayer_playerShortName;
     jkGuiForce_pElements[EIDX_RESET].bIsVisible = bCanSpendStars;
     jkGuiForce_pElements[EIDX_QUIT].bIsVisible = bEnableIdk != 0;
+
+#ifdef QOL_IMPROVEMENTS
+    if (!bEnableIdk && !bCanSpendStars) {
+        jkGuiRend_MenuSetReturnKeyShortcutElement(jkGuiForce_pMenu, &jkGuiForce_pElements[EIDX_OK_BUTTON]);
+        jkGuiRend_MenuSetEscapeKeyShortcutElement(jkGuiForce_pMenu, &jkGuiForce_pElements[EIDX_OK_BUTTON]);
+        jkGuiForce_pMenu->focusedElement = &jkGuiForce_pElements[EIDX_OK_BUTTON];
+        jkGuiForce_pMenu->lastMouseOverClickable = &jkGuiForce_pElements[EIDX_OK_BUTTON];
+    }
+#endif // QOL_IMPROVEMENTS
 
     flex_t darklight_float = jkPlayer_CalcAlignment(jkGuiForce_isMulti);
     if (Main_bMotsCompat) {

@@ -1,25 +1,37 @@
 #include "stdColor.h"
 
 #include <float.h>
+
 #include <math.h>
 #include "jk.h"
 
-int stdColor_Indexed8ToRGB16(uint8_t idx, rdColor24 *pal, rdTexformat *fmt)
+#ifdef RDMATERIAL_MINIMIZE_STRUCTS
+
+// Forced to RGB555
+#define STDCOLOR_RGB15(r, g, b)      ((r) | ((g) << 5) | ((b) << 10))
+int stdColor_Indexed8ToRGB16(uint8_t idx, rdColor24 *pal, rdTexFormatMin *fmt)
+{
+    rdColor24* pColor = (rdColor24 *)((char *)pal + 2 * idx + idx);
+    return STDCOLOR_RGB15(pColor->r >> 3, pColor->g >> 3, pColor->b >> 3);
+}
+#else
+int stdColor_Indexed8ToRGB16(uint8_t idx, rdColor24 *pal, rdTexFormat *fmt)
 {
     rdColor24 *v3; // esi
 
     v3 = (rdColor24 *)((char *)pal + 2 * idx + idx);
     return ((uint8_t)((uint8_t)v3->g >> (fmt->g_bitdiff & 0xFF)) << fmt->g_shift) | ((uint8_t)((uint8_t)v3->r >> (fmt->r_bitdiff & 0xFF)) << fmt->r_shift) | ((uint8_t)v3->b >> (fmt->b_bitdiff & 0xFF) << fmt->b_shift);
 }
+#endif
 
-uint32_t stdColor_ColorConvertOnePixel(rdTexformat *formatTo, int color, rdTexformat *formatFrom)
+uint32_t stdColor_ColorConvertOnePixel(rdTexFormat *formatTo, int color, rdTexFormat *formatFrom)
 {
     uint32_t tmp;
     stdColor_ColorConvertOneRow((uint8_t*)&tmp, formatTo, (uint8_t*)&color, formatFrom, 1);
     return tmp;
 }
 
-int stdColor_ColorConvertOneRow(uint8_t *outPixels, rdTexformat *formatTo, uint8_t *inPixels, rdTexformat *formatFrom, int numPixels)
+int stdColor_ColorConvertOneRow(uint8_t *outPixels, rdTexFormat *formatTo, uint8_t *inPixels, rdTexFormat *formatFrom, int numPixels)
 {
     int v6; // eax
     int v8; // edx
@@ -151,26 +163,6 @@ int stdColor_FindClosest32(rdColor32* rgb, rdColor24* pal)
 	return idx;
 }
 
-int stdColor_GammaCorrect(uint8_t* dest, uint8_t* src, int count, flex_d_t gamma)
-{
-	const uint8_t MAX_COLOR = 255;
-
-	if (count <= 0)
-	{
-		return count;
-	}
-
-	for (int i = 0; i < count; i++)
-	{
-		double normalized = src[i] / 255.0;
-		double corrected = pow(normalized, gamma);
-		double scaled = corrected * MAX_COLOR;
-		dest[i] = (scaled > 255.0) ? 255 : ((scaled < 0.0) ? 0 : (uint8_t)scaled);
-	}
-
-	return count;
-}
-
 // from openjones3d
 uint32_t stdColor_ScaleColorComponent(uint32_t cc, int srcBPP, int deltaBPP)
 {
@@ -222,7 +214,7 @@ __m128i stdColor_ScaleColorComponentSIMD(__m128i cc, int srcBPP, int deltaBPP)
 
 #endif
 
-uint32_t stdColor_EncodeRGB(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_t b)
+uint32_t stdColor_EncodeRGB(const rdTexFormat* ci, uint8_t r, uint8_t g, uint8_t b)
 {
 	// Scale color components according to bits per component
 	uint32_t redScaled = r;
@@ -275,7 +267,7 @@ uint32_t stdColor_EncodeRGB(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_t
 	return encoded;
 }
 
-uint32_t stdColor_EncodeRGBA(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+uint32_t stdColor_EncodeRGBA(const rdTexFormat* ci, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
 	// Start with RGB encoding
 	uint32_t encoded = stdColor_EncodeRGB(ci, r, g, b);
@@ -308,7 +300,7 @@ uint32_t stdColor_EncodeRGBA(const rdTexformat* ci, uint8_t r, uint8_t g, uint8_
 #ifdef TARGET_SSE
 
 
-__m128i stdColor_EncodeRGBSIMD(const rdTexformat* ci, __m128i r, __m128i g, __m128i b)
+__m128i stdColor_EncodeRGBSIMD(const rdTexFormat* ci, __m128i r, __m128i g, __m128i b)
 {
 	// If the component has fewer bits than 8, scale down
 	if (ci->r_bits < 8)
@@ -339,7 +331,7 @@ __m128i stdColor_EncodeRGBSIMD(const rdTexformat* ci, __m128i r, __m128i g, __m1
 	return encoded; // 4x packed pixels
 }
 
-__m128i stdColor_EncodeRGBASIMD(const rdTexformat* ci, __m128i r, __m128i g, __m128i b, __m128i a)
+__m128i stdColor_EncodeRGBASIMD(const rdTexFormat* ci, __m128i r, __m128i g, __m128i b, __m128i a)
 {
 	__m128i encoded = stdColor_EncodeRGBSIMD(ci, r, g, b);
 	if (ci->unk_40 > 0)
@@ -365,7 +357,7 @@ __m128i stdColor_EncodeRGBASIMD(const rdTexformat* ci, __m128i r, __m128i g, __m
 }
 #endif
 
-void stdColor_DecodeRGB(uint32_t encoded, const rdTexformat* ci, uint8_t* r, uint8_t* g, uint8_t* b)
+void stdColor_DecodeRGB(uint32_t encoded, const rdTexFormat* ci, uint8_t* r, uint8_t* g, uint8_t* b)
 {
 	// Create masks based on bit depths
 	uint32_t redMask = ((1 << ci->r_bits) - 1);
@@ -426,7 +418,7 @@ void stdColor_DecodeRGB(uint32_t encoded, const rdTexformat* ci, uint8_t* r, uin
 	*b = (uint8_t)blueVal;
 }
 
-void stdColor_DecodeRGBA(uint32_t encoded, const rdTexformat* ci, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
+void stdColor_DecodeRGBA(uint32_t encoded, const rdTexFormat* ci, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
 {
 	// First decode the RGB components
 	stdColor_DecodeRGB(encoded, ci, r, g, b);
@@ -463,7 +455,7 @@ void stdColor_DecodeRGBA(uint32_t encoded, const rdTexformat* ci, uint8_t* r, ui
 }
 
 #ifdef TARGET_SSE
-void stdColor_DecodeRGBSIMD(__m128i encoded, const rdTexformat* ci, __m128i* r, __m128i* g, __m128i* b)
+void stdColor_DecodeRGBSIMD(__m128i encoded, const rdTexFormat* ci, __m128i* r, __m128i* g, __m128i* b)
 {
 	__m128i rMask = _mm_set1_epi32((1u << ci->r_bits) - 1);
 	__m128i gMask = _mm_set1_epi32((1u << ci->g_bits) - 1);
@@ -514,7 +506,7 @@ void stdColor_DecodeRGBSIMD(__m128i encoded, const rdTexformat* ci, __m128i* r, 
 	*b = blue;
 }
 
-void stdColor_DecodeRGBASIMD(__m128i encoded, const rdTexformat* ci, __m128i* r, __m128i* g, __m128i* b, __m128i* a)
+void stdColor_DecodeRGBASIMD(__m128i encoded, const rdTexFormat* ci, __m128i* r, __m128i* g, __m128i* b, __m128i* a)
 {
 	stdColor_DecodeRGBSIMD(encoded, ci, r, g, b);
 
@@ -583,7 +575,7 @@ __m256i stdColor_ScaleColorComponentSIMD_AVX2(__m256i cc, int srcBPP, int deltaB
 	}
 }
 
-__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b)
+__m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexFormat* ci, __m256i r, __m256i g, __m256i b)
 {
 	if (ci->r_bits < 8)
 		r = _mm256_srli_epi32(r, 8 - ci->r_bits);
@@ -610,7 +602,7 @@ __m256i stdColor_EncodeRGBSIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g,
 	return _mm256_or_si256(r, _mm256_or_si256(g, b));
 }
 
-__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g, __m256i b, __m256i a)
+__m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexFormat* ci, __m256i r, __m256i g, __m256i b, __m256i a)
 {
 	__m256i encoded = stdColor_EncodeRGBSIMD_AVX2(ci, r, g, b);
 	if (ci->unk_40 > 0)
@@ -630,7 +622,7 @@ __m256i stdColor_EncodeRGBASIMD_AVX2(const rdTexformat* ci, __m256i r, __m256i g
 	return encoded;
 }
 
-void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b)
+void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexFormat* ci, __m256i* r, __m256i* g, __m256i* b)
 {
 	__m256i rMask = _mm256_set1_epi32((1u << ci->r_bits) - 1);
 	__m256i gMask = _mm256_set1_epi32((1u << ci->g_bits) - 1);
@@ -679,7 +671,7 @@ void stdColor_DecodeRGBSIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i
 	*b = blue;
 }
 
-void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a)
+void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexFormat* ci, __m256i* r, __m256i* g, __m256i* b, __m256i* a)
 {
 	stdColor_DecodeRGBSIMD_AVX2(encoded, ci, r, g, b);
 
@@ -707,7 +699,7 @@ void stdColor_DecodeRGBASIMD_AVX2(__m256i encoded, const rdTexformat* ci, __m256
 	*a = alpha;
 }
 
-__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI)
+__m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI)
 {
 	unsigned int rMask = 0xFFFFFFFF >> (32 - (pSrcCI->r_bits & 0xFF));
 	unsigned int gMask = 0xFFFFFFFF >> (32 - (pSrcCI->g_bits & 0xFF));
@@ -795,7 +787,7 @@ __m256i stdColor_RecodeSIMD_AVX2(__m256i encoded, const rdTexformat* pSrcCI, con
 
 #endif
 
-uint32_t stdColor_Recode(uint32_t encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI)
+uint32_t stdColor_Recode(uint32_t encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI)
 {
 	unsigned int redMask = 0xFFFFFFFF >> (32 - (pSrcCI->r_bits & 0xFF));
 	unsigned int greenMask = 0xFFFFFFFF >> (32 - (pSrcCI->g_bits & 0xFF));
@@ -852,7 +844,7 @@ uint32_t stdColor_Recode(uint32_t encoded, const rdTexformat* pSrcCI, const rdTe
 
 #ifdef TARGET_SSE
 
-__m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexformat* pSrcCI, const rdTexformat* pDestCI)
+__m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexFormat* pSrcCI, const rdTexFormat* pDestCI)
 {
 	unsigned int rMask = 0xFFFFFFFF >> (32 - (pSrcCI->r_bits & 0xFF));
 	unsigned int gMask = 0xFFFFFFFF >> (32 - (pSrcCI->g_bits & 0xFF));
@@ -946,3 +938,181 @@ __m128i stdColor_RecodeSIMD(__m128i encoded, const rdTexformat* pSrcCI, const rd
 }
 
 #endif
+
+void stdColor_LoadPalette(rdColor24 *dst, rdColor24 *src)
+{
+    _memcpy(dst, src, 0x300);
+}
+
+uint8_t stdColor_FindClosest(rdColor24 *palette, uint32_t numColors, flex_t r, flex_t g, flex_t b)
+{
+    uint32_t bestIdx = 0;
+    flex_t bestDist = 3.4e+38f;
+
+    for (uint32_t i = 0; i < numColors; i++)
+    {
+        if ( bestDist <= 0.01f )
+            return (uint8_t)bestIdx;
+
+        flex_t dr = (flex_t)palette[i].r - r;
+        flex_t dg = (flex_t)palette[i].g - g;
+        flex_t db = (flex_t)palette[i].b - b;
+        flex_t dist = dr * dr * 0.30f + dg * dg * 0.59f + db * db * 0.11f;
+        if ( dist < bestDist )
+        {
+            bestIdx = i;
+            bestDist = dist;
+        }
+    }
+    return (uint8_t)bestIdx;
+}
+
+void stdColor_RGBtoHSV(flex_t r, flex_t g, flex_t b, flex_t *pH, flex_t *pS, flex_t *pV)
+{
+    r /= 255.0f;
+    g /= 255.0f;
+    b /= 255.0f;
+
+    flex_t maxVal = r;
+    if ( g > maxVal ) maxVal = g;
+    if ( b > maxVal ) maxVal = b;
+
+    flex_t minVal = r;
+    if ( r > g ) minVal = g;
+    if ( minVal > b ) minVal = b;
+
+    flex_t delta = maxVal - minVal;
+    *pV = maxVal;
+
+    if ( maxVal == 0.0f )
+        *pS = 0.0f;
+    else
+        *pS = delta / maxVal;
+
+    if ( *pS == 0.0f )
+    {
+        *pH = 0.0f;
+        return;
+    }
+
+    flex_t rc = (maxVal - r) / delta;
+    flex_t gc = (maxVal - g) / delta;
+    flex_t bc = (maxVal - b) / delta;
+    flex_t h;
+
+    if ( r == maxVal )
+        h = bc - gc;
+    else if ( g == maxVal )
+        h = rc - bc + 2.0f;
+    else
+        h = gc - rc + 4.0f;
+
+    *pH = h * 60.0f;
+    if ( *pH < 0.0f )
+        *pH += 360.0f;
+}
+
+void stdColor_HSVtoRGB(flex_t h, flex_t s, flex_t v, flex_t *pR, flex_t *pG, flex_t *pB)
+{
+    if ( s == 0.0f )
+    {
+        flex_t val = v * 255.0f;
+        *pR = val;
+        *pG = val;
+        *pB = val;
+        return;
+    }
+
+    int sector = (__int64)(h / 60.0f);
+    flex_t frac = h / 60.0f - (flex_t)sector;
+    flex_t p = (1.0f - s) * v;
+    flex_t q = (1.0f - frac * s) * v;
+    flex_t t = (1.0f - (1.0f - frac) * s) * v;
+
+    flex_t rr, gg, bb;
+    switch ( sector )
+    {
+        case 0: rr = v;  gg = t;  bb = p;  break;
+        case 1: rr = q;  gg = v;  bb = p;  break;
+        case 2: rr = p;  gg = v;  bb = t;  break;
+        case 3: rr = p;  gg = q;  bb = v;  break;
+        case 4: rr = t;  gg = p;  bb = v;  break;
+        case 5: rr = v;  gg = p;  bb = q;  break;
+        default: return;
+    }
+    *pR = rr * 255.0f;
+    *pG = gg * 255.0f;
+    *pB = bb * 255.0f;
+}
+
+int stdColor_BuildRGB16LUT(rdColor24 *palette, uint16_t *lut, rdTexFormat *format)
+{
+    for (int i = 0; i < 256; i++)
+    {
+        lut[i] = (uint16_t)((palette[i].r >> format->r_bitdiff) << format->r_shift)
+               | (uint16_t)((palette[i].g >> format->g_bitdiff) << format->g_shift)
+               | (uint16_t)((palette[i].b >> format->b_bitdiff) << format->b_shift);
+    }
+    return 1;
+}
+
+int stdColor_BuildRGBAKEY16LUT(rdColor24 *palette, uint16_t *lut, rdTexFormat *format)
+{
+    for (uint32_t i = 0; i < 256; i++)
+    {
+        uint16_t alpha = (i != 0) ? 0xFF : 0;
+        alpha = (alpha >> format->unk_48) << format->unk_40;
+        lut[i] = (uint16_t)((palette[i].r >> format->r_bitdiff) << format->r_shift)
+               | (uint16_t)((palette[i].g >> format->g_bitdiff) << format->g_shift)
+               | (uint16_t)((palette[i].b >> format->b_bitdiff) << format->b_shift)
+               | alpha;
+    }
+    return 1;
+}
+
+int stdColor_BuildRGBA16LUT(rdColor24 *palette, uint16_t *lut, rdTexFormat *format, uint32_t alphaVal)
+{
+    for (uint32_t i = 0; i < 256; i++)
+    {
+        uint32_t alpha = (i == 0) ? 0 : (alphaVal & 0xFF);
+        alpha = (alpha >> format->unk_48) << format->unk_40;
+        lut[i] = (uint16_t)((palette[i].r >> format->r_bitdiff) << format->r_shift)
+               | (uint16_t)((palette[i].g >> format->g_bitdiff) << format->g_shift)
+               | (uint16_t)((palette[i].b >> format->b_bitdiff) << format->b_shift)
+               | (uint16_t)alpha;
+    }
+    return 1;
+}
+
+int stdColor_GammaCorrect(uint8_t *pOut, uint8_t *pIn, int numColors, flex_d_t gamma)
+{
+    for (int i = 0; i < numColors; i++)
+    {
+        pOut[0] = (uint8_t)(__int64)(pow((flex_d_t)pIn[0] / 255.0, gamma) * 255.0);
+        pOut[1] = (uint8_t)(__int64)(pow((flex_d_t)pIn[1] / 255.0, gamma) * 255.0);
+        pOut[2] = (uint8_t)(__int64)(pow((flex_d_t)pIn[2] / 255.0, gamma) * 255.0);
+        pOut += 3;
+        pIn += 3;
+    }
+    return 1;
+}
+
+//int stdColor_GammaCorrect(uint8_t* dest, uint8_t* src, int count, flex_d_t gamma)
+//{
+//	const uint8_t MAX_COLOR = 255;
+//
+//	if (count <= 0)
+//	{
+//		return count;
+//	}
+//
+//	for (int i = 0; i < count; i++)
+//	{
+//		double normalized = src[i] / 255.0;
+//		double corrected = pow(normalized, gamma);
+//		double scaled = corrected * MAX_COLOR;
+//		dest[i] = (scaled > 255.0) ? 255 : ((scaled < 0.0) ? 0 : (uint8_t)scaled);
+//	}
+//
+//	return count;
+//}

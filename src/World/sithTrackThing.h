@@ -28,6 +28,7 @@ void sithTrackThing_PrepareForOrient(sithThing *thing, rdVector3 *a2, flex_t a3)
 int sithTrackThing_LoadPathParams(stdConffileArg *arg, sithThing *thing, int param);
 void sithTrackThing_Stop(sithThing *thing);
 void sithTrackThing_idkpathmove(sithThing *thing, sithThing *thing2, rdVector3 *a3);
+flex_t sithTrackThing_CalcMoveDirection(sithThing *thing, rdVector3 *targetPos);
 void sithTrackThing_RotatePivot(sithThing *thing, rdVector3 *a2, rdVector3 *a3, flex_t a4);
 void sithTrackThing_Rotate(sithThing *trackThing, rdVector3 *rot);
 void sithTrackThing_SkipToFrame(sithThing *trackThing, uint32_t goalframeNum, flex_t a3);

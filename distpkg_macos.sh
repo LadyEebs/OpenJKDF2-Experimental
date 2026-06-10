@@ -4,6 +4,8 @@ export PATH="${HOMEBREW_PREFIX}/opt/llvm/bin:$PATH"
 export MACOSX_DEPLOYMENT_TARGET=10.15
 export OPENJKDF2_RELEASE_COMMIT=$(git log -1 --format="%H")
 export OPENJKDF2_RELEASE_COMMIT_SHORT=$(git rev-parse --short=8 HEAD)
+export CC=/opt/homebrew/opt/llvm@19/bin/clang
+export CXX=/opt/homebrew/opt/llvm@19/bin/clang++
 
 rm -rf OpenJKDF2.app
 rm -rf OpenJKDF2_x86_64.app
@@ -27,10 +29,10 @@ mkdir -p build_darwin_x86_64 && pushd build_darwin_x86_64
 export PKG_CONFIG_PATH_OLD=$PKG_CONFIG_PATH
 #export PKG_CONFIG_PATH=$PKG_CONFIG_PATH_OLD:/usr/local/opt/openssl@3/lib/pkgconfig
 
-cmake .. -DPLAT_MACOS_X86_64=true --toolchain $(pwd)/../cmake_modules/toolchain_macos_x86_64.cmake -DCMAKE_OSX_ARCHITECTURES="x86_64" &&
-cmake .. -DPLAT_MACOS_X86_64=true --toolchain $(pwd)/../cmake_modules/toolchain_macos_x86_64.cmake -DCMAKE_OSX_ARCHITECTURES="x86_64" &&
+cmake .. -DCMAKE_OSX_ARCHITECTURES=x86_64 -DPLAT_MACOS_X86_64=true --toolchain $(pwd)/../cmake_modules/toolchain_macos_x86_64.cmake -DCMAKE_OSX_ARCHITECTURES="x86_64" &&
+cmake .. -DCMAKE_OSX_ARCHITECTURES=x86_64 -DPLAT_MACOS_X86_64=true --toolchain $(pwd)/../cmake_modules/toolchain_macos_x86_64.cmake -DCMAKE_OSX_ARCHITECTURES="x86_64" &&
 (make -j $(nproc) PROTOBUF || make -j1 PROTOBUF) && 
-( make -j1 openjkdf2-64 || make -j1 openjkdf2-64)
+( make -j $(nproc) openjkdf2-64 || make -j1 openjkdf2-64)
 if [ $? -ne 0 ]; then
     exit -1
 fi
@@ -47,7 +49,7 @@ mkdir -p build_darwin64 && pushd build_darwin64
 export PKG_CONFIG_PATH_OLD=$PKG_CONFIG_PATH
 #export PKG_CONFIG_PATH=$PKG_CONFIG_PATH_OLD:/opt/homebrew/opt/openssl@3/lib/pkgconfig
 
-cmake .. &&
+cmake -DCMAKE_OSX_ARCHITECTURES=arm64 .. &&
 (make -j $(nproc) PROTOBUF || make -j1 PROTOBUF) && 
 (make -j $(nproc) openjkdf2-64 || make -j1 openjkdf2-64)
 if [ $? -ne 0 ]; then

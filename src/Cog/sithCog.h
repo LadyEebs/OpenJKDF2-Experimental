@@ -93,6 +93,13 @@ void sithCog_SendMessageToAll(int32_t cmdid, int32_t senderType, int32_t senderI
 void sithCog_SendMessage(sithCog *cog, int32_t msgid, int32_t senderType, int32_t senderIndex, int32_t sourceType, int32_t sourceIndex, int32_t linkId);
 cog_flex_t sithCog_SendMessageEx(sithCog *cog, int32_t message, int32_t senderType, int32_t senderIndex, int32_t sourceType, int32_t sourceIndex, int32_t linkId, cog_flex_t param0, cog_flex_t param1, cog_flex_t param2, cog_flex_t param3);
 void sithCog_Free(sithWorld *world);
+void sithCog_FreeEntry(sithCog *cog);
+void sithCog_Free2(sithCogScript *cogscript);
+int sithCog_InitScripts(sithWorld *world, int num);
+int sithCog_InitCogs(sithWorld *world, int num);
+int sithCog_ThingFromSymbolidk(sithCog *cog, sithThing *thing, int linkId, int mask);
+int sithCog_Thingidk(sithCog *cog, sithSurface *surface, int linkId, int mask);
+int sithCog_Sectoridk(sithCog *cog, sithSector *sector, int linkId, int mask);
 
 //static int32_t (*_sithCog_Open)() = (void*)sithCog_Open_ADDR;
 //static double (*sithCog_SendMessageFromSurfaceEx)(sithSurface *a1, sithThing *a2, int32_t a3, cog_flex_t a4, cog_flex_t a5, cog_flex_t a6, cog_flex_t a7) = (void*)sithCog_SendMessageFromSurfaceEx_ADDR;

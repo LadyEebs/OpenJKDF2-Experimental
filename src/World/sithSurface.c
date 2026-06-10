@@ -92,8 +92,14 @@ int sithSurface_Load(sithWorld *world)
     }
     if ( numAdjoins )
     {
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+        int prevSuggest = pSithHS->suggestHeap(HEAP_FAST);
+#endif
         allocSize = sizeof(sithAdjoin) * numAdjoins;
         adjoins = (sithAdjoin *)pSithHS->alloc(sizeof(sithAdjoin) * numAdjoins);
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+        pSithHS->suggestHeap(prevSuggest);
+#endif
         world->adjoins = adjoins;
         if ( !adjoins ) {
             stdPrintf(
@@ -150,7 +156,13 @@ int sithSurface_Load(sithWorld *world)
         return 0;
     }
 
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+    int prevSuggest = pSithHS->suggestHeap(HEAP_FAST);
+#endif
     world->surfaces = (sithSurface *)pSithHS->alloc(sizeof(sithSurface) * numSurfaces);
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+    pSithHS->suggestHeap(prevSuggest);
+#endif
     if (!world->surfaces)
     {
         stdPrintf(
@@ -186,6 +198,7 @@ int sithSurface_Load(sithWorld *world)
             if ( v20 >= sithMaterial_numMaterials )
                 return 0;
             face->material = sithMaterial_aMaterials[v20];
+            rdMaterial_EnsureMetadata(face->material); // Added: we don't need VBuffers yet
         }
         else
         {
@@ -221,26 +234,28 @@ int sithSurface_Load(sithWorld *world)
             face->lightingMode = RD_LIGHTMODE_FULLYLIT;
 
             // Guess the sky color for fog
-#if defined(TARGET_TWL) || defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
-            if (face->material) {
+#if defined(TARGET_TWL) || defined(TILE_SW_RASTER)// || defined(RENDER_DROID2)
+            rdMaterial_EnsureDataForced(face->material);
+            if (face->material && face->material->bDataLoaded) {
                 rdMaterial* mat = face->material;
-                rdMaterial_EnsureData(mat);
-			#if defined(TILE_SW_RASTER) || defined(RENDER_DROID2)
+			#if defined(TILE_SW_RASTER)// || defined(RENDER_DROID2)
 				if(rdMaterial_GetFillColor(&sithSurface_skyColorGuess, mat, world->colormaps, 0, -1))
 					sithSurface_hasSkyColorGuess = 1;
 			#else
                 rdTexture* texture = &mat->textures[0];
                 stdVBuffer* lowestMipBuf = NULL;
                 for (int mip = 0; mip < texture->num_mipmaps; mip++) {
+                    if (!texture->texture_struct) continue;
                     stdVBuffer* buf = texture->texture_struct[mip];
                     if (buf && buf->surface_lock_alloc && !buf->format.format.is16bit) {
                         lowestMipBuf = buf;
                     }
                 }
-                if (lowestMipBuf) {
+                if (lowestMipBuf && mat->texinfos && mat->texinfos[0]) {
                     uint32_t pxIdx = (lowestMipBuf->format.width * lowestMipBuf->format.height/2);
                                      //+ (lowestMipBuf->format.width / 2);
-                    sithSurface_skyColorGuess = lowestMipBuf->surface_lock_alloc[pxIdx];
+                    //sithSurface_skyColorGuess = lowestMipBuf->surface_lock_alloc[pxIdx];
+                    sithSurface_skyColorGuess = mat->texinfos[0]->header.solidColor;
                 }
 			#endif
             }
@@ -266,11 +281,14 @@ int sithSurface_Load(sithWorld *world)
                     wallCel = face->material->celIdx;
                 v66 = face->material->texinfos[wallCel];
             }
+            else {
+                v66 = NULL; // Added
+            }
             if ( (world->adjoins[adjoinIdx].flags & 1) == 0
               || (face->material 
                   && face->geometryMode 
                   && (face->type & 2) == 0 
-                  && ((v66->header.texture_type & 8) == 0 || (v66->texture_ptr->alpha_en & 1) == 0)))
+                  && (v66 && ((v66->header.texture_type & 8) == 0 || (v66->texture_ptr->alpha_en & 1) == 0))))
             {
                 surfaceAdjoin->flags |= SITHSURF_ADJOIN_80;
             }
@@ -360,9 +378,9 @@ int sithSurface_Load(sithWorld *world)
 
         if (testAmt < v34 * 4) {
             surfaceInfo->intensities = (flex_t*)pSithHS->alloc(sizeof(flex_t) * ((v34 * 4) + 1)); // Added: extra
-            memset(surfaceInfo->intensities, 0, sizeof(flex_t) * ((v34 * 4) + 1)); // Added
             if ( !surfaceInfo->intensities )
                 return 0;
+            memset(surfaceInfo->intensities, 0, sizeof(flex_t) * ((v34 * 4) + 1)); // Added
             for (int32_t v45 = 0; v45 < v34; v45++)
             {
                 flex_t val = _atof(stdConffile_entry.args[v61+v45].value);
@@ -380,9 +398,9 @@ int sithSurface_Load(sithWorld *world)
         }
         else {
             surfaceInfo->intensities = (flex_t*)pSithHS->alloc(sizeof(flex_t) * ((v34 * 4) + 1));
-            memset(surfaceInfo->intensities, 0, sizeof(flex_t) * ((v34 * 4) + 1)); // Added
             if ( !surfaceInfo->intensities )
                 return 0;
+            memset(surfaceInfo->intensities, 0, sizeof(flex_t) * ((v34 * 4) + 1)); // Added
 
             surfaceIter->surfaceFlags |= SITH_SURFACE_1000000;
             for (int32_t v45 = 0; v45 < v34; v45++)
@@ -397,6 +415,28 @@ int sithSurface_Load(sithWorld *world)
 
         face->numVertices = v34;
         face->num = v67;
+
+#ifdef SITHRENDER_SPHERE_TEST_SURFACES
+        rdVector3 surfaceCenterPt = {0};
+        for (int idx = 0; idx < surfaceIter->surfaceInfo.face.numVertices; idx++) {
+            int fullIdx = surfaceIter->surfaceInfo.face.vertexPosIdx[idx];
+            rdVector3* pIter = &sithWorld_pLoading->vertices[fullIdx];
+            rdVector_Add3Acc(&surfaceCenterPt, pIter);
+            //rdVector_Scale3Acc(&surfaceCenterPt, 0.5);
+        }
+        rdVector_Scale3Acc(&surfaceCenterPt, 1.0 / surfaceIter->surfaceInfo.face.numVertices);
+        
+        flex_t radius = 0.0;
+        for (int idx = 0; idx < surfaceIter->surfaceInfo.face.numVertices; idx++) {
+            int fullIdx = surfaceIter->surfaceInfo.face.vertexPosIdx[idx];
+            rdVector3* pIter = &sithWorld_pLoading->vertices[fullIdx];
+            radius = stdMath_Max(rdVector_Dist3(&surfaceCenterPt, pIter), radius);
+        }
+        surfaceIter->radius = radius;
+        surfaceIter->center = surfaceCenterPt;
+#endif
+
+        rdMaterial_OptionalFree(face->material);
     }
 
     for (int32_t v50 = 0; v50 < numSurfaces; v50++)
@@ -417,6 +457,11 @@ int sithSurface_Load(sithWorld *world)
     }
     
     world->numSurfaces = numSurfaces;
+#ifdef RDMATERIAL_LRU_LOAD_UNLOAD
+    for (uint32_t i = 0; i < sithMaterial_numMaterials; i++) {
+        rdMaterial_OptionalFree(sithMaterial_aMaterials[i]);
+    }
+#endif
     pSithHS->free(sithMaterial_aMaterials);
     sithMaterial_aMaterials = NULL; // Added
     sithMaterial_numMaterials = 0;
@@ -566,6 +611,39 @@ rdSurface* sithSurface_SurfaceAnim(sithSurface *parent, flex_t a2, uint16_t flag
         result = 0;
     }
     return result;
+}
+
+int sithSurface_New(sithWorld *world, int num)
+{
+    sithSurface *surfaces = (sithSurface *)pSithHS->alloc(num * sizeof(sithSurface));
+    world->surfaces = surfaces;
+    if ( !surfaces )
+        return 0;
+    _memset(surfaces, 0, num * sizeof(sithSurface));
+    world->numSurfaces = num;
+    for (uint32_t i = 0; i < (uint32_t)num; i++)
+    {
+        rdFace_NewEntry(&surfaces[i].surfaceInfo.face);
+        surfaces[i].index = i;
+    }
+    return 1;
+}
+
+int sithSurface_AllocateAdjoins(sithWorld *world, int num)
+{
+    if ( num == 0 )
+    {
+        world->adjoins = NULL;
+        return 1;
+    }
+    sithAdjoin *adjoins = (sithAdjoin *)pSithHS->alloc(num * sizeof(sithAdjoin));
+    world->adjoins = adjoins;
+    if ( !adjoins )
+        return 0;
+    _memset(adjoins, 0, num * sizeof(sithAdjoin));
+    world->numAdjoins = num;
+    world->numAdjoinsLoaded = 0;
+    return 1;
 }
 
 void sithSurface_Free(sithWorld *world)

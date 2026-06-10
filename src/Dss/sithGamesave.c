@@ -30,6 +30,7 @@
 #include "Main/jkStrings.h"
 #include "Main/jkMain.h"
 #include "Main/jkEpisode.h"
+#include "General/stdString.h"
 #include "stdPlatform.h"
 #include "jk.h"
 
@@ -68,7 +69,7 @@ int sithGamesave_Load(char *saveFname, int debugNextCheckpoint, int a3)
         LEC_PATH_SEPARATOR_CHR, playerName, LEC_PATH_SEPARATOR_CHR, saveFname
     );
 
-    if (stdConffile_OpenMode(fpath, "rb"))
+    if (stdConffile_OpenReadBytesBypass(fpath))
     {
         stdConffile_Close();
         sithGamesave_dword_835914 = a3;
@@ -99,7 +100,7 @@ int sithGamesave_LoadEntry(char *fpath)
 
     int bIsOutdatedSave = 0;
 
-    if ( !stdConffile_OpenMode(fpath, "rb") )
+    if ( !stdConffile_OpenReadBytesBypass(fpath) )
         goto load_fail;
     stdConffile_Read(&header, sizeof(sithGamesave_Header));
 
@@ -287,12 +288,10 @@ skip_free_things:
 
     stdConffile_Close();
     _memcpy(&sithGamesave_headerTmp, &header, sizeof(sithGamesave_headerTmp));
-    _strncpy(sithGamesave_autosave_fname, stdFnames_FindMedName(fpath), 0x7Fu);
-    sithGamesave_autosave_fname[127] = 0;
+    stdString_SafeStrCopy(sithGamesave_autosave_fname, stdFnames_FindMedName(fpath), 128);
     if ( sithGamesave_dword_835914 )
     {
-        _strncpy(sithGamesave_saveName, stdFnames_FindMedName(fpath), 0x7Fu);
-        sithGamesave_saveName[127] = 0;
+        stdString_SafeStrCopy(sithGamesave_saveName, stdFnames_FindMedName(fpath), 128);
         _wcsncpy(sithGamesave_wsaveName, sithGamesave_headerTmp.saveName, 0xFFu);
         sithGamesave_wsaveName[255] = 0;
     }
@@ -347,7 +346,7 @@ int sithGamesave_SerializeAllThings(int mpFlags)
         }
     }
 
-    for (uint32_t i = 0; i < 256; i++) // TODO define this maximum
+    for (uint32_t i = 0; i < SITHAI_MAX_ACTORS; i++) // TODO define this maximum
     {
         if ( sithAI_actors[i].pAIClass ) {
             sithDSS_SendAIStatus(&sithAI_actors[i], DPID_ALLPLAYERS, mpFlags);
@@ -436,7 +435,7 @@ int sithGamesave_Write(char *saveFname, int a2, int a3, wchar_t *saveName)
         LEC_PATH_SEPARATOR_CHR, tmp_playerName, LEC_PATH_SEPARATOR_CHR,
         saveFname
     );
-    if ( a2 || !stdConffile_OpenRead(PathName) )
+    if ( a2 || !stdConffile_OpenReadBypass(PathName) )
     {
         _memset(&sithGamesave_headerTmp, 0, sizeof(sithGamesave_headerTmp));
         sithGamesave_headerTmp.version = COMPAT_SAVE_VERSION;
@@ -497,7 +496,7 @@ int sithGamesave_Flush()
         sithGamesave_currentState = SITH_GS_NONE;
         return 1;
     }
-    if ( (sithPlayer_pLocalPlayerThing->thingflags & SITH_TF_DEAD) == 0 && stdConffile_OpenWrite(sithGamesave_fpath) )
+    if ( (sithPlayer_pLocalPlayerThing->thingflags & SITH_TF_DEAD) == 0 && stdConffile_OpenWriteBypass(sithGamesave_fpath) )
     {
         int multiplayerFlagsSave = sithComm_multiplayerFlags;
         sithComm_multiplayerFlags = 4;

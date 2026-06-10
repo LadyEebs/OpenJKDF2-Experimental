@@ -30,6 +30,9 @@ void jkGui_InitMenu(jkGuiMenu *menu, stdBitmap *bgBitmap
 , stdBitmap* bgBitmap16
 #endif
 );
+#ifdef JKGUI_SMOL_SCREEN
+void jkGui_SmolScreenFixup(jkGuiMenu *menu, BOOL bForce);
+#endif
 int jkGui_MessageBeep();
 int jkGui_Startup();
 void jkGui_Shutdown();
@@ -40,5 +43,7 @@ void jkGui_sub_412E20(jkGuiMenu* menu, int a2, int a3, int a4);
 void jkGui_copies_string(char* out);
 char *jkGui_sub_412EC0();
 wchar_t* jkGui_sub_412ED0();
+
+void jkGui_LoadBmIdx(int idx); // Added
 
 #endif // _JKGUI_H

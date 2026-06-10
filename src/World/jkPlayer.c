@@ -41,6 +41,13 @@
 #include "Modules/rdroid/Engine/rdCluster.h"
 
 
+// DSi has *plenty* of time to read the text.
+#ifdef TARGET_TWL
+#define FAST_MISSION_TEXT_DEFAULT (1)
+#else
+#define FAST_MISSION_TEXT_DEFAULT (0)
+#endif
+
 // DO NOT FORGET TO ADD TO jkPlayer_ResetVars()
 #ifdef QOL_IMPROVEMENTS
 int Window_isHiDpi_tmp = 0;
@@ -67,7 +74,7 @@ int jkPlayer_showThingInfo = 0;
 int jkPlayer_bEnableJkgm = 1;
 int jkPlayer_bEnableTexturePrecache = 1;
 int jkPlayer_bKeepCorpses = 0;
-int jkPlayer_bFastMissionText = 0;
+int jkPlayer_bFastMissionText = FAST_MISSION_TEXT_DEFAULT;
 int jkPlayer_bUseOldPlayerPhysics = 0;
 flex_t jkPlayer_hudScale = 2.0;
 flex_t jkPlayer_crosshairLineWidth = 1.0;
@@ -79,6 +86,9 @@ int jkPlayer_setCrosshairOnLightsaber = 1;
 int jkPlayer_setCrosshairOnFist = 1;
 int jkPlayer_bDisableWeaponWaggle = 0;
 int jkPlayer_bHasLoadedSettingsOnce = 0;
+
+int jkPlayer_bEnableEmissiveTextures = 1;
+int jkPlayer_bEnableClassicLighting = 0;
 
 #if defined(SPHERE_AO) || defined(RENDER_DROID2)
 int jkPlayer_enableShadows = 1;
@@ -120,6 +130,7 @@ sithThing* jkPlayer_crosshairTarget = NULL;
 
 static int jkPlayer_drawMuzzleFlash = 0;
 static int jkPlayer_muzzleFlashNode = -1;
+
 #endif
 
 #ifdef FIXED_TIMESTEP_PHYS
@@ -233,6 +244,7 @@ void jkPlayer_StartupVars()
     sithCvar_RegisterBool("r_enableBloom",              0,                          &jkPlayer_enableBloom,              CVARFLAG_LOCAL);
     sithCvar_RegisterBool("r_enableSSAO",               0,                          &jkPlayer_enableSSAO,               CVARFLAG_LOCAL);
     sithCvar_RegisterInt("r_fpslimit",                  0,                          &jkPlayer_fpslimit,                 CVARFLAG_LOCAL);
+
     sithCvar_RegisterBool("r_enableVsync",              0,                          &jkPlayer_enableVsync,              CVARFLAG_LOCAL);
     sithCvar_RegisterInt("r_msaa",                      0,                          &jkPlayer_multiSample,              CVARFLAG_LOCAL);
 	sithCvar_RegisterFlex("r_ssaaMultiple",             1.0,                        &jkPlayer_ssaaMultiple,             CVARFLAG_LOCAL);
@@ -242,7 +254,8 @@ void jkPlayer_StartupVars()
 	sithCvar_RegisterInt("r_lodbias",					0,							&jkPlayer_lodBias,					CVARFLAG_LOCAL);
 	sithCvar_RegisterInt("r_mipbias",					0,							&jkPlayer_mipBias,					CVARFLAG_LOCAL);
 	sithCvar_RegisterBool("g_bKeepCorpses",             0,                          &jkPlayer_bKeepCorpses,             CVARFLAG_LOCAL);
-    sithCvar_RegisterBool("menu_bFastMissionText",      0,                          &jkPlayer_bFastMissionText,         CVARFLAG_LOCAL);
+    sithCvar_RegisterBool("menu_bFastMissionText",      FAST_MISSION_TEXT_DEFAULT,  &jkPlayer_bFastMissionText,         CVARFLAG_LOCAL);
+
     sithCvar_RegisterBool("g_bUseOldPlayerPhysics",     0,                          &jkPlayer_bUseOldPlayerPhysics,     CVARFLAG_LOCAL);
 #if !defined(TILE_SW_RASTER) && !defined(RENDER_DROID2)
 	sithCvar_RegisterFlex("hud_scale",                  2.0,                        &jkPlayer_hudScale,                 CVARFLAG_LOCAL|CVARFLAG_RESETHUD);
@@ -278,6 +291,12 @@ void jkPlayer_StartupVars()
     sithCvar_RegisterBool("r_hidpi",                     0,                         &Window_isHiDpi_tmp,                CVARFLAG_LOCAL|CVARFLAG_READONLY);
     sithCvar_RegisterBool("r_fullscreen",                0,                         &Window_isFullscreen_tmp,           CVARFLAG_LOCAL|CVARFLAG_READONLY);
 
+    // TODO: port to SDL
+#ifdef TARGET_TWL
+    sithCvar_RegisterBool("r_emissiveTextures",          0,                         &jkPlayer_bEnableEmissiveTextures,  CVARFLAG_LOCAL|CVARFLAG_READONLY);
+    sithCvar_RegisterBool("r_classicLighting",           0,                         &jkPlayer_bEnableClassicLighting,   CVARFLAG_LOCAL|CVARFLAG_READONLY);
+#endif
+
 #ifdef FIXED_TIMESTEP_PHYS
     sithCvar_RegisterBool("g_bJankyPhysics",             0,                         &jkPlayer_bJankyPhysics,            CVARFLAG_LOCAL);
 #endif
@@ -310,8 +329,10 @@ void jkPlayer_ResetVars()
     jkPlayer_enableBloom = 0;
     jkPlayer_enableSSAO = 0;
     jkPlayer_fpslimit = 0;
+
     jkPlayer_enableVsync = 0;
 	jkPlayer_multiSample = 0;
+
     jkPlayer_ssaaMultiple = 1.0;
     jkPlayer_gamma = 1.0;
     jkPlayer_bEnableJkgm = 1;
@@ -691,14 +712,17 @@ void jkPlayer_WriteConf(wchar_t *name)
     sithCvar_SaveGlobals();
 #endif
 
-    if (!name[0]) return; // Added
+    if (!name || !name[0]) {
+        printf("jkPlayer_WriteConf NULL name?\n");
+        return; // Added
+    }
 
     stdString_WcharToChar(nameTmp, name, 31);
     nameTmp[31] = 0;
     stdFnames_MakePath3(ext_fpath, 256, "player", nameTmp, "openjkdf2.json"); // Added
     stdFnames_MakePath3(ext_fpath_cvars, 256, "player", nameTmp, SITHCVAR_FNAME); // Added
     stdString_snprintf(fpath, 128, "player\\%s\\%s.plr", nameTmp, nameTmp);
-    if ( stdConffile_OpenWrite(fpath) )
+    if ( stdConffile_OpenWriteBypass(fpath) )
     {
         stdConffile_Printf("version %d\n", 1);
         stdConffile_Printf("diff %d\n", jkPlayer_setDiff);
@@ -933,7 +957,7 @@ int jkPlayer_ReadConf(wchar_t *name)
     stdFnames_MakePath3(ext_fpath, 256, "player", v6, "openjkdf2.json");
     stdFnames_MakePath3(ext_fpath_cvars, 256, "player", v6, SITHCVAR_FNAME); // Added
     stdString_snprintf(fpath, 256, "player\\%s\\%s.plr", v6, v6); // Added: sprintf -> snprintf
-    if (!stdConffile_OpenRead(fpath))
+    if (!stdConffile_OpenReadBypass(fpath))
         return 0;
 
     if ( stdConffile_ReadLine() && _sscanf(stdConffile_aLine, "version %d", &version) == 1 && version == 1 && stdConffile_ReadLine() )
@@ -1371,15 +1395,7 @@ void jkPlayer_DrawPov()
 		rdCamera_SetAmbientLight(&sithCamera_currentCamera->rdCam, &ambLight);
 		rdCamera_SetDirectionalAmbientLight(&sithCamera_currentCamera->rdCam, &sithCamera_currentCamera->sector->ambientSH);
 #else
-        flex_t ambLight = sithCamera_currentCamera->sector->extraLight + sithCamera_currentCamera->sector->ambientLight;
-        if ( ambLight < 0.0 )
-        {
-            ambLight = 0.0;
-        }
-        else if ( ambLight > 1.0 )
-        {
-            ambLight = 1.0;
-        }
+        flex_t ambLight = stdMath_Clamp(sithCamera_currentCamera->sector->extraLight + sithCamera_currentCamera->sector->ambientLight, 0.0, 1.0);
 		rdCamera_SetAmbientLight(&sithCamera_currentCamera->rdCam, ambLight);
 #endif
 
@@ -1387,6 +1403,8 @@ void jkPlayer_DrawPov()
 
         rdMatrix_Copy34(&viewMat, &sithCamera_currentCamera->viewMat);
         rdVector_Copy3(&trans, &playerThings[playerThingIdx].actorThing->actorParams.eyeOffset);
+
+        //printf("%f %f %f\n", (flex32_t)playerThings[playerThingIdx].actorThing->actorParams.eyeOffset.x, (flex32_t)playerThings[playerThingIdx].actorThing->actorParams.eyeOffset.y, (flex32_t)playerThings[playerThingIdx].actorThing->actorParams.eyeOffset.z);
 
 #ifdef QOL_IMPROVEMENTS
 		// Shift gun down slightly at higher aspect ratios
@@ -1423,6 +1441,7 @@ void jkPlayer_DrawPov()
 		if (player->physicsParams.physflags & SITH_PF_CROUCHING)
 			trans.z -= /*player->physicsParams.povOffset + */ 0.0025f;
 #endif
+        //printf("%f %f %f\n", (flex32_t)viewMat.scale.x, (flex32_t)viewMat.scale.y, (flex32_t)viewMat.scale.z);
 
         // Shift gun up slightly
 #ifdef TARGET_TWL
@@ -1856,9 +1875,16 @@ void jkPlayer_renderSaberWeaponMesh(sithThing *thing)
         if ( sithPlayer_pLocalPlayer->iteminfo[SITHBIN_F_SEEING].state & ITEMSTATE_ACTIVATE )
         {
             rdGeoMode_t oldGeoMode = thing->rdthing.curGeoMode;
+#ifdef TARGET_TWL
+            // Added: Don't draw them twice wtf
+            if (thing->rdthing.curGeoMode != thing->rdthing.desiredGeoMode) {
+#endif
             thing->rdthing.curGeoMode = thing->rdthing.desiredGeoMode;
             rdVector_Copy3(&thing->lookOrientation.scale, &thing->position);
             rdThing_Draw(&thing->rdthing, &thing->lookOrientation);
+#ifdef TARGET_TWL
+            }
+#endif
 
             thing->lookOrientation.scale.x = 0.0;
             thing->lookOrientation.scale.y = 0.0;
@@ -2181,7 +2207,7 @@ int jkPlayer_MPCParse(jkPlayerMpcInfo *info, sithPlayerInfo* unk, wchar_t *fname
     info->name[31] = 0;
     _sprintf(jkl_fname, "player\\%s\\%s.mpc", a1a, v11);
 
-    if (!stdConffile_OpenRead(jkl_fname))
+    if (!stdConffile_OpenReadBypass(jkl_fname))
         return 0;
 
     if ( stdConffile_ReadLine()
@@ -2249,7 +2275,7 @@ int jkPlayer_MPCWrite(sithPlayerInfo* unk, wchar_t *mpcName, wchar_t *playerName
     mpcNameChar[31] = 0;
     stdString_snprintf(fpath, 128, "player\\%s\\%s.mpc", mpcNameChar, playerNameChar);
 
-    if (!stdConffile_OpenWrite(fpath))
+    if (!stdConffile_OpenWriteBypass(fpath))
         return 0;
 
     stdConffile_Printf("version %d\n", 1);
@@ -2481,7 +2507,7 @@ LABEL_8:
         stdString_WcharToChar(v13, jkPlayer_playerShortName, 31);
         v13[31] = 0;
         stdString_snprintf(v14, 128, "player\\%s\\%s.plr", v13, v13);
-        if ( stdConffile_OpenWrite(v14) )
+        if ( stdConffile_OpenWriteBypass(v14) )
         {
             stdConffile_Printf("version %d\n", 1);
             stdConffile_Printf("diff %d\n", jkPlayer_setDiff);

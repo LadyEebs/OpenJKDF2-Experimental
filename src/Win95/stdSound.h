@@ -3,6 +3,10 @@
 
 #include "types.h"
 
+#ifdef STDSOUND_MAXMOD
+#include <maxmod9.h>
+#endif
+
 #define stdSound_Startup_ADDR (0x0436E80)
 #define stdSound_Shutdown_ADDR (0x04370E0)
 #define stdSound_SetMenuVolume_ADDR (0x0437150)
@@ -54,6 +58,8 @@ typedef struct stdALBuffer
     int refcnt;
     flex_t vol;
     int bIsCopy;
+    int bHasPos;
+    int bHasVel;
     ALfloat pos[3];
     ALfloat vel[3];
 } stdALBuffer;
@@ -98,6 +104,29 @@ typedef struct stdNullSoundBuffer
     rdVector3 pos;
     rdVector3 vel;
 } stdNullSoundBuffer;
+
+#ifdef STDSOUND_MAXMOD
+typedef struct stdMaxmodBuffer
+{
+    void* data;
+    int format;
+    int bStereo;
+    int bitsPerSample;
+    uint32_t nSamplesPerSec;
+    int bufferBytes;
+    int bufferLen;
+    int refcnt;
+    flex_t vol;
+    int bIsCopy;
+    rdVector3 pos;
+    rdVector3 vel;
+    mm_stream stream;
+    uint32_t currentSample;
+    int sampleRepeats;
+    BOOL isPlaying;
+    BOOL isLooping;
+} stdMaxmodBuffer;
+#endif
 
 typedef struct stdWaveFormat
 {
@@ -149,12 +178,13 @@ void stdSound_BufferRelease(stdSound_buffer_t* sound);
 int stdSound_BufferReset(stdSound_buffer_t* sound);
 //uint32_t stdSound_ParseWav(int sound_file, int *nSamplesPerSec, int *bitsPerSample, int *bStereo, int *seekOffset);
 int stdSound_BufferPlay(stdSound_buffer_t* buf, int loop);
+int stdSound_BufferQueueAfterAnother(stdSound_buffer_t* bufPrev, stdSound_buffer_t* bufNext); // Added
 void stdSound_BufferSetPan(stdSound_buffer_t* a1, flex_t a2);
 void stdSound_BufferSetFrequency(stdSound_buffer_t* a1, int a2);
 stdSound_buffer_t* stdSound_BufferDuplicate(stdSound_buffer_t* sound);
 void stdSound_IA3D_idk(flex_t a);
 int stdSound_BufferStop(stdSound_buffer_t* a1);
-void stdSound_BufferSetVolume(stdSound_buffer_t* a1, flex_t a2);
+MATH_FUNC void stdSound_BufferSetVolume(stdSound_buffer_t* a1, flex_t a2);
 int stdSound_3DSetMode(stdSound_3dBuffer_t* a1, int a2);
 stdSound_3dBuffer_t* stdSound_BufferQueryInterface(stdSound_buffer_t* a1);
 void stdSound_CommitDeferredSettings();

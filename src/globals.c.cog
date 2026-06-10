@@ -14,6 +14,14 @@
 
 #include "jk.h"
 
+#ifdef TARGET_TWL
+#define MAYBE_UNUSED __attribute__((unused))
+#else
+#define MAYBE_UNUSED
+#endif
+
+#define NO_REINIT // HACK
+
 #ifdef NO_JK_MMAP
 // Vars
 [[[cog
@@ -76,7 +84,7 @@
             c_type = s[0]
             c_type_post = "[" + s[1] 
         
-        cog.outl("%s %s%s = %s;" % (c_type, name, c_type_post, c_val))
+        cog.outl("%s %s%s MAYBE_UNUSED = %s;" % (c_type, name, c_type_post, c_val))
 
 ]]]
 [[[end]]]
@@ -118,8 +126,12 @@ void OpenJKDF2_Globals_Reset()
         if c_type == "func":
             continue
         
+        c_type_is_int_like = False
+        if c_type == "int" or c_type == "int32_t" or c_type == "uint32_t" or c_type == "uint16_t" or c_type == "int16_t":
+            c_type_is_int_like = True
+
         if c_val == "":
-            if c_type == "int":
+            if c_type_is_int_like:
                 c_val = "0"
             elif c_type == "float":
                 c_val = "0.0f"
@@ -145,10 +157,12 @@ void OpenJKDF2_Globals_Reset()
             c_type = s[0]
             c_type_post = "[" + s[1] 
         
-        if c_val == "NULL" or c_val == "0" or c_val == "0.0f":
+        if "NO_REINIT" in c_type or "NO_REINIT" in c_type_post:
+            cog.outl("// NO_REINIT for %s" % (name))
+        elif c_val == "NULL" or c_val == "0" or c_val == "0.0f" or c_type_is_int_like:
             cog.outl("%s = %s;" % (name, c_val))
-        if c_val == "{0}":
-            cog.outl("_memset(&%s, 0, sizeof(%s));" % (name, name))
+        elif c_val == "{0}":
+            cog.outl("_memset_inline(&%s, 0, sizeof(%s));" % (name, name))
         else:
             cog.outl("%s __%s_origValue%s = %s;" % (c_type, name, c_type_post, c_val))
             cog.outl("_memcpy(&%s, &__%s_origValue, sizeof(%s));" % (name, name, name))
@@ -158,50 +172,58 @@ void OpenJKDF2_Globals_Reset()
 }
 
 [[[cog
-    import cog
-    import glob
-    import os
-    from pathlib import Path
-   
-    embed_files = glob.glob(str(Path(project_root) / "resource" / "ui" / "bm" / "*.bm"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "hlsl" / "*.cso"))
-    for fpath in embed_files:
-        fpath_ = fpath.replace(str(Path(project_root)) + os.sep, "").replace("\\", "/").replace("resource/", "")
-        fname = os.path.basename(fpath)
-        contents = open(fpath, "rb").read()
-        cog.outl("const char %s[%d] = {" % (os.path.splitext(fname)[0] + "data", len(contents),))
-        for byte in contents:
-            cog.out("0x%x," % byte)
-        cog.outl("};")
+import cog
+import glob
+import os
+from pathlib import Path
+    
+cog.outl("// %s" % embedded_resources)
+cog.outl("// %s" % project_root)
+project_root_conv = (str(Path(project_root)) + os.sep).replace("\\", "/") 
 
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shader" / "*.asm"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "*.glsl"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "world" / "*.glsl"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "deferred" / "*.glsl"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "postfx" / "*.glsl"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "includes" / "*.gli"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "ssl" / "*.pem"))
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "ui" / "*.uni"))
-    cog.outl("const size_t embeddedResource_aFiles_num = %d;" % (len(embed_files),))
-    cog.outl("const embeddedResource_t embeddedResource_aFiles[%d] = {" % (len(embed_files),))
-
-    for fpath in embed_files:
-        fpath_ = fpath.replace(str(Path(project_root)) + os.sep, "").replace("\\", "/").replace("resource/", "")
-        fname = os.path.basename(fpath)
-        fext = os.path.splitext(fpath_)[-1].lower()
-        if fext != ".bm" and fext != ".cso":
-            contents = open(fpath, "r").read()
-            cog.outl("{\"%s\", " % (fpath_,))
-            for line in contents.split("\n"):
-                cog.outl("\"%s\"" % (line.replace("\"", "\\\"") + "\\n"))
-            cog.outl(", 0x%x}," % (len(contents),))
-        else:
-            contents = open(fpath, "rb").read()
-            cog.outl("{\"%s\", " % (fpath_,))
-            cog.out("%s" % (os.path.splitext(fname)[0] + "data"))
-            cog.outl(", 0x%x}," % (len(contents),))
-
+# binary files
+embed_files = glob.glob(str(Path(project_root) / "resource" / "ui" / "bm" / "*.bm"))
+embed_files += glob.glob(str(Path(project_root) / "resource" / "hlsl" / "*.cso"))
+for fpath in embed_files:
+    fpath_ = fpath.replace(str(Path(project_root)) + os.sep, "").replace("\\", "/").replace("resource/", "")
+    fname = os.path.basename(fpath)
+    contents = open(fpath, "rb").read()
+    cog.outl("const char %s[%d] = {" % (os.path.splitext(fname)[0] + "data", len(contents),))
+    for byte in contents:
+        cog.out("0x%x," % byte)
     cog.outl("};")
 
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shader" / "*.asm"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "*.glsl"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "world" / "*.glsl"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "deferred" / "*.glsl"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "postfx" / "*.glsl"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "includes" / "*.gli"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "ssl" / "*.pem"))
+#embed_files += glob.glob(str(Path(project_root) / "resource" / "ui" / "*.uni"))
+
+embed_files += [p for p in embedded_resources.split("+") if p and os.path.isfile(p)]
+
+cog.outl("const size_t embeddedResource_aFiles_num = %d;" % (len(embed_files),))
+cog.outl("const embeddedResource_t embeddedResource_aFiles[%d] = {" % (len(embed_files),))
+
+for fpath in embed_files:
+    cog.outl("// %s" % fpath)
+    fpath_ = fpath.replace(project_root_conv, "").replace("\\", "/").replace("resource/", "")
+    fname = os.path.basename(fpath)
+    fext = os.path.splitext(fpath_)[-1].lower()
+    if fext != ".bm" and fext != ".cso":
+        contents = open(fpath, "r").read()
+        cog.outl("{\"%s\", " % (fpath_,))
+        for line in contents.split("\n"):
+            cog.outl("\"%s\"" % (line.replace("\"", "\\\"") + "\\n"))
+        cog.outl(", 0x%x}," % (len(contents),))
+    else:
+        contents = open(fpath, "rb").read()
+        cog.outl("{\"%s\", " % (fpath_,))
+        cog.out("%s" % (os.path.splitext(fname)[0] + "data"))
+        cog.outl(", 0x%x}," % (len(contents),))
+
+cog.outl("};")
 ]]]
 [[[end]]]

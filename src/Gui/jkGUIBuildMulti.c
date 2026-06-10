@@ -423,6 +423,9 @@ int jkGuiBuildMulti_ShowEditCharacter(BOOL bIdk)
     char v34[32]; // [esp+ECh] [ebp-A0h] BYREF
     char FileName[128]; // [esp+10Ch] [ebp-80h] BYREF
 
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_BUILD_MULTI]);
+
     memset(v28, 0, sizeof(v28));
 	jkGuiRend_UpdateAudio();
     jkGui_SetModeMenu(jkGui_stdBitmaps[JKGUI_BM_BK_BUILD_MULTI]->palette);
@@ -632,6 +635,9 @@ LABEL_32:
 
     jkGuiBuildMulti_bRendering = 0; // Added
 
+    // Added
+    stdBitmap_UnloadData(jkGui_stdBitmaps[JKGUI_BM_BK_BUILD_MULTI]);
+
     return v18;
 }
 
@@ -733,10 +739,23 @@ void jkGuiBuildMulti_ModelDrawer(jkGuiElement *pElement, jkGuiMenu *pMenu, stdVB
     {
         if ( stdPlatform_GetTimeMsec() - (uint32_t)jkGuiBuildMulti_lastModelDrawMs <= BUILDMULTI_SWITCH_DELAY_MS )
 		{
-		#ifdef MENU_16BIT
+#ifdef MENU_16BIT
 			if (!pMenu->bkBm16)
-		#endif
-				stdDisplay_VBufferCopy(pVbuf, pMenu->texture, 315u, 115, &jkGuiBuildMulti_rect_5353C8, 0);
+#endif
+#ifdef STDBITMAP_PARTIAL_LOAD
+            if (pMenu->pBgBitmap) {
+                stdBitmap_EnsureData(pMenu->pBgBitmap);
+            }
+
+            if (pMenu->pBgBitmap && pMenu->pBgBitmap->mipSurfaces[0]) {
+                stdDisplay_VBufferCopy(pVbuf, pMenu->pBgBitmap->mipSurfaces[0], 315u, 115, &jkGuiBuildMulti_rect_5353C8, 0);
+            }
+            else if (pMenu->pTextureOverride) {
+                stdDisplay_VBufferCopy(pVbuf, pMenu->pTextureOverride, 315u, 115, &jkGuiBuildMulti_rect_5353C8, 0);
+            }
+#else
+            stdDisplay_VBufferCopy(pVbuf, pMenu->texture, 315u, 115, &jkGuiBuildMulti_rect_5353C8, 0);
+#endif
             return;
         }
         jkGuiBuildMulti_ThingCleanup(); // inlined
@@ -1036,6 +1055,13 @@ int jkGuiBuildMulti_Show()
     char tmp1[128]; // [esp+16Ch] [ebp-280h] BYREF
     wchar_t wtmp1[256]; // [esp+1ECh] [ebp-200h] BYREF
 
+#ifdef JKGUI_SMOL_SCREEN
+    jkGuiBuildMulti_menuEditCharacter_buttons[6].rect = jkGuiBuildMulti_menuEditCharacter_buttons[6].rectOrig;
+    jkGuiBuildMulti_menuEditCharacter_buttons[7].rect = jkGuiBuildMulti_menuEditCharacter_buttons[7].rectOrig;
+    jkGuiBuildMulti_menuEditCharacter_buttons[6].bIsSmolDirty = 1;
+    jkGuiBuildMulti_menuEditCharacter_buttons[7].bIsSmolDirty = 1;
+#endif
+
     // MoTS added: Need to move things around for Personality
     if (!Main_bMotsCompat) {
         jkGuiBuildMulti_menuEditCharacter_buttons[10].bIsVisible = 0;
@@ -1051,6 +1077,10 @@ int jkGuiBuildMulti_Show()
         jkGuiBuildMulti_menuEditCharacter_buttons[6].rect.y = 310;
         jkGuiBuildMulti_menuEditCharacter_buttons[7].rect.y = 330;
     }
+
+#ifdef JKGUI_SMOL_SCREEN
+    jkGui_SmolScreenFixup(&jkGuiBuildMulti_menuEditCharacter, 0);
+#endif
 
     wPlayerName[0] = 0;
     memset(&wPlayerName[1], 0, 0x3Cu);
@@ -1172,7 +1202,7 @@ int jkGuiBuildMulti_Show2(Darray *pDarray, jkGuiElement *pElement, int minIdk, i
             if (v8 >= &jkGuiBuildMulti_aMpcInfo[32]) break;
 
             stdString_snprintf(fpath, 128, "%s\\%s", path, v16.fpath);
-            if ( util_FileExists(fpath) )
+            if ( util_FileExistsLowLevel(fpath) ) // Added: util_FileExists -> util_FileExistsLowLevel
             {
                 _strncpy(a2a, v16.fpath, 0x1Fu);
                 a2a[31] = 0;
@@ -1344,7 +1374,7 @@ int jkGuiBuildMulti_ShowNewCharacter(int rank, int bGameFormatIsJK, int bHasNoVa
                 stdString_WcharToChar(v17, jkGuiBuildMulti_aWchar_5594C8, 127);
                 v17[127] = 0;
                 stdString_snprintf(v18, 128, "player\\%s\\%s.mpc", v16, v17);
-                if ( !util_FileExists(v18) )
+                if ( !util_FileExistsLowLevel(v18) ) // Added: util_FileExists -> util_FileExistsLowLevel
                     goto LABEL_16;
                 v7 = 1;
                 v9 = jkStrings_GetUniStringWithFallback("ERR_PLAYER_ALREADY_EXISTS");

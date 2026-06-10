@@ -40,6 +40,14 @@ int jkSaber_dismember = 0;
 
 #define JKSABER_EXTENDTIME (0.3000000)
 
+void jkSaber_Startup()
+{
+}
+
+void jkSaber_Shutdown()
+{
+}
+
 void jkSaber_InitializeSaberInfo(sithThing *thing, char *material_side_fname, char *material_tip_fname, flex_t base_rad, flex_t tip_rad, flex_t len, sithThing *wall_sparks, sithThing *blood_sparks, sithThing *saber_sparks)
 {
     if (!thing) return; // Added: Fix nullptr deref in Mots cutscenes
@@ -65,7 +73,7 @@ void jkSaber_InitializeSaberInfo(sithThing *thing, char *material_side_fname, ch
 #endif
 
     rdPolyLine_FreeEntry(&saberinfo->polyline); // Added: fix memleak
-    rdPolyLine_NewEntry(&saberinfo->polyline, "Saber", material_side_fname, material_tip_fname, length, base_rad, tip_rad, 4, 0, 0, 0.0);
+    rdPolyLine_NewEntry(&saberinfo->polyline, "Saber", material_side_fname, material_tip_fname, length, base_rad, tip_rad, RD_LIGHTMODE_4_UNK, 0, 0, 0.0);
     rdThing_NewEntry(&saberinfo->polylineThing, thing);
     rdThing_SetPolyline(&saberinfo->polylineThing, &saberinfo->polyline);
 #ifdef LIGHTSABER_GLOW
@@ -154,7 +162,7 @@ void jkSaber_DrawTrail(rdThing* pThing, jkSaberTrail* pSaberTrail, rdMatrix34* p
 		rdVector3 verts[4];
 		rdVector2 uvs[4];
 
-		rdVertexIdxInfo idxInfo;
+		rdMeshinfo idxInfo;
 		idxInfo.numVertices = 4;
 		idxInfo.vertices = verts;
 		idxInfo.paDynamicLight = 0;
@@ -938,12 +946,12 @@ void jkSaber_UpdateCollision(sithThing *player, int joint, int bSecondary)
     rdVector3 jointPos;
     rdMatrix34 matrix;
     rdMatrix34 tmpMat;
-    rdMatrix34 local_60;
+    rdMatrix34 lastJointMat;
     rdVector3 lerpSaberDir;
     rdVector3 lerpSaberPos;
     rdVector3 lerpPosDelta;
     rdVector3 lerpDirDelta;
-    rdMatrix34 *storeOrientMat;
+    rdMatrix34 *pWhichLastJointMat;
 
     playerInfo = player->playerInfo;
 
@@ -985,44 +993,58 @@ void jkSaber_UpdateCollision(sithThing *player, int joint, int bSecondary)
 		return;
 #endif
     
+	// Always do ticked saber collision
+#ifndef QOL_IMPROVEMENTS
     if (!Main_bMotsCompat || !(player->jkFlags & JKFLAG_SABERDAMAGE)) // Added: check for JKFLAG_SABERDAMAGE and don't bother interpolating
 	{
         jkSaber_UpdateCollision2(player,&jointMat.scale, &jointMat.lvec, &playerInfo->saberCollideInfo);
         return;
     }
+#endif
     
     // MOTS added: interpolation at low FPS
+    // This ensures that saber collision is *at least* 20fps-quality,
+    // Added: QoL modified to be at least 30fps-quality collisions for DSi
+#ifdef QOL_IMPROVEMENTS
+    const flex_t saberMinDelta = 0.032; // 30FPS-ish
+#else
+    const flex_t saberMinDelta = 0.05; // 20FPS
+#endif
     rdVector_Copy3(&jointPos, &jointMat.scale);
     rdVector_Copy3(&a2a, &jointMat.lvec);
-    if (sithTime_deltaSeconds > 0.05 && playerInfo->jkmUnk1) 
+    if (sithTime_deltaSeconds > saberMinDelta && playerInfo->bHasLastJointMat) 
     {
-        storeOrientMat = &playerInfo->jkmSaberUnk1;
+        pWhichLastJointMat = &playerInfo->lastSaberJointMat;
         if (bSecondary != 0) {
-            storeOrientMat = &playerInfo->jkmSaberUnk2;
+            pWhichLastJointMat = &playerInfo->lastSecondarySaberJointMat;
         }
-        flex_t fVar1 = sithTime_TickHz * 0.05;
-        rdMatrix_Copy34(&local_60, storeOrientMat);
+        flex_t fVar1 = sithTime_TickHz * saberMinDelta;
+        rdMatrix_Copy34(&lastJointMat, pWhichLastJointMat);
 
-        rdVector_Sub3(&lerpPosDelta, &jointMat.scale, &local_60.scale);
-        rdVector_Sub3(&lerpDirDelta, &jointMat.lvec, &local_60.lvec);
-        flex_t local_b8 = fVar1;
-        for (; fVar1 < 1.0; fVar1 = local_b8 + fVar1) {
-            rdVector_Copy3(&lerpSaberPos, &local_60.scale);
+        rdVector_Sub3(&lerpPosDelta, &jointMat.scale, &lastJointMat.scale);
+        rdVector_Sub3(&lerpDirDelta, &jointMat.lvec, &lastJointMat.lvec);
+        flex_t stepAmount = fVar1;
+
+        // This will step 0 times at 20fps, once at 10fps, twice at 5fps, etc
+        for (; fVar1 < 1.0; fVar1 += stepAmount) {
+            rdVector_Copy3(&lerpSaberPos, &lastJointMat.scale);
             rdVector_MultAcc3(&lerpSaberPos, &lerpPosDelta, fVar1);
 
-            rdVector_Copy3(&lerpSaberDir, &local_60.lvec);
+            rdVector_Copy3(&lerpSaberDir, &lastJointMat.lvec);
             rdVector_MultAcc3(&lerpSaberDir, &lerpDirDelta, fVar1);
 
             jkSaber_UpdateCollision2(player,&lerpSaberPos,&lerpSaberDir,&playerInfo->saberCollideInfo);
         }
     }
     jkSaber_UpdateCollision2(player,&jointPos,&a2a,&playerInfo->saberCollideInfo);
-    storeOrientMat = &playerInfo->jkmSaberUnk1;
+    pWhichLastJointMat = &playerInfo->lastSaberJointMat;
     if (bSecondary != 0) {
-        storeOrientMat = &playerInfo->jkmSaberUnk2;
+        pWhichLastJointMat = &playerInfo->lastSecondarySaberJointMat;
     }
-    rdMatrix_Copy34(storeOrientMat, &jointMat);
-    playerInfo->jkmUnk1 = 1;
+
+    // Store the joint matrix so we can get a delta for the next frame
+    rdMatrix_Copy34(pWhichLastJointMat, &jointMat);
+    playerInfo->bHasLastJointMat = 1;
 }
 
 void jkSaber_SpawnSparks(jkPlayerInfo *pPlayerInfo, rdVector3 *pPos, sithSector *psector, int sparkType)
@@ -1078,7 +1100,7 @@ void jkSaber_Enable(sithThing *pThing, flex_t damage, flex_t bladeLength, flex_t
 #endif
 
 #ifdef JKM_SABER
-    pThing->playerInfo->jkmUnk1 = 0; // MOTS added
+    pThing->playerInfo->bHasLastJointMat = 0; // MOTS added
 #endif
 }
 
@@ -1090,7 +1112,7 @@ void jkSaber_Disable(sithThing *player)
 
     player->playerInfo->saberCollideInfo.field_1A4 = 0;
 #ifdef JKM_SABER
-    player->playerInfo->jkmUnk1 = 0; // MOTS added
+    player->playerInfo->bHasLastJointMat = 0; // MOTS added
 #endif
 #ifdef REGIONAL_DAMAGE
 	player->playerInfo->saberCollideInfo.damage = (jkSaber_dismember == 2 && !sithNet_isMulti) ? 25.0f : 0.0f;

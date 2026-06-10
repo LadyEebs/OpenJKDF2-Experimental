@@ -242,7 +242,7 @@ flex_t rdVector_Len2(const rdVector2* v)
 
 flex_t rdVector_Len3(const rdVector3* v)
 {
-#ifdef TARGET_TWL
+#if defined(TARGET_TWL) && defined(EXPERIMENTAL_FIXED_POINT)
     int64_t val = ((int64_t)v->x.to_raw()*v->x.to_raw())+((int64_t)v->y.to_raw()*v->y.to_raw())+((int64_t)v->z.to_raw()*v->z.to_raw());
     return sqrt64fixed_mine_2(val);
 #else
@@ -273,7 +273,7 @@ flex_t rdVector_Normalize2(rdVector2 *v1, const rdVector2 *v2)
 
 flex_t rdVector_Normalize3(rdVector3 *v1, const rdVector3 *v2)
 {
-#ifdef TARGET_TWL
+#if defined(TARGET_TWL) && defined(EXPERIMENTAL_FIXED_POINT)
 #if 0
     static int last_frame = 0;
     static int num_sqrts = 0;
@@ -658,7 +658,7 @@ void rdVector_Zero2(rdVector2 *v)
     rdVector_Copy2(v, &rdroid_zeroVector2);
 }
 
-int rdVector_IsZero3(rdVector3* v)
+int rdVector_IsZero3(const rdVector3* v)
 {
     return (v->x == 0.0 && v->y == 0.0 && v->z == 0.0);
 }

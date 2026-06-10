@@ -6,6 +6,7 @@
 #include "Main/jkMain.h"
 #include "Main/jkGame.h"
 #include "Gui/jkGUI.h"
+#include "Gui/jkGUIRend.h"
 #include "Win95/stdDisplay.h"
 #include "World/jkPlayer.h"
 #include "Platform/stdControl.h"
@@ -66,6 +67,7 @@ int Window_screenYSize = WINDOW_DEFAULT_HEIGHT;
 int Window_isHiDpi = 0;
 int Window_isFullscreen = 0;
 int Window_needsRecreate = 0;
+int Window_bShouldPopSteamKeyboard = 0;
 
 void Window_UpdateDefaultWindowSize()
 {
@@ -409,7 +411,9 @@ int Window_lastMouseY = 0;
 int Window_xPos = SDL_WINDOWPOS_CENTERED;
 int Window_yPos = SDL_WINDOWPOS_CENTERED;
 int last_jkGame_isDDraw = 0;
+#ifdef QUAKE_CONSOLE
 int last_jkQuakeConsole_bOpen = 0;
+#endif
 int Window_menu_mouseX = 0;
 int Window_menu_mouseY = 0;
 
@@ -460,6 +464,9 @@ void Window_HandleMouseMove(SDL_MouseMotionEvent *event)
     Window_msg_main_handler(g_hWnd, WM_MOUSEMOVE, 0, pos);
 }
 
+int jkCutscene_wasPaused = 0;
+int jkGame_wasDDraw = 0;
+int Window_bNeedsKeyboardFixed = 0;
 void Window_HandleWindowEvent(SDL_Event* event)
 {
     switch (event->window.event) 
@@ -511,25 +518,70 @@ void Window_HandleWindowEvent(SDL_Event* event)
             //printf("%u %u\n", Window_xSize, Window_ySize);
             break;
         case SDL_WINDOWEVENT_MINIMIZED:
-            //printf("Window %d minimized", event->window.windowID);
+            stdPlatform_Printf("Window %d minimized", event->window.windowID);
+
+            // HACK: Cutscene audio gets messed up when multitasking on Android :/
+#ifdef TARGET_ANDROID
+            stdPlatform_Printf("SDL_WINDOWEVENT_MINIMIZED");
+            jkCutscene_wasPaused = jkCutscene_55AA54 && jkCutscene_isRendering && std3D_IsReady();
+            jkGame_wasDDraw = jkGame_isDDraw;
+            if (std3D_IsReady() && jkCutscene_isRendering && !jkCutscene_wasPaused) {
+                stdPlatform_Printf("Pause cutscene...\n");
+                Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+            }
+            else if (std3D_IsReady() && jkGame_isDDraw) {
+                stdPlatform_Printf("Pause game...\n");
+                Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+            }
+#endif
             break;
         case SDL_WINDOWEVENT_MAXIMIZED:
-            //printf("Window %d maximized", event->window.windowID);
+            stdPlatform_Printf("Window %d maximized", event->window.windowID);
             break;
         case SDL_WINDOWEVENT_RESTORED:
-            //printf("Window %d restored", event->window.windowID);
+            stdPlatform_Printf("Window %d restored", event->window.windowID);
+            
+            // HACK: Cutscene audio gets messed up when multitasking on Android :/
+#ifdef TARGET_ANDROID
+            stdPlatform_Printf("SDL_WINDOWEVENT_RESTORED");
+            if (std3D_IsReady() && jkCutscene_isRendering && !jkCutscene_wasPaused) {
+                stdPlatform_Printf("Play cutscene...\n");
+                Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+            }
+            else if (std3D_IsReady() && !jkGame_isDDraw && jkGame_wasDDraw) {
+                stdPlatform_Printf("Resume game...\n");
+                Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+            }
+#endif
             break;
         case SDL_WINDOWEVENT_ENTER:
-            //printf("Mouse entered window %d\n", event->window.windowID);
+            stdPlatform_Printf("Mouse entered window %d\n", event->window.windowID);
             break;
         case SDL_WINDOWEVENT_LEAVE:
-            //printf("Mouse left window %d\n", event->window.windowID);
+            stdPlatform_Printf("Mouse left window %d\n", event->window.windowID);
             break;
         case SDL_WINDOWEVENT_FOCUS_GAINED:
-            //printf("Window %d gained keyboard focus", event->window.windowID);
+            stdPlatform_Printf("Window %d gained keyboard focus\n", event->window.windowID);
+            Window_bNeedsKeyboardFixed = 0;
             break;
         case SDL_WINDOWEVENT_FOCUS_LOST:
-            //printf("Window %d lost keyboard focus", event->window.windowID);
+            stdPlatform_Printf("Window %d lost keyboard focus\n", event->window.windowID);
+            if (stdControl_IsSystemKeyboardShowing() && Window_bNeedsKeyboardFixed) {
+                stdPlatform_Printf("Fixing keyboard...\n");
+                
+                SDL_Window* gimmeKeyboard = SDL_CreateWindow("Gimme Keyboard", 20, 20, 20, 20, SDL_WINDOW_KEYBOARD_GRABBED | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS);
+                SDL_RaiseWindow(gimmeKeyboard);
+                SDL_DestroyWindow(gimmeKeyboard);
+                SDL_RaiseWindow(displayWindow);
+
+                SDL_MinimizeWindow(displayWindow);
+                SDL_RestoreWindow(displayWindow);
+                SDL_RaiseWindow(displayWindow);
+            }
             break;
         case SDL_WINDOWEVENT_CLOSE:
             //printf("Window %d closed", event->window.windowID);
@@ -1292,6 +1344,7 @@ void Window_UpdateHeadless()
             //jkMain_FixRes();
         }
     #endif 
+        jkGui_SetModeGame();
         Window_resized = 0;
     }
     
@@ -1307,13 +1360,17 @@ void Window_UpdateHeadless()
 	#ifndef TILE_SW_RASTER
         if (!jkGuiBuildMulti_bRendering) {
             std3D_StartScene();
+#ifdef QUAKE_CONSOLE
             jkQuakeConsole_Render();
+#endif
             std3D_DrawMenu();
             std3D_EndScene();
             //SDL_GL_SwapWindow(displayWindow);
         }
         else {
+#ifdef QUAKE_CONSOLE
             jkQuakeConsole_Render();
+#endif
             std3D_DrawMenu();
             //SDL_GL_SwapWindow(displayWindow);
             //menu_framelimit_amt_ms = 64;
@@ -1364,11 +1421,28 @@ void Window_SdlUpdate()
     SDL_Event event;
     SDL_MouseButtonEvent* mevent;
 
+    // HACK: Escape key for controllers
+    extern int stdControl_bControllerEscapeKey;
+    extern int stdControl_bControllerEscapeKey_last;
+
     while (SDL_PollEvent(&event))
     {
+        int bIsOdin = 0;
+        int bIsGamepad = 0;
+
+        if (event.type == SDL_JOYBUTTONDOWN || event.type == SDL_JOYBUTTONUP) {
+            const char* name = SDL_JoystickNameForIndex(event.jbutton.which);
+            bIsOdin = name && strcmp(name, "Odin Controller") == 0;
+            bIsGamepad = SDL_IsGameController(event.jbutton.which);
+        }
+        if (event.type == SDL_CONTROLLERBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONUP) {
+            bIsGamepad = 1;
+        }
+
         switch (event.type)
         {
             case SDL_JOYDEVICEADDED: {
+                stdControl_bHasJoysticks = 1;
                 stdControl_InitSdlJoysticks();
                 break;
             }
@@ -1387,6 +1461,7 @@ void Window_SdlUpdate()
                 Window_HandleWindowEvent(&event);
                 break;
             case SDL_KEYDOWN:
+                //stdPlatform_Printf("scancode %d\n", event.key.keysym.scancode);
                 //handleKey(&event.key.keysym, WM_KEYDOWN, 0x1);
                 if (event.key.keysym.sym == SDLK_ESCAPE)
                 {
@@ -1465,6 +1540,10 @@ void Window_SdlUpdate()
                 {
                     Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_OEM_3, event.key.repeat & 0xFFFF);
                 }
+                else if (event.key.keysym.scancode == SDL_SCANCODE_AC_BACK) {
+                    Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                    Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, event.key.repeat & 0xFFFF);
+                }
 
                 //if (!event.key.repeat)
                 //    stdControl_SetSDLKeydown(event.key.keysym.scancode, 1, event.key.timestamp);
@@ -1538,6 +1617,9 @@ void Window_SdlUpdate()
                 {
                     Window_msg_main_handler(g_hWnd, WM_KEYUP, VK_OEM_3, 0);
                 }
+                else if (event.key.keysym.scancode == SDL_SCANCODE_AC_BACK) {
+                    Window_msg_main_handler(g_hWnd, WM_KEYUP, VK_ESCAPE, 0);
+                }
                 //handleKey(&event.key.keysym, WM_KEYUP, 0xc0000001);
 
                 if (jkQuakeConsole_bOpen) break; // Hijack all input to console
@@ -1605,6 +1687,70 @@ void Window_SdlUpdate()
 
                 if (jkQuakeConsole_bOpen) break; // Hijack all input to console
                 break;
+
+            // HACK: Escape key for controllers
+            case SDL_JOYBUTTONDOWN:
+            case SDL_JOYBUTTONUP:
+                if (!bIsGamepad) {
+                    //stdPlatform_Printf("button %d, %d\n", event.jbutton.button, event.jbutton.state);
+                }
+                if (bIsOdin && !bIsGamepad && (event.jbutton.button == 6 || event.jbutton.button == 4)) {
+                    stdControl_bControllerEscapeKey = (event.jbutton.state == SDL_PRESSED);
+                }
+                else if (!bIsGamepad && jkCutscene_isRendering && event.type == SDL_JOYBUTTONDOWN && event.jbutton.button == 3) { // y
+                    Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                    Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+                }
+                else if (!bIsGamepad && jkCutscene_isRendering  && event.type == SDL_JOYBUTTONDOWN&& event.jbutton.button == 2) { // x
+                    Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                    Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+                }
+                else if (!bIsGamepad && jkCutscene_isRendering && event.type == SDL_JOYBUTTONDOWN && event.jbutton.button == 1) { // b
+                    Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                    Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+                }
+                else if (!bIsGamepad && jkCutscene_isRendering && event.type == SDL_JOYBUTTONDOWN && event.jbutton.button == 0) { // a
+                    Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                    Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+                }
+                break;
+
+            case SDL_JOYAXISMOTION:
+                if (event.jaxis.which == 0) {
+                    //stdPlatform_Printf("axis %d, %d\n", event.jaxis.axis, event.jaxis.value);
+                }
+                break;
+
+            case SDL_CONTROLLERBUTTONDOWN:
+            case SDL_CONTROLLERBUTTONUP:
+                if (bIsGamepad) {
+                    //stdPlatform_Printf("gpad button %d, %d\n", event.cbutton.button, event.cbutton.state);
+                    if (event.cbutton.button == SDL_CONTROLLER_BUTTON_START || event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                        stdControl_bControllerEscapeKey = (event.cbutton.state == SDL_PRESSED);
+                    }
+                    else if (jkCutscene_isRendering && event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_Y) { // y
+                        Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                        Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+                    }
+                    else if (jkCutscene_isRendering  && event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_X) { // x
+                        Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_SPACE, 0);
+                        Window_msg_main_handler(g_hWnd, WM_CHAR, VK_SPACE, 0);
+                    }
+                    else if (jkCutscene_isRendering && event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_B) { // b
+                        Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                        Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+                    }
+                    else if (jkCutscene_isRendering && event.type == SDL_CONTROLLERBUTTONDOWN && event.cbutton.button == SDL_CONTROLLER_BUTTON_A) { // a
+                        Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+                        Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+                    }
+                }
+                break;
+            case SDL_CONTROLLERAXISMOTION:
+                //stdPlatform_Printf("Controller %d Axis %d moved to %d\n", 
+                //       event.caxis.which, event.caxis.axis, event.caxis.value);
+                break;
+
             case SDL_QUIT:
                 stdPlatform_Printf("Quit!\n");
 
@@ -1619,6 +1765,13 @@ void Window_SdlUpdate()
                 break;
         }
     }
+
+    // HACK: Escape key for controllers
+    if (stdControl_bControllerEscapeKey && !stdControl_bControllerEscapeKey_last) {
+        Window_msg_main_handler(g_hWnd, WM_KEYFIRST, VK_ESCAPE, 0);
+        Window_msg_main_handler(g_hWnd, WM_CHAR, VK_ESCAPE, 0);
+    }
+    stdControl_bControllerEscapeKey_last = stdControl_bControllerEscapeKey;
     
     if (Window_resized)
     {
@@ -1664,13 +1817,17 @@ void Window_SdlUpdate()
 	#else
         if (!jkGuiBuildMulti_bRendering) {
             std3D_StartScene();
+#ifdef QUAKE_CONSOLE
             jkQuakeConsole_Render();
+#endif
             std3D_DrawMenu();
             std3D_EndScene();
             SDL_GL_SwapWindow(displayWindow);
         }
         else {
+#ifdef QUAKE_CONSOLE
             jkQuakeConsole_Render();
+#endif
             std3D_DrawMenu();
             SDL_GL_SwapWindow(displayWindow);
             //menu_framelimit_amt_ms = 64;
@@ -1711,6 +1868,8 @@ void Window_SdlUpdate()
             Window_lastYRel = 0;
         }
 
+#ifdef QUAKE_CONSOLE
+
         if (jkQuakeConsole_bOpen && jkQuakeConsole_bOpen != last_jkQuakeConsole_bOpen) {
             SDL_WarpMouseInWindow(displayWindow, Window_menu_mouseX, Window_menu_mouseY);
         }
@@ -1734,12 +1893,15 @@ void Window_SdlUpdate()
         {
             SDL_SetRelativeMouseMode(SDL_FALSE);
         }
+#endif
     }
 
     jkPlayer_enableVsync_last = jkPlayer_enableVsync;
 
     last_jkGame_isDDraw = jkGame_isDDraw;
+#ifdef QUAKE_CONSOLE
     last_jkQuakeConsole_bOpen = jkQuakeConsole_bOpen;
+#endif
 }
 
 void Window_SdlVblank()
@@ -1808,6 +1970,12 @@ void Window_RecreateSDL2Window()
 #ifdef TILE_SW_RASTER
 	int flags = SDL_WINDOW_RESIZABLE; 
 #else
+    // HACK: side-step the json stuff
+    if (Window_bShouldPopSteamKeyboard) {
+        Window_isFullscreen = 1;
+        Window_isHiDpi = 1;
+    }
+
     int flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 #endif
     if (displayWindow) {
@@ -1872,6 +2040,7 @@ void Window_RecreateSDL2Window()
     else {
         SDL_SetWindowFullscreen(displayWindow, 0);
     }
+    SDL_RaiseWindow(displayWindow);
 
  #ifndef TILE_SW_RASTER
 	glWindowContext = SDL_GL_CreateContext(displayWindow);
@@ -1883,7 +2052,20 @@ void Window_RecreateSDL2Window()
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+#ifdef RENDER_DROID2
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG|SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+#endif
+        glWindowContext = SDL_GL_CreateContext(displayWindow);
+    }
+
+    // Retry with 3.20 and this thing instead
+    if (glWindowContext == NULL)
+    {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
         glWindowContext = SDL_GL_CreateContext(displayWindow);
 		Window_GL4 = 0;
     }
@@ -1898,8 +2080,11 @@ void Window_RecreateSDL2Window()
 
     SDL_GL_MakeCurrent(displayWindow, glWindowContext);
     SDL_GL_SetSwapInterval(jkPlayer_enableVsync); // Disable vsync
+
  #endif
-	SDL_StartTextInput();
+#ifndef TARGET_ANDROID
+    SDL_StartTextInput();
+#endif
 
 #ifndef TILE_SW_RASTER
     SDL_GL_GetDrawableSize(displayWindow, &Window_xSize, &Window_ySize);
@@ -1942,7 +2127,30 @@ int Window_Main_Linux(int argc, char** argv)
 
     // Init SDL
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_NOPARACHUTE);
+    SDL_SetHint(SDL_HINT_APP_NAME, "OpenJKDF2");
+
+#if defined(TARGET_ANDROID)
+    //SDL_SetHint(SDL_HINT_JOYSTICK_DEBUG, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_XBOX, "1");
+    //SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "1");
+    SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+    SDL_SetHint("SDL_MIXER_DEBUG_MUSIC_INTERFACES", "1");
+    SDL_SetHint(SDL_HINT_AUDIODRIVER, "aaudio"); // This is fine for music tbh
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_NOPARACHUTE | SDL_INIT_GAMECONTROLLER);
+
+    
+    if ((SDL_GetHintBoolean("SteamClientLaunch", 0) || SDL_GetHintBoolean("SteamOS", 0) || SDL_GetHintBoolean("SteamDeck", 0)) && SDL_GetHintBoolean("SteamGamepadUI", 0)) {
+        Window_bShouldPopSteamKeyboard = 1;
+        Window_isFullscreen = 1;
+        Window_isHiDpi = 1;
+    }
 
 #if defined(MACOS)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -1953,14 +2161,19 @@ int Window_Main_Linux(int argc, char** argv)
 
 #if defined(WIN64_STANDALONE)
 
-#ifndef TILE_SW_RASTER
+#ifdef RENDER_DROID2
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG|SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-#endif
 	Window_GL4 = 1;
+#else
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+#endif
 
     // apitrace
 #if 0
@@ -1981,10 +2194,9 @@ int Window_Main_Linux(int argc, char** argv)
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 #else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
 #endif
 
 #endif
@@ -2176,6 +2388,9 @@ int Window_DefaultHandler(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam, voi
 
 int Window_MessageLoop()
 {
+    // Added: controller menuing
+    jkGuiRend_UpdateController();
+
     jkMain_GuiAdvance();
     Window_msg_main_handler(g_hWnd, WM_PAINT, 0, 0);
     

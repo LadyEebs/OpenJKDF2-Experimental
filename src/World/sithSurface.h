@@ -124,6 +124,8 @@ rdSurface* sithSurface_SurfaceAnim(sithSurface *parent, flex_t a2, uint16_t flag
 int sithSurface_Startup2();
 int sithSurface_Startup3();
 void sithSurface_SetSectorLight(sithSector *sector, flex_t extraLight, flex_t a3, int a4);
+int sithSurface_New(sithWorld *world, int num);
+int sithSurface_AllocateAdjoins(sithWorld *world, int num);
 void sithSurface_Free(sithWorld *world);
 MATH_FUNC void sithSurface_Tick(flex_t deltaSecs);
 MATH_FUNC void sithSurface_ScrollSky(rdSurface *surface, int flags, flex_t deltaSecs, uint8_t a4);

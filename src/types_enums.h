@@ -37,10 +37,10 @@ enum RD_LIGHTMODE
 #ifdef SPECULAR_LIGHTING
 	RD_LIGHTMODE_SPECULAR = 4, // lightmode was always clamped to 3 so let's make use of 4
 	RD_LIGHTMODE_SUBSURFACE = 5, // same for 5
-#else
+#endif
     RD_LIGHTMODE_4_UNK = 4,
 	RD_LIGHTMODE_5_UNK = 5,
-#endif
+
     RD_LIGHTMODE_6_UNK = 6
 };
 
@@ -281,7 +281,7 @@ typedef enum
 #define JK_JOYSTICK_EXT_BUTTON_STRIDE   (JK_NUM_EXT_JOY_BUTTONS)
 #define JK_NUM_EXTENDED_KEYS ((JK_JOYSTICK_BUTTON_STRIDE * JK_NUM_JOYSTICKS) + JK_NUM_MOUSE_BUTTONS + JK_NUM_EXT_MOUSE_BUTTONS + (JK_JOYSTICK_EXT_BUTTON_STRIDE * JK_NUM_JOYSTICKS))
 
-#if defined(SDL2_RENDER)
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
     #define JK_TOTAL_NUM_KEYS (120+JK_NUM_EXTENDED_KEYS)
 #else
     #define JK_TOTAL_NUM_KEYS (148)
@@ -334,7 +334,7 @@ typedef enum
 #define JK_EXT_MOUSE_END        (KEY_MOUSE_B5 + JK_NUM_EXT_MOUSE_BUTTONS)
 
 #define KEY_IS_MOUSE(x) ((x >= KEY_MOUSE_B1 && x <= KEY_MOUSE_B4) || (x >= KEY_MOUSE_B5 && x < JK_EXT_MOUSE_END))
-#define KEY_IS_JOY_BUTTON(x) ((x >= KEY_JOY1_B1 && x < KEY_MOUSE_STARTIDX) || (x >= (KEY_JOY1_B9 - 1) && x < KEY_JOY2_EXT_ENDIDX))
+#define KEY_IS_JOY_BUTTON(x) ((x >= KEY_JOY1_B1 && x < KEY_MOUSE_STARTIDX) || (x >= KEY_JOY1_B9 && x < KEY_JOY2_EXT_ENDIDX))
 #define KEY_IS_BUTTON(x) (KEY_IS_JOY_BUTTON(x) || x < JK_EXTENDED_KEY_START)
 
 // QOL added:
@@ -409,6 +409,11 @@ typedef enum
 #define AXIS_MOUSE_X         ((JK_JOYSTICK_AXIS_STRIDE * 2) + 0) // c 12
 #define AXIS_MOUSE_Y         ((JK_JOYSTICK_AXIS_STRIDE * 2) + 1) // d 13
 #define AXIS_MOUSE_Z         ((JK_JOYSTICK_AXIS_STRIDE * 2) + 2) // e 14
+
+#define INPUT_MAPPING_FLAG_AXIS             (1)
+#define INPUT_MAPPING_FLAG_DXKEY            (2)
+#define INPUT_MAPPING_FLAG_AXIS_REVERSED    (4)
+#define INPUT_MAPPING_FLAG_RAW_AXIS         (8)
 
 // g_debugmodeFlags defines
 #define DEBUGFLAG_NO_AIEVENTS          (0x1)
@@ -524,6 +529,12 @@ enum RdClipFaceStatus {
     CLIPSTAT_RIGHT = 0x20,
     CLIPSTAT_NONE_VISIBLE = 0x40,
     CLIPSTAT_80 = 0x80
+};
+
+enum RdSphereClipStatus {
+    SPHERE_FULLY_INSIDE = 0,
+    SPHERE_CLIPPING_EDGE = 1,
+    SPHERE_FULLY_OUTSIDE = 2,
 };
 
 enum RD_THINGTYPE
@@ -836,10 +847,26 @@ enum INPUT_FUNC
     INPUT_FUNC_ACTIVATE31 = 73,
 #ifdef PLATFORM_STEAM
 	INPUT_FUNC_VOICE = 74,
-	INPUT_FUNC_MAX = 75,
+#ifdef QOL_IMPROVEMENTS
+    INPUT_FUNC_USELASTSELECTED = 75,
+    INPUT_FUNC_MAX = 76,
+#else
+    INPUT_FUNC_MAX = 75,
+#endif
+#else
+#ifdef QOL_IMPROVEMENTS
+    INPUT_FUNC_USELASTSELECTED = 74,
+    INPUT_FUNC_MAX = 75,
 #else
     INPUT_FUNC_MAX = 74,
 #endif
+#endif
+};
+
+enum SithLastSelected_e {
+    LAST_SELECTED_SKILL = 0,
+    LAST_SELECTED_ITEM = 1,
+    LAST_SELECTED_MAX = 2,
 };
 
 enum SITHSOUNDFLAG
@@ -1662,5 +1689,14 @@ enum jkMessageBoxFlags
 {
 	MB_ICONERROR = 0x10,
 };
+
+#ifdef STDPLATFORM_HEAP_SUGGESTIONS
+enum HEAP_SUGGESTIONS {
+    HEAP_ANY = 0,
+    HEAP_FAST = 1,
+    HEAP_SLOW = 2,
+    HEAP_AUDIO = 3,
+};
+#endif
 
 #endif // _OPENJKDF2_TYPES_ENUMS_H

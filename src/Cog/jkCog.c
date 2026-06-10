@@ -561,7 +561,11 @@ void jkCog_SetSaberInfo(sithCog *ctx)
     v4 = sithCogExec_PopThing(ctx);
     if ( v4->playerInfo )
     {
+#ifdef SITH_DEBUG_STRUCT_NAMES
         jkSaber_InitializeSaberInfo(v4, v10->mat_fpath, v9->mat_fpath, base_rad, tip_rad, len, wall_sparks, blood_sparks, saber_sparks);
+#else
+        jkSaber_InitializeSaberInfo(v4, v10->mat_full_fpath, v9->mat_full_fpath, base_rad, tip_rad, len, wall_sparks, blood_sparks, saber_sparks);
+#endif
         if ( COG_SHOULD_SYNC(ctx))
         {
             if (Main_bMotsCompat) {
@@ -1330,7 +1334,7 @@ void jkCogExt_GetThingAttachThing(sithCog* ctx)
         if (pThing->attach_flags == SITH_ATTACH_THINGSURFACE) {
             sithThing* pAttached = pThing->attachedThing;
             if (pAttached) {
-                retval = pAttached->thing_id;
+                retval = pAttached->thingIdx;
             }
         }
     }

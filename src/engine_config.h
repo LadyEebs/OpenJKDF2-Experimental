@@ -271,10 +271,10 @@
 #define MAX_DEFLECTION_BOUNCES (6)
 
 #if defined(TARGET_TWL)
-#define RDCACHE_MAX_TRIS (0x800) // theoretical max 0x800?
-#define RDCACHE_MAX_VERTICES (0x1800)
+#define RDCACHE_MAX_TRIS (0x80) // theoretical max 0x800?
+#define RDCACHE_MAX_VERTICES (0x180) // theoretical max 0x1800?
 
-#define STD3D_MAX_TEXTURES (512)
+#define STD3D_MAX_TEXTURES (512) // theoretical max 2048
 #define STD3D_MAX_UI_TRIS (0x100)
 #define STD3D_MAX_UI_VERTICES (0x100)
 #elif defined(TILE_SW_RASTER)
@@ -316,6 +316,22 @@
 #define RDSURFACE_MAX 256
 #endif
 
+#if defined(QOL_IMPROVEMENTS) && !defined(TARGET_TWL)
+#define SITH_MAX_SYNC_THINGS (128)
+#else
+#define SITH_MAX_SYNC_THINGS (16)
+#endif
+
+#ifdef QOL_IMPROVEMENTS
+    #define SITH_NUM_EVENTS (6)
+#else // !QOL_IMPROVEMENTS
+    #ifdef JKM_TYPES
+        #define SITH_NUM_EVENTS (6)
+    #else // !JKM_TYPES
+        #define SITH_NUM_EVENTS (5)
+    #endif // JKM_TYPES
+#endif // QOL_IMPROVEMENTS
+
 #define SITHCONTROL_NUM_HANDLERS (9)
 
 // jkGuiMultiTally delay between maps
@@ -348,6 +364,12 @@
 // Backport Droidworks misc
 #ifdef QOL_IMPROVEMENTS
 #define DW_CAMERA
+#endif
+
+#ifdef TARGET_TWL
+#define JKPLAYER_NUM_INFOS (11)
+#else
+#define JKPLAYER_NUM_INFOS (32)
 #endif
 
 #ifdef JKM_DSS
@@ -385,7 +407,7 @@
 #define SITHCAMERA_ZFAR_FIRSTPERSON SITHCAMERA_ZFAR
 #elif defined(TARGET_TWL)
 #define SITHCAMERA_ZNEAR (1.0 / 64.0)
-#define SITHCAMERA_ZFAR (64.0)
+#define SITHCAMERA_ZFAR (6.0)
 #define SITHCAMERA_ZNEAR_FIRSTPERSON (1.0 / 64.0)
 #define SITHCAMERA_ZFAR_FIRSTPERSON SITHCAMERA_ZFAR
 #else
@@ -399,7 +421,11 @@
 #define SITHPARTICLE_MAX_PARTICLES (64)
 
 #if !defined(QOL_IMPROVEMENTS) || defined(TARGET_TWL)
-#define RDCAMERA_MAX_LIGHTS 64
+#ifdef TARGET_TWL
+#define RDCAMERA_MAX_LIGHTS (8)
+#else
+#define RDCAMERA_MAX_LIGHTS (64)
+#endif
 #else
 #ifdef RENDER_DROID2
 #define RDCAMERA_MAX_LIGHTS 256
@@ -412,6 +438,15 @@
 
 #endif
 #endif
+
+#ifdef TARGET_TWL
+#define STDGOB_MAX_GOBS (8)
+#else
+#define STDGOB_MAX_GOBS (64)
+#endif
+
+#define RDPUPPET_MAX_TRACKS (4)
+#define RDPUPPET_MAX_NODES (64)
 
 #ifdef SDL2_RENDER
 #define JOYSTICK_MAX_STRS (6)
@@ -448,10 +483,16 @@
 #define STDCONF_LINEBUFFER_LEN (2048)
 #endif
 
+#ifdef TARGET_TWL
+#define SITHAI_MAX_ACTORS (128)
+#else
 #define SITHAI_MAX_ACTORS (256)
+#endif
 
 #if defined(QOL_IMPROVEMENTS) && !defined(TARGET_TWL)
 #define SITH_MIXER_NUMPLAYINGSOUNDS (256)
+#elif defined(TARGET_TWL)
+#define SITH_MIXER_NUMPLAYINGSOUNDS (32)
 #else
 #define SITH_MIXER_NUMPLAYINGSOUNDS (32)
 #endif
@@ -463,17 +504,61 @@
 
 #endif
 
+#define RDMATERIAL_MAX_TEXINFOS (16)
+
 //
 // Misc optimizations/features
 //
+#define SITH_DEBUG_STRUCT_NAMES
 #if defined(TARGET_TWL)
+#undef SITH_DEBUG_STRUCT_NAMES
+
+// stdHashTable memory optimizations
 #define STDHASHTABLE_CRC32_KEYS
+#define STDHASHTABLE_LOG2_BUCKETS
+#define STDHASHTABLE_SINGLE_LINKLIST
+
+// COG memory optimizations
+#define COG_DYNAMIC_STACKS
+#define COG_DYNAMIC_IDK
+#define COG_DYNAMIC_TRIGGERS
+#define COG_DYNAMIC_STACKS_INCREMENT (32)
+#define COG_CRC32_SYMBOL_NAMES
+#define COG_COMPRESS_VAR_SIZE
+
+// Other memory optimizations
+#define SITHAI_CRC32_INSTINCTS
+
+// Suggest which heaps to place things in 
+// (fast NWRAM, slow swap, etc)
+#define STDPLATFORM_HEAP_SUGGESTIONS
+
+// Deferred material loading and LRU unloading
+#define RDMATERIAL_LRU_LOAD_UNLOAD
+#define RDMATERIAL_MINIMIZE_STRUCTS
+
+// Halve the x/y positions/sizes for all jkGui elements
+#define JKGUI_SMOL_SCREEN
+
+// Keep rdClip buffers in stack (DTCM)
+#define RDCLIP_WORK_BUFFERS_IN_STACK_MEM
+//#define RDCLIP_COPY_VERTS_TO_STACK
+#define RDCLIP_CLIP_ZFAR_FIRST
+#define SITHRENDER_SPHERE_TEST_SURFACES
+#define RDCACHE_RENDER_NGONS
+#define STDBITMAP_PARTIAL_LOAD
 #endif
 
 // Deferred loading and LRU unloading
 #if defined(QOL_IMPROVEMENTS) && !defined(TILE_SW_RASTER) && !defined(RENDER_DROID2)
-#define RDMATERIAL_LRU_LOAD_UNLOAD
+//#define RDMATERIAL_LRU_LOAD_UNLOAD
 #endif
+
+#define RDCACHE_RENDER_LINES
+
+//#define RDMATERIAL_LRU_LOAD_UNLOAD
+//#define JKGUI_SMOL_SCREEN
+//#define STDHASHTABLE_CRC32_KEYS
 
 #ifdef QOL_IMPROVEMENTS
 #define JKDEV_NUM_CHEATS (64)
@@ -481,7 +566,7 @@
 #define JKDEV_NUM_CHEATS (32)
 #endif
 
-#define SITHCVAR_MAX_CVARS (512)
+#define SITHCVAR_MAX_CVARS (256)
 #define SITHCVAR_MAX_STRLEN (256)
 #define SITHCVAR_MAX_NAME_STRLEN (64)
 
@@ -552,6 +637,8 @@ typedef double flex_d_t_type;
 #ifdef EXPERIMENTAL_FIXED_POINT
 #define FIXED_POINT_DECIMAL_BITS (16)
 #define FIXED_POINT_WHOLE_BITS   (32-FIXED_POINT_DECIMAL_BITS)
+//#define RENDER_ROUND_VERTICES
+#define OPTIMIZE_AWAY_UNUSED_FIELDS
 #endif
 
 #define FLEX(n) ((flex_t)n)
@@ -581,8 +668,37 @@ typedef double flex_d_t_type;
 // TODO: Have a TARGET_ARMvIDK or something
 #ifdef TARGET_TWL
 #define MATH_FUNC __attribute__((target("arm")))
+#ifdef EXPERIMENTAL_FIXED_POINT
+#define FAST_FUNC __attribute__((section(".itcm.text"), long_call))
+#else
+#define FAST_FUNC
+#endif
+#define FAST_DATA __attribute__((section(".itcm.data")))
+#define NO_ALIAS __restrict__
+#define LIKELY(cond)   __builtin_expect(!!(cond), 1)
+#define UNLIKELY(cond) __builtin_expect(!!(cond), 0)
+
+
+#include <stdint.h>
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/*extern FAST_FUNC void* memcpy(void* dst, const void* src, size_t len);
+extern FAST_FUNC void* _memcpy(void* dst, const void* src, size_t len);
+extern FAST_FUNC void* __aeabi_memcpy(void* dst, const void* src, size_t len);
+extern FAST_FUNC void* __aeabi_memcpy4(void* dst, const void* src, size_t len);
+extern FAST_FUNC void* __aeabi_memcpy8(void* dst, const void* src, size_t len);*/
+#ifdef __cplusplus
+}
+#endif
 #else
 #define MATH_FUNC
+#define FAST_FUNC
+#define NO_ALIAS
+#define LIKELY(cond) (cond)
+#define UNLIKELY(cond) (cond)
 #endif
 
 #endif // _OPENJKDF2_ENGINE_CONFIG_H

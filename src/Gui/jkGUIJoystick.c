@@ -30,7 +30,7 @@ static jkGuiJoystickStrings jkGuiJoystick_strings;
 static flex_t jkGuiJoystick_aFloats[JKGUIJOYSTICK_NUM_ENTRIES];
 static wchar_t jkGuiJoystick_awTmp[256];
 static Darray jkGuiJoystick_darray3;
-static int32_t jkGuiJoystick_dword_5576F0;
+static int32_t jkGuiJoystick_bIsCapturingInputs;
 static int32_t jkGuiJoystick_dword_5576F4;
 static wchar_t jkGuiJoystick_waIdk2[4];
 
@@ -63,7 +63,7 @@ static jkGuiJoystickEntry jkGuiJoystick_aEntries[JKGUIJOYSTICK_NUM_ENTRIES] =
     { KEY_JOY1_B7,      "KEY_JOY1_B7",      0x206, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY1_B8,      "KEY_JOY1_B8",      0x207, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
 
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
     { KEY_JOY1_B9,      "KEY_JOY1_B9",      0x208, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY1_B10,     "KEY_JOY1_B10",     0x209, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY1_B11,     "KEY_JOY1_B11",     0x20A, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
@@ -104,7 +104,7 @@ static jkGuiJoystickEntry jkGuiJoystick_aEntries[JKGUIJOYSTICK_NUM_ENTRIES] =
     { KEY_JOY2_B7,      "KEY_JOY2_B7",      0xA06, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY2_B8,      "KEY_JOY2_B8",      0xA07, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
 
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
     { KEY_JOY2_B9,      "KEY_JOY2_B9",      0xA08, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY2_B10,     "KEY_JOY2_B10",     0xA09, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
     { KEY_JOY2_B11,     "KEY_JOY2_B11",     0xA0A, INPUT_FUNC_FORWARD, 0u, NULL, 0,  0 },
@@ -144,6 +144,25 @@ static int32_t jkGuiJoystick_aIdk2[2] = {0x13, 0x11};
 static int32_t jkGuiJoystick_aIdk2_[2] = {0x12, 0x11}; // unused?
 static int32_t jkGuiKeyboard_aIdk3[2] = {0xAA, 0x0};
 
+#define JKGUIJOYSTICK_IDX_CONTROLS_LIST             (11)
+#define JKGUIJOYSTICK_IDX_LIST12                    (12)
+#define JKGUIJOYSTICK_IDX_LIST13                    (13)
+#define JKGUIJOYSTICK_IDX_ADD_CONTROL               (14)
+#define JKGUIJOYSTICK_IDX_EDIT_CONTROL              (15)
+#define JKGUIJOYSTICK_IDX_REMOVE_CONTROL            (16)
+#define JKGUIJOYSTICK_IDX_CAPTURE                   (17)
+#define JKGUIJOYSTICK_IDX_CALIBRATE_JOYSTICK        (18)
+#define JKGUIJOYSTICK_IDX_REVERSE_AXIS              (19)
+#define JKGUIJOYSTICK_IDX_CONTROL_RAW               (20)
+#define JKGUIJOYSTICK_IDX_SENSITIVITY               (21)
+#define JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT          (22)
+#define JKGUIJOYSTICK_IDX_OK                        (23)
+#define JKGUIJOYSTICK_IDX_CANCEL                    (24)
+#define JKGUIJOYSTICK_IDX_RESTORE_DEFAULTS          (25)
+#define JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK          (26)
+#define JKGUIJOYSTICK_IDX_IDK_TEXT                  (27)
+#define JKGUIJOYSTICK_IDX_JOYSTICK_DISABLED_TEXT    (28)
+
 static jkGuiElement jkGuiJoystick_aElements[33+3] = {
     { ELEMENT_TEXT, 0, 0, NULL, 3, { 0, 410, 640, 20 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXT, 0, 6, "GUI_SETUP", 3, { 20, 20, 600, 40 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
@@ -156,6 +175,8 @@ static jkGuiElement jkGuiJoystick_aElements[33+3] = {
     { ELEMENT_TEXTBUTTON, 106, 2, "GUI_MOUSE", 3, { 180, 120, 140, 40 }, 1, 0, "GUI_MOUSE_HINT", NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXTBUTTON, 107, 2, "GUI_JOYSTICK", 3, { 320, 120, 140, 40 }, 1, 0, "GUI_JOYSTICK_HINT", NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXTBUTTON, 108, 2, "GUI_CONTROLOPTIONS", 3, { 460, 120, 140, 40 }, 1, 0, "GUI_CONTROLOPTIONS_HINT", NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
+    
+    // 11
     { ELEMENT_LISTBOX, 0, 0, NULL, 0, { 20, 170, 380, 141 }, 1, 0, "GUI_CONTROLSLIST_HINT", NULL, jkGuiJoystick_ClickList1, jkGuiJoystick_aIdk1, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_LISTBOX, 0, 0, NULL, 0, { 420, 170, 200, 141 }, 1, 0, "GUI_CONTROLSLIST_HINT", NULL,jkGuiJoystick_ClickList2, jkGuiJoystick_aIdk1, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_LISTBOX, 0, 0, NULL, 0, { 420, 170, 200, 141 }, 1, 0, "GUI_CONTROLSLIST_HINT", NULL, jkGuiJoystick_ClickList3, jkGuiJoystick_aIdk1, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
@@ -174,7 +195,9 @@ static jkGuiElement jkGuiJoystick_aElements[33+3] = {
     { ELEMENT_CHECKBOX, 0, 0, "GUI_DISABLE_JOYSTICK", 0, { 320, 335, 300, 20 }, 1, 0, "GUI_DISABLE_JOYSTICK_HINT", NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXT, 0, 2, &jkGuiJoystick_awTmp, 3, { 50, 180, 320, 120 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXT, 0, 2, &jkGuiJoystick_awTmp, 3, { 50, 180, 540, 120 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
-#ifdef SDL2_RENDER
+
+    // 29
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
     { ELEMENT_TEXT, 0, 0, jkGuiJoystick_strings.aStrings[0], 3, { 20, 310, 190, 25 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXT, 0, 0, jkGuiJoystick_strings.aStrings[1], 3, { 20, 335, 190, 25 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
     { ELEMENT_TEXT, 0, 0, jkGuiJoystick_strings.aStrings[2], 3, { 20, 360, 190, 25 }, 1, 0, NULL, NULL, NULL, NULL, { 0, 0, 0, 0, 0, { 0, 0, 0, 0 } }, 0 },
@@ -200,7 +223,7 @@ void jkGuiJoystick_nullsub_51()
 
 int jkGuiJoystick_ClickList1(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t mouseX, int32_t mouseY, BOOL bRedraw)
 {
-    if ( !jkGuiJoystick_dword_5576F0 )
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiRend_ClickSound(pElement, pMenu, mouseX, mouseY, bRedraw);
         if ( pElement->texInfo.anonymous_18 )
@@ -244,11 +267,11 @@ void jkGuiJoystick_Draw(jkGuiMenu *pMenu, BOOL bRedraw)
     {
         while ( 1 )
         {
-            if ( jkGuiJoystick_aElements[26].selectedTextEntry )
+            if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].selectedTextEntry )
                 goto LABEL_19;
-            jkGuiJoystick_aElements[11].bIsVisible = 1;
-            jkGuiJoystick_aElements[28].bIsVisible = 0;
-            v3 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[11].selectedTextEntry);
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_JOYSTICK_DISABLED_TEXT].bIsVisible = 0;
+            v3 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry);
             v4 = jkGuiJoystick_aEntries[v3].inputFunc;
             v5 = jkGuiJoystick_dword_536B9C;
             v21 = v4;
@@ -259,46 +282,46 @@ void jkGuiJoystick_Draw(jkGuiMenu *pMenu, BOOL bRedraw)
                 v6 = jkGuiJoystick_aEntries[jkGuiJoystick_dword_536B9C].pControlEntry;
                 if ( v6 )
                 {
-                    if ( jkGuiJoystick_aElements[22].bIsVisible )
+                    if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible )
                     {
-                        if ( jkGuiJoystick_aElements[22].selectedTextEntry > 50 )
-                            v7 = (flex_d_t)(jkGuiJoystick_aElements[22].selectedTextEntry - 50) * 0.059999999 - -1.0;
+                        if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry > 50 )
+                            v7 = (flex_d_t)(jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry - 50) * 0.059999999 - -1.0;
                         else
-                            v7 = (flex_d_t)jkGuiJoystick_aElements[22].selectedTextEntry * 0.015 - -0.25;
+                            v7 = (flex_d_t)jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry * 0.015 - -0.25;
                         v6->binaryAxisVal = v7;
                     }
-                    if ( jkGuiJoystick_aElements[20].bIsVisible )
-                        v6->flags = v6->flags & ~8u | (jkGuiJoystick_aElements[20].selectedTextEntry != 0 ? 8 : 0);
-                    if ( jkGuiJoystick_aElements[19].bIsVisible )
-                        v6->flags = v6->flags & ~4u | (jkGuiJoystick_aElements[19].selectedTextEntry != 0 ? 0 : 4);
+                    if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible )
+                        v6->flags = v6->flags & ~8u | (jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].selectedTextEntry != 0 ? 8 : 0);
+                    if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible )
+                        v6->flags = v6->flags & ~4u | (jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].selectedTextEntry != 0 ? 0 : 4);
                 }
             }
             if ( !jkGuiJoystick_dword_557128 )
                 break;
             if ( v5 == v3 )
             {
-                jkGuiJoystick_aElements[25].bIsVisible = 0;
-                jkGuiJoystick_aElements[14].bIsVisible = 0;
-                jkGuiJoystick_aElements[15].bIsVisible = 0;
-                jkGuiJoystick_aElements[16].bIsVisible = 0;
-                jkGuiJoystick_aElements[17].bIsVisible = 0;
-                jkGuiJoystick_aElements[18].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_RESTORE_DEFAULTS].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_ADD_CONTROL].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_EDIT_CONTROL].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REMOVE_CONTROL].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CAPTURE].bIsVisible = 0;
+                jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CALIBRATE_JOYSTICK].bIsVisible = 0;
 
                 // Button
                 if ( v3 >= 12 )
                 {
-                    jkGuiJoystick_aElements[12].bIsVisible = 0;
+                    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].bIsVisible = 0;
                     v10 = &jkGuiJoystick_darray3;
-                    v20 = &jkGuiJoystick_aElements[13];
+                    v20 = &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13];
                     v11 = jkGuiJoystick_aEntries[v3].pControlEntry;
-                    if ( v11 && (v11->flags & 4) != 0 )
+                    if ( v11 && (v11->flags & INPUT_MAPPING_FLAG_AXIS_REVERSED) != 0 )
                         v21 = v4 | 0x80000000;
                 }
                 else // Axis
                 {
-                    jkGuiJoystick_aElements[13].bIsVisible = 0;
+                    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].bIsVisible = 0;
                     v10 = &jkGuiJoystick_darray;
-                    v20 = &jkGuiJoystick_aElements[12];
+                    v20 = &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12];
                 }
                 v12 = v10->total;
                 v13 = 0;
@@ -324,46 +347,46 @@ LABEL_38:
                 goto LABEL_19;
         }
         v9 = pMenu;
-        jkGuiJoystick_aElements[15].bIsVisible = v4 != -1;
-        jkGuiJoystick_aElements[16].bIsVisible = v4 != -1;
-        jkGuiJoystick_aElements[13].bIsVisible = 0;
-        jkGuiJoystick_aElements[14].bIsVisible = v4 == -1;
-        jkGuiJoystick_aElements[12].bIsVisible = 0;
-        jkGuiJoystick_aElements[17].bIsVisible = 1;
-        jkGuiJoystick_aElements[18].bIsVisible = 1;
-        jkGuiJoystick_aElements[25].bIsVisible = 1;
-        pMenu->focusedElement = &jkGuiJoystick_aElements[11];
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_EDIT_CONTROL].bIsVisible = v4 != -1;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REMOVE_CONTROL].bIsVisible = v4 != -1;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].bIsVisible = 0;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_ADD_CONTROL].bIsVisible = v4 == -1;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].bIsVisible = 0;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CAPTURE].bIsVisible = 1;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CALIBRATE_JOYSTICK].bIsVisible = 1;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_RESTORE_DEFAULTS].bIsVisible = 1;
+        pMenu->focusedElement = &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST];
 LABEL_39:
         if ( jkGuiJoystick_dword_557128 || (v14 = jkGuiJoystick_aEntries[v3].pControlEntry) == 0 || v3 >= 12 )
         {
-            jkGuiJoystick_aElements[19].bIsVisible = 0;
-            jkGuiJoystick_aElements[20].bIsVisible = 0;
-            jkGuiJoystick_aElements[21].bIsVisible = 0;
-            jkGuiJoystick_aElements[22].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible = 0;
         }
         else
         {
             v15 = v14->binaryAxisVal;
-            v16 = (jkGuiJoystick_aEntries[v3].flags >> 3) & 1;
-            jkGuiJoystick_aElements[19].bIsVisible = 1;
-            jkGuiJoystick_aElements[20].bIsVisible = v16;
-            jkGuiJoystick_aElements[21].bIsVisible = 1;
-            jkGuiJoystick_aElements[22].bIsVisible = 1;
+            v16 = !!(jkGuiJoystick_aEntries[v3].flags & INPUT_MAPPING_FLAG_RAW_AXIS);
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible = v16;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible = 1;
             if ( v15 == 0.0 )
                 v15 = 1.0;
             if ( v15 > 1.0 )
                 v17 = (__int64)((v15 - 1.0) * 16.666666 - -0.5) + 50; // TODO int64?
             else
                 v17 = (__int64)((v15 - 0.25) * 66.666664 - -0.5); // TODO int64?
-            jkGuiJoystick_aElements[22].selectedTextEntry = v17;
-            v18 = (v14->flags >> 3) & 1;
-            jkGuiJoystick_aElements[19].selectedTextEntry = (~v14->flags >> 2) & 1;
-            jkGuiJoystick_aElements[20].selectedTextEntry = v18;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry = v17;
+            v18 = !!(v14->flags & INPUT_MAPPING_FLAG_RAW_AXIS);
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].selectedTextEntry = !!(~v14->flags & INPUT_MAPPING_FLAG_AXIS_REVERSED);
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].selectedTextEntry = v18;
         }
         if ( bRedraw )
         {
             v19 = v9->lastMouseOverClickable;
-            if ( v19 == &jkGuiJoystick_aElements[15] || v19 == &jkGuiJoystick_aElements[14] )
+            if ( v19 == &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_EDIT_CONTROL] || v19 == &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_ADD_CONTROL] )
                 v9->lastMouseOverClickable = 0;
             jkGuiRend_Paint(v9);
             if ( !v9->lastMouseOverClickable )
@@ -379,26 +402,26 @@ LABEL_39:
         return;
     }
 LABEL_19:
-    jkGuiJoystick_aElements[11].bIsVisible = 0;
-    jkGuiJoystick_aElements[12].bIsVisible = 0;
-    jkGuiJoystick_aElements[13].bIsVisible = 0;
-    jkGuiJoystick_aElements[14].bIsVisible = 0;
-    jkGuiJoystick_aElements[15].bIsVisible = 0;
-    jkGuiJoystick_aElements[16].bIsVisible = 0;
-    jkGuiJoystick_aElements[17].bIsVisible = 0;
-    jkGuiJoystick_aElements[18].bIsVisible = 0;
-    jkGuiJoystick_aElements[19].bIsVisible = 0;
-    jkGuiJoystick_aElements[20].bIsVisible = 0;
-    jkGuiJoystick_aElements[21].bIsVisible = 0;
-    jkGuiJoystick_aElements[22].bIsVisible = 0;
-    jkGuiJoystick_aElements[25].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_ADD_CONTROL].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_EDIT_CONTROL].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REMOVE_CONTROL].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CAPTURE].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CALIBRATE_JOYSTICK].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_RESTORE_DEFAULTS].bIsVisible = 0;
     if ( v2 == 1 )
     {
-        jkGuiJoystick_aElements[23].bIsVisible = 0;
-        jkGuiJoystick_aElements[26].bIsVisible = 0;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_OK].bIsVisible = 0;
+        jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].bIsVisible = 0;
     }
-    jkGuiJoystick_aElements[27].bIsVisible = 0;
-    jkGuiJoystick_aElements[28].bIsVisible = 1;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_IDK_TEXT].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_JOYSTICK_DISABLED_TEXT].bIsVisible = 1;
     if ( v2 == 1 )
         v8 = jkStrings_GetUniStringWithFallback("GUI_NO_JOYSTICK");
     else
@@ -413,7 +436,7 @@ int jkGuiJoystick_ClickList2(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t m
 {
     char *v6; // edx
 
-    if ( jkGuiJoystick_dword_5576F0 )
+    if ( jkGuiJoystick_bIsCapturingInputs )
         return 0;
     jkGuiRend_ClickSound(pElement, pMenu, mouseX, mouseY, bRedraw);
     if ( pElement->texInfo.anonymous_18 )
@@ -424,7 +447,7 @@ int jkGuiJoystick_ClickList2(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t m
     }
     if ( bRedraw )
     {
-        jkGuiJoystick_BindControl(jkGuiJoystick_aElements[11].selectedTextEntry, pElement->selectedTextEntry);
+        jkGuiJoystick_BindControl(jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry, pElement->selectedTextEntry);
         jkGuiJoystick_dword_557128 = 0;
     }
     jkGuiJoystick_Draw(pMenu, 1);
@@ -458,7 +481,7 @@ void jkGuiJoystick_BindControl(int a1, int a2)
         if ( v8 )
         {
             v13 = v8->binaryAxisVal;
-            v2 = v8->flags & 4;
+            v2 = v8->flags & INPUT_MAPPING_FLAG_AXIS_REVERSED;
         }
         sithControl_ShiftFuncKeyinfo(v5, jkGuiJoystick_aEntries[v3].dxKeyNum);
     }
@@ -512,6 +535,13 @@ void jkGuiJoystick_sub_41B390()
     v1 = &jkGuiJoystick_aEntries[0];
     do
     {
+        // Added: in case the compiler doesn't init some of the array
+        if (!v1->displayStrKey) {
+            ++v1;
+            ++v7;
+            continue;
+        }
+
         v2 = v1->keybits & 0xFF; // Added: 4bit -> 8bit
         v8 = v1->keybits & 0x300; // Added: 4bit -> 8bit
         v3 = v1->keybits & 0x800; // Added: 4bit -> 8bit
@@ -530,7 +560,7 @@ void jkGuiJoystick_sub_41B390()
         }
         jk_snwprintf(wtmp, 0x100u, L"%ls\t%ls", v4, v5);
         v6 = v3 >> 7;
-        if ( stdControl_aJoystickExists[v6] && !v8 && (stdControl_aJoysticks[v1->dikNum].flags & 1) != 0
+        if ( stdControl_aJoystickExists[v6] && !v8 && (stdControl_aJoysticks[v1->dikNum].flags & INPUT_MAPPING_FLAG_AXIS) != 0
           || v8 == 0x200 && v2 < stdControl_aJoystickMaxButtons[v6] // Added: 4bit -> 8bit
           || v8 == 0x100 && stdControl_aJoystickEnabled[v6] ) // Added: 4bit -> 8bit
         {
@@ -543,9 +573,9 @@ void jkGuiJoystick_sub_41B390()
     jkGuiRend_DarrayReallocStr(&jkGuiJoystick_darray2, 0, 0);
     jkGuiRend_DarrayReallocStr(&jkGuiJoystick_darray, 0, 0);
     jkGuiRend_DarrayReallocStr(&jkGuiJoystick_darray3, 0, 0);
-    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[11], &jkGuiJoystick_darray2);
-    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[12], &jkGuiJoystick_darray);
-    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[13], &jkGuiJoystick_darray3);
+    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST], &jkGuiJoystick_darray2);
+    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12], &jkGuiJoystick_darray);
+    jkGuiRend_SetClickableString(&jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13], &jkGuiJoystick_darray3);
 }
 
 int jkGuiJoystick_EnumFunc(int32_t inputFuncIdx, const char *pInputFuncStr, uint32_t flags, int32_t dxKeyNum, uint32_t dikNum, int32_t flags2, stdControlKeyInfoEntry *pControlEntry, Darray *pDarr)
@@ -572,22 +602,21 @@ int jkGuiJoystick_EnumFunc(int32_t inputFuncIdx, const char *pInputFuncStr, uint
     v11 = inputFuncIdx;
     if ( (flags & 2) != 0 )
     {
-        _strncpy(v17, pInputFuncStr, 0x1Fu);
-        v17[31] = 0;
+        stdString_SafeStrCopy(v17, pInputFuncStr, 32);
         flags2 |= 1; // Added: HACK
         if ( (flags2 & 1) != 0 )
         {
-            strncat(v17, "_A", 0x20u);
+            strncat(v17, "_A", 31); // Added: 32->31
             v8 = 1;
         }
-        else if ( (flags2 & 4) != 0 )
+        else if ( (flags2 & 8) != 0 )
         {
-            strncat(v17, "_R", 0x20u);
+            strncat(v17, "_R", 31); // Added: 32->31
             v11 = inputFuncIdx | 0x80000000;
         }
         else
         {
-            strncat(v17, "_K", 0x20u);
+            strncat(v17, "_K", 31); // Added: 32->31
         }
         v9 = jkStrings_GetUniStringWithFallback(v17);
         if ( !v9 )
@@ -666,7 +695,7 @@ int jkGuiJoystick_ClickList3(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t m
     wchar_t *v17; // eax
     wchar_t *v18; // [esp-14h] [ebp-14h]
 
-    if ( jkGuiJoystick_dword_5576F0 )
+    if ( jkGuiJoystick_bIsCapturingInputs )
         return 0;
     v6 = pMenu;
     jkGuiRend_ClickSound(pElement, pMenu, mouseX, mouseY, bRedraw);
@@ -679,14 +708,14 @@ int jkGuiJoystick_ClickList3(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t m
     if ( bRedraw )
     {
         v8 = pElement->selectedTextEntry;
-        v9 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[11].selectedTextEntry);
+        v9 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry);
         v10 = jkGuiRend_GetId(&jkGuiJoystick_darray3, v8);
         v11 = v10 & ~0x80000000;
         v12 = v9;
         v13 = v10 >> 29;
         v14 = jkGuiJoystick_aEntries[v12].inputFunc;
         v15 = jkGuiJoystick_aEntries[v12].dikNum;
-        v16 = v13 & 4;
+        v16 = v13 & INPUT_MAPPING_FLAG_AXIS_REVERSED;
         if ( v14 != -1 )
             sithControl_ShiftFuncKeyinfo(v14, jkGuiJoystick_aEntries[v12].dxKeyNum);
         if ( sithControl_MapFunc(v11, v15, v16) )
@@ -710,7 +739,7 @@ int jkGuiJoystick_ClickList3(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t m
 
 int jkGuiJoystick_AddEditClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t mouseX, int32_t mouseY, BOOL bRedraw)
 {
-    if ( !jkGuiJoystick_dword_5576F0 )
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiJoystick_dword_557128 = 1;
         jkGuiRend_PlayWav(pMenu->soundClick);
@@ -723,8 +752,8 @@ int jkGuiJoystick_RemoveClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t 
 {
     int32_t v5; // eax
 
-    v5 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[11].selectedTextEntry);
-    if ( !jkGuiJoystick_dword_5576F0 )
+    v5 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry);
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         sithControl_ShiftFuncKeyinfo(jkGuiJoystick_aEntries[v5].inputFunc, jkGuiJoystick_aEntries[v5].dxKeyNum);
         jkGuiRend_PlayWav(pMenu->soundClick);
@@ -751,25 +780,32 @@ int jkGuiJoystick_OkCancelClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_
     wchar_t *v15; // eax
     wchar_t *v16; // [esp-4h] [ebp-14h]
 
-    if ( !jkGuiJoystick_dword_5576F0 )
+#ifdef QOL_IMPROVEMENTS
+    if (pElement->hoverId == -1 && jkGuiJoystick_bIsCapturingInputs) {
+        jkGuiJoystick_bIsCapturingInputs = 0;
+        return 0;
+    }
+#endif
+
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiRend_PlayWav(pMenu->soundClick);
         result = pElement->hoverId;
         if ( !jkGuiJoystick_dword_557128 )
             return result;
-        if ( result == 1 && jkGuiJoystick_aElements[11].bIsVisible )
+        if ( result == 1 && jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible )
         {
-            if ( jkGuiJoystick_aElements[13].bIsVisible )
+            if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].bIsVisible )
             {
-                v6 = jkGuiJoystick_aElements[13].selectedTextEntry;
-                v7 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[11].selectedTextEntry);
+                v6 = jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].selectedTextEntry;
+                v7 = jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry);
                 v8 = jkGuiRend_GetId(&jkGuiJoystick_darray3, v6);
                 v9 = v8 & ~0x80000000;
                 v10 = v7;
                 v11 = v8 >> 29;
                 v12 = jkGuiJoystick_aEntries[v10].inputFunc;
                 v13 = jkGuiJoystick_aEntries[v10].dikNum;
-                v14 = v11 & 4;
+                v14 = v11 & INPUT_MAPPING_FLAG_AXIS_REVERSED;
                 if ( v12 != -1 )
                     sithControl_ShiftFuncKeyinfo(v12, jkGuiJoystick_aEntries[v10].dxKeyNum);
                 if ( sithControl_MapFunc(v9, v13, v14) )
@@ -785,9 +821,9 @@ int jkGuiJoystick_OkCancelClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_
                     jkGuiRend_Paint(&jkGuiJoystick_menu);
                 }
             }
-            else if ( jkGuiJoystick_aElements[12].bIsVisible )
+            else if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].bIsVisible )
             {
-                jkGuiJoystick_BindControl(jkGuiJoystick_aElements[11].selectedTextEntry, jkGuiJoystick_aElements[12].selectedTextEntry);
+                jkGuiJoystick_BindControl(jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].selectedTextEntry);
             }
         }
         jkGuiJoystick_dword_557128 = 0;
@@ -801,8 +837,9 @@ int jkGuiJoystick_RestoreDefaultsClick(jkGuiElement *pElement, jkGuiMenu *pMenu,
     wchar_t *v6; // eax
     wchar_t *v7; // [esp-8h] [ebp-8h]
 
-    if ( jkGuiJoystick_dword_5576F0 )
+    if ( jkGuiJoystick_bIsCapturingInputs )
         return 0;
+
     jkGuiRend_PlayWav(pMenu->soundClick);
     v7 = jkStrings_GetUniStringWithFallback("GUI_RESTORE_DEFAULTS_Q");
     v6 = jkStrings_GetUniStringWithFallback("GUI_RESTORE_DEFAULTS");
@@ -816,15 +853,16 @@ int jkGuiJoystick_RestoreDefaultsClick(jkGuiElement *pElement, jkGuiMenu *pMenu,
     jkGuiJoystick_dword_536B98 = -1;
     jkGuiJoystick_Draw(pMenu, 0);
     jkGuiRend_Paint(pMenu);
+
     return 0;
 }
 
 int jkGuiJoystick_CaptureClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t mouseX, int32_t mouseY, BOOL bRedraw)
 {
-    if ( !jkGuiJoystick_dword_5576F0 )
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiRend_PlayWav(pMenu->soundClick);
-        jkGuiJoystick_dword_5576F0 = 1;
+        jkGuiJoystick_bIsCapturingInputs = 1;
         jkGuiJoystick_MenuTick(pMenu);
     }
     return 0;
@@ -832,7 +870,7 @@ int jkGuiJoystick_CaptureClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t
 
 int jkGuiJoystick_CalibrateClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t mouseX, int32_t mouseY, BOOL bRedraw)
 {
-    if ( !jkGuiJoystick_dword_5576F0 )
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiRend_PlayWav(pMenu->soundClick);
         Windows_CalibrateJoystick();
@@ -857,7 +895,6 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
     flex_d_t v14; // st7
     wchar_t *v15; // esi
     wchar_t *v16; // eax
-    jkGuiMenu *v17; // esi
     uint32_t v18; // [esp-4h] [ebp-28h]
     int32_t v19; // [esp-4h] [ebp-28h]
     flex_t *v20; // [esp+10h] [ebp-14h]
@@ -869,29 +906,29 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
 
     while ( 1 )
     {
-        v1 = jkGuiJoystick_dword_5576F0;
+        v1 = jkGuiJoystick_bIsCapturingInputs;
         v2 = 0;
         v21 = 0;
         v23 = 0;
-        if ( jkGuiJoystick_dword_5576F0 && !jkGuiJoystick_dword_5576F4 )
+        if ( jkGuiJoystick_bIsCapturingInputs && !jkGuiJoystick_dword_5576F4 )
         {
-            jkGuiJoystick_aElements[27].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_IDK_TEXT].bIsVisible = 1;
             jkGuiJoystick_aElements[29].bIsVisible = 1;
             jkGuiJoystick_aElements[30].bIsVisible = 1;
             jkGuiJoystick_aElements[31].bIsVisible = 1;
 
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
             jkGuiJoystick_aElements[32].bIsVisible = 1;
             jkGuiJoystick_aElements[33].bIsVisible = 1;
             jkGuiJoystick_aElements[34].bIsVisible = 1;
 #endif
 
-            jkGuiJoystick_aElements[11].bIsVisible = 0;
-            jkGuiJoystick_aElements[26].bIsVisible = 0;
-            jkGuiJoystick_aElements[19].bIsVisible = 0;
-            jkGuiJoystick_aElements[20].bIsVisible = 0;
-            jkGuiJoystick_aElements[21].bIsVisible = 0;
-            jkGuiJoystick_aElements[22].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible = 0;
             v3 = jkStrings_GetUniStringWithFallback("GUI_CAPTURE_TEXT");
             _wcsncpy(jkGuiJoystick_awTmp, v3, 0xFFu);
             jkGuiJoystick_awTmp[255] = 0;
@@ -913,13 +950,13 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
                 {
                     v18 = v4->dikNum;
                     //printf("%x vs %x\n", v4->keybits, stdControl_aJoysticks[v18].flags);
-                    jkGuiJoystick_aUnk1[v18] = stdControl_aJoysticks[v18].flags & 2;
+                    jkGuiJoystick_aUnk1[v18] = stdControl_aJoysticks[v18].flags & INPUT_MAPPING_FLAG_DXKEY;
                     stdControl_EnableAxis(v18);
                 }
                 v4++;
             }
             while ( v4 < &jkGuiJoystick_aEntries[JKGUIJOYSTICK_NUM_ENTRIES] );
-            v1 = jkGuiJoystick_dword_5576F0;
+            v1 = jkGuiJoystick_bIsCapturingInputs;
             v23 = 1;
             v21 = 1;
         }
@@ -927,17 +964,17 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
         {
             jkGuiJoystick_dword_536B98 = -1;
             jkGuiJoystick_dword_536B9C = -1;
-            jkGuiJoystick_aElements[27].bIsVisible = 0;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_IDK_TEXT].bIsVisible = 0;
             jkGuiJoystick_aElements[29].bIsVisible = 0;
             jkGuiJoystick_aElements[30].bIsVisible = 0;
             jkGuiJoystick_aElements[31].bIsVisible = 0;
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
             jkGuiJoystick_aElements[32].bIsVisible = 0;
             jkGuiJoystick_aElements[33].bIsVisible = 0;
             jkGuiJoystick_aElements[34].bIsVisible = 0;
 #endif
-            jkGuiJoystick_aElements[11].bIsVisible = 1;
-            jkGuiJoystick_aElements[26].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible = 1;
+            jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].bIsVisible = 1;
             jkGuiJoystick_Draw(pMenu, 0);
             v5 = &jkGuiJoystick_aEntries[0];
             do
@@ -952,12 +989,12 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
                 stdControl_ToggleCursor(0);
             else
                 stdControl_Close();
-            v1 = jkGuiJoystick_dword_5576F0;
+            v1 = jkGuiJoystick_bIsCapturingInputs;
             v21 = 1;
         }
         jkGuiJoystick_dword_5576F4 = v1;
         if ( !v1 )
-            goto LABEL_44;
+            goto LABEL_45;
         pOut = 0;
         stdControl_bControlsActive = 1;
         stdControl_ReadControls();
@@ -967,7 +1004,7 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
             break;
         stdControl_FinishRead();
         v7 = pMenu->soundClick;
-        jkGuiJoystick_dword_5576F0 = 0;
+        jkGuiJoystick_bIsCapturingInputs = 0;
         stdControl_bControlsActive = jkGuiJoystick_dword_557078 == 0;
         jkGuiRend_PlayWav(v7);
     }
@@ -1022,26 +1059,24 @@ void jkGuiJoystick_MenuTick(jkGuiMenu *pMenu)
     stdControl_bControlsActive = jkGuiJoystick_dword_557078 == 0;
     if ( !v21 )
     {
-        v17 = pMenu;
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[29], pMenu, 1);
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[30], pMenu, 1);
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[31], pMenu, 1);
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[32], pMenu, 1);
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[33], pMenu, 1);
         jkGuiRend_UpdateAndDrawClickable(&jkGuiJoystick_aElements[34], pMenu, 1);
 #endif
-        v1 = jkGuiJoystick_dword_5576F0;
-        goto LABEL_45;
+        v1 = jkGuiJoystick_bIsCapturingInputs;
     }
-    v1 = jkGuiJoystick_dword_5576F0;
-LABEL_44:
-    v17 = pMenu;
+    else {
+        v1 = jkGuiJoystick_bIsCapturingInputs;
+    }
 LABEL_45:
     if ( v21 )
     {
-        jkGuiRend_Paint(v17);
-        v1 = jkGuiJoystick_dword_5576F0;
+        jkGuiRend_Paint(pMenu);
+        v1 = jkGuiJoystick_bIsCapturingInputs;
     }
     jkGuiRend_SetCursorVisible(v1 == 0);
 }
@@ -1054,57 +1089,57 @@ int32_t jkGuiJoystick_Show()
 
     jkGuiJoystick_dword_557078 = stdControl_bOpen;
     jkGuiJoystick_dword_5576F4 = 0;
-    jkGuiJoystick_dword_5576F0 = 0;
+    jkGuiJoystick_bIsCapturingInputs = 0;
     jkGuiRend_DarrayNewStr(&jkGuiJoystick_darray2, 64, 1);
     jkGuiRend_DarrayNewStr(&jkGuiJoystick_darray, 64, 1);
     jkGuiRend_DarrayNewStr(&jkGuiJoystick_darray3, 64, 1);
     jkGuiJoystick_sub_41B390();
     jkGui_sub_412E20(&jkGuiJoystick_menu, 100, 104, 104);
     jkGui_sub_412E20(&jkGuiJoystick_menu, 105, 108, 107);
-    jkGuiJoystick_aElements[12].bIsVisible = 1;
-    jkGuiJoystick_aElements[13].bIsVisible = 0;
-    jkGuiJoystick_aElements[27].bIsVisible = 0;
-    jkGuiJoystick_aElements[28].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].bIsVisible = 1;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_IDK_TEXT].bIsVisible = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_JOYSTICK_DISABLED_TEXT].bIsVisible = 0;
     jkGuiJoystick_aElements[29].bIsVisible = 0;
     jkGuiJoystick_aElements[30].bIsVisible = 0;
     jkGuiJoystick_aElements[31].bIsVisible = 0;
-#ifdef SDL2_RENDER
+#if defined(SDL2_RENDER) || defined(TARGET_TWL)
     jkGuiJoystick_aElements[32].bIsVisible = 0;
     jkGuiJoystick_aElements[33].bIsVisible = 0;
     jkGuiJoystick_aElements[34].bIsVisible = 0;
 #endif
-    jkGuiJoystick_aElements[26].clickHandlerFunc = jkGuiJoystick_DisableJoystickClick;
-    jkGuiJoystick_aElements[11].selectedTextEntry = 0;
-    jkGuiJoystick_aElements[12].selectedTextEntry = 0;
-    jkGuiJoystick_aElements[13].selectedTextEntry = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].clickHandlerFunc = jkGuiJoystick_DisableJoystickClick;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST12].selectedTextEntry = 0;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_LIST13].selectedTextEntry = 0;
     jkGuiJoystick_dword_557128 = 0;
     jkGuiJoystick_dword_536B98 = -1;
     jkGuiJoystick_dword_536B9C = -1;
-    jkGuiJoystick_aElements[26].selectedTextEntry = (sithWeapon_controlOptions >> 5) & 1;
+    jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].selectedTextEntry = !!(sithWeapon_controlOptions & 0x20);
     jkGuiJoystick_Draw(&jkGuiJoystick_menu, 0);
-    jkGuiRend_ElementSetClickShortcutScancode(&jkGuiJoystick_aElements[14], VK_INSERT);
-    jkGuiRend_ElementSetClickShortcutScancode(&jkGuiJoystick_aElements[16], VK_DELETE);
-    jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiJoystick_menu, &jkGuiJoystick_aElements[23]);
-    jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiJoystick_menu, &jkGuiJoystick_aElements[24]);
+    jkGuiRend_ElementSetClickShortcutScancode(&jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_ADD_CONTROL], VK_INSERT);
+    jkGuiRend_ElementSetClickShortcutScancode(&jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REMOVE_CONTROL], VK_DELETE);
+    jkGuiRend_MenuSetReturnKeyShortcutElement(&jkGuiJoystick_menu, &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_OK]);
+    jkGuiRend_MenuSetEscapeKeyShortcutElement(&jkGuiJoystick_menu, &jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CANCEL]);
     jkGuiSetup_sub_412EF0(&jkGuiJoystick_menu, 1);
     v0 = jkGuiRend_DisplayAndReturnClicked(&jkGuiJoystick_menu);
-    if ( jkGuiJoystick_aElements[11].bIsVisible )
+    if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].bIsVisible )
     {
-        v1 = jkGuiJoystick_aEntries[jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[11].selectedTextEntry)].pControlEntry;
-        if ( jkGuiJoystick_aElements[22].bIsVisible )
+        v1 = jkGuiJoystick_aEntries[jkGuiRend_GetId(&jkGuiJoystick_darray2, jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROLS_LIST].selectedTextEntry)].pControlEntry;
+        if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].bIsVisible )
         {
-            if ( jkGuiJoystick_aElements[22].selectedTextEntry > 50 )
-                v2 = (flex_d_t)(jkGuiJoystick_aElements[22].selectedTextEntry - 50) * 0.059999999 - -1.0;
+            if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry > 50 )
+                v2 = (flex_d_t)(jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry - 50) * 0.059999999 - -1.0;
             else
-                v2 = (flex_d_t)jkGuiJoystick_aElements[22].selectedTextEntry * 0.015 - -0.25;
+                v2 = (flex_d_t)jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_SENSITIVITY_TEXT].selectedTextEntry * 0.015 - -0.25;
             v1->binaryAxisVal = v2;
         }
-        if ( jkGuiJoystick_aElements[20].bIsVisible )
-            v1->flags = v1->flags & ~8u | (jkGuiJoystick_aElements[20].selectedTextEntry != 0 ? 8 : 0);
-        if ( jkGuiJoystick_aElements[19].bIsVisible )
-            v1->flags = v1->flags & ~4u | (jkGuiJoystick_aElements[19].selectedTextEntry != 0 ? 0 : 4);
+        if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].bIsVisible )
+            v1->flags = v1->flags & ~8u | (jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_CONTROL_RAW].selectedTextEntry != 0 ? 8 : 0);
+        if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].bIsVisible )
+            v1->flags = v1->flags & ~4u | (jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_REVERSE_AXIS].selectedTextEntry != 0 ? 0 : 4);
     }
-    if ( jkGuiJoystick_aElements[26].selectedTextEntry )
+    if ( jkGuiJoystick_aElements[JKGUIJOYSTICK_IDX_DISABLE_JOYSTICK].selectedTextEntry )
         sithWeapon_controlOptions |= 0x20;
     else
         sithWeapon_controlOptions &= ~0x20;
@@ -1121,7 +1156,7 @@ int32_t jkGuiJoystick_Show()
 
 int jkGuiJoystick_DisableJoystickClick(jkGuiElement *pElement, jkGuiMenu *pMenu, int32_t mouseX, int32_t mouseY, BOOL bRedraw)
 {
-    if ( !jkGuiJoystick_dword_5576F0 )
+    if ( !jkGuiJoystick_bIsCapturingInputs )
     {
         jkGuiRend_DrawClickableAndUpdatebool(pElement, pMenu,0,0,0);
         jkGuiJoystick_dword_536B98 = -1;
@@ -1160,7 +1195,7 @@ void jkGuiJoystick_Shutdown()
     memset(&jkGuiJoystick_darray3, 0, sizeof(jkGuiJoystick_darray3));
     memset(jkGuiJoystick_waIdk2, 0, sizeof(jkGuiJoystick_waIdk2));
 
-    jkGuiJoystick_dword_5576F0 = 0;
+    jkGuiJoystick_bIsCapturingInputs = 0;
     jkGuiJoystick_dword_5576F4 = 0;
     memset(jkGuiJoystick_waIdk2, 0, sizeof(jkGuiJoystick_waIdk2));
 

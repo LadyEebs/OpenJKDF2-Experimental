@@ -322,9 +322,14 @@ LABEL_35:
 
 void jkMain_EscapeMenuShow(int a1, int a2)
 {
-    if ( !sithNet_isMulti )
+    if ( !sithNet_isMulti ){
         sithTime_Pause();
-	jkGuiRend_UpdateAudio();
+		jkGuiRend_UpdateAudio();
+    }
+
+    // Added
+    stdBitmap_EnsureData(jkGui_stdBitmaps[JKGUI_BM_BK_ESC]);
+    
     jkGui_SetModeMenu(jkGui_stdBitmaps[JKGUI_BM_BK_ESC]->palette);
     jkGuiEsc_Show();
 }
@@ -640,12 +645,14 @@ LABEL_28:
         else {
             thing_six = 1;
             stdControl_ToggleCursor(0);
+#if !defined(TARGET_NO_MULTIPLAYER_MENUS)
             if ( jkGuiMultiplayer_ShowSynchronizing() == 1 )
             {
                 thing_six = 0;
                 stdControl_ToggleCursor(1);
                 goto LABEL_28;
             }
+#endif
             sithMain_Close();
             sithMulti_Shutdown();
             if ( jkGuiRend_thing_five )
@@ -1153,8 +1160,7 @@ int jkMain_cd_swap_reverify(jkEpisodeEntry *ent)
                 break;
             }
         }
-        _strncpy(jkMain_aLevelJklFname, ent->fileName, 0x7Fu);
-        jkMain_aLevelJklFname[127] = 0;
+        stdString_SafeStrCopy(jkMain_aLevelJklFname, ent->fileName, 128);
         jkSmack_gameMode = sithNet_isMulti != 0 ? 2 : 0;
         if ( jkGuiRend_thing_five )
             jkGuiRend_thing_four = 1;

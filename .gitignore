@@ -117,3 +117,12 @@ packaging/win32/openjkdf2-64.exe.manifest
 *.vsidx
 *.db
 /.vs
+android-OpenJKDF2-arm64-v8a.apk
+OpenJKDF2-arm64-v8a.apk
+nintendo-dsi-shareware-demo.zip
+nintendo-dsi-debug.zip
+nintendo-dsi-shareware-demo/*
+build_openjkdf2_venv/*
+.beads/
+graphify-out/
+AGENTS.md

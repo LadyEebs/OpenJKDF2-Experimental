@@ -2,6 +2,7 @@
 
 #include "stdPlatform.h"
 #include "General/stdFnames.h"
+#include "General/stdString.h"
 #include "jk.h"
 
 #ifdef PLATFORM_POSIX
@@ -21,6 +22,10 @@
 #endif
 
 #include "external/fcaseopen/fcaseopen.h"
+#endif
+
+#ifdef TARGET_TWL
+#include <errno.h>
 #endif
 
 stdFileSearch* stdFileUtil_NewFind(const char *path, int a2, const char *extension)
@@ -101,6 +106,62 @@ void stdFileUtil_DisposeFind(stdFileSearch *search)
             __findclose(search->field_88);
         std_pHS->free(search);
     }
+}
+
+void stdFileUtil_FindReset(stdFileSearch *search)
+{
+    if ( search && search->isNotFirst )
+    {
+        __findclose(search->field_88);
+    }
+    if ( search )
+    {
+        search->isNotFirst = 0;
+    }
+}
+
+int stdFileUtil_FindQuick(const char *path, int type, const char *extension, stdFileSearchResult *result)
+{
+    stdFileSearch *search = stdFileUtil_NewFind(path, type, extension);
+    if ( !search )
+        return 0;
+
+    int found = stdFileUtil_FindNext(search, result);
+    stdFileUtil_DisposeFind(search);
+    return found;
+}
+
+int stdFileUtil_CountMatches(const char *path, int type, const char *extension)
+{
+    stdFileSearchResult result;
+    stdFileSearch *search = stdFileUtil_NewFind(path, type, extension);
+    if ( !search )
+        return 0;
+
+    int count = 0;
+    while ( stdFileUtil_FindNext(search, &result) )
+    {
+        count++;
+    }
+    stdFileUtil_DisposeFind(search);
+    return count;
+}
+
+int stdFileUtil_DirExists(const char *path)
+{
+    struct _WIN32_FIND_DATAA findData;
+    HANDLE h = FindFirstFileA(path, (LPWIN32_FIND_DATAA)&findData);
+    if ( h != INVALID_HANDLE_VALUE )
+    {
+        FindClose(h);
+        return 1;
+    }
+    return 0;
+}
+
+void stdFileUtil_RmDir(const char *path)
+{
+    RemoveDirectoryA(path);
 }
 
 // https://stackoverflow.com/questions/1517685/recursive-createdirectory
@@ -202,7 +263,7 @@ int stdFileUtil_Deltree(const char* lpPathName)
     if (len > 512) {
         len = 512;
     }
-    _strncpy(tmp, lpPathName, sizeof(tmp));
+    stdString_SafeStrCopy(tmp, lpPathName, sizeof(tmp));
 
 #ifndef WIN64_STANDALONE
     for (int i = 0; i < len; i++)
@@ -216,7 +277,45 @@ int stdFileUtil_Deltree(const char* lpPathName)
 #ifndef TARGET_TWL
     nftw(tmp, rmFiles, 10, FTW_DEPTH|FTW_MOUNT|FTW_PHYS);
 #else
-    assert(0);
+    DIR *dir;
+    struct dirent *entry;
+    char filepath[256];
+    struct stat statbuf;
+    int result = 1;
+
+    dir = opendir(tmp);
+    if (!dir)
+        return 0;
+
+    while ((entry = readdir(dir)) != NULL && result == 1) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        snprintf(filepath, sizeof(filepath), "%s/%s", tmp, entry->d_name);
+
+        if (stat(filepath, &statbuf) == -1) { // use lstat on non-DSi
+            result = 0;
+            break;
+        }
+
+        if (S_ISDIR(statbuf.st_mode)) {
+            result = stdFileUtil_Deltree(filepath);
+        } else {
+            if (unlink(filepath) != 0) {
+                result = 0;
+                break;
+            }
+        }
+    }
+
+    closedir(dir);
+
+    if (result) {
+        if (rmdir(tmp) != 0)
+            result = 0;
+    }
+
+    return result;
 #endif
 
     //rmdir(tmp);
@@ -307,7 +406,9 @@ int stdFileUtil_FindNext(stdFileSearch *a1, stdFileSearchResult *a2)
             tmp[strlen(tmp)-1] = 0;
         }
 
+#ifdef TARGET_TWL
         errno = 0;
+#endif
         a1->num_found = scandir(tmp, &a1->namelist, search_ext ? parse_ext : NULL, alphasort);
         
         if (!a1->namelist || a1->num_found <= 0) return 0;
@@ -339,6 +440,59 @@ void stdFileUtil_DisposeFind(stdFileSearch *search)
 
         std_pHS->free(search);
     }
+}
+
+void stdFileUtil_FindReset(stdFileSearch *search)
+{
+    if ( search )
+    {
+        for (int i = 0; i < search->num_found; i++)
+        {
+            free(search->namelist[i]);
+        }
+        free(search->namelist);
+        search->namelist = NULL;
+        search->isNotFirst = 0;
+        search->num_found = 0;
+    }
+}
+
+int stdFileUtil_FindQuick(const char *path, int type, const char *extension, stdFileSearchResult *result)
+{
+    stdFileSearch *search = stdFileUtil_NewFind(path, type, extension);
+    if ( !search )
+        return 0;
+
+    int found = stdFileUtil_FindNext(search, result);
+    stdFileUtil_DisposeFind(search);
+    return found;
+}
+
+int stdFileUtil_CountMatches(const char *path, int type, const char *extension)
+{
+    stdFileSearchResult result;
+    stdFileSearch *search = stdFileUtil_NewFind(path, type, extension);
+    if ( !search )
+        return 0;
+
+    int count = 0;
+    while ( stdFileUtil_FindNext(search, &result) )
+    {
+        count++;
+    }
+    stdFileUtil_DisposeFind(search);
+    return count;
+}
+
+int stdFileUtil_DirExists(const char *path)
+{
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+void stdFileUtil_RmDir(const char *path)
+{
+    rmdir(path);
 }
 
 // https://stackoverflow.com/questions/2336242/recursive-mkdir-system-call-on-unix

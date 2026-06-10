@@ -3,6 +3,8 @@
 
 #include "types.h"
 
+#define jkSaber_Startup_ADDR (0x0040B4A0)
+#define jkSaber_Shutdown_ADDR (0x0040B4B0)
 #define jkSaber_InitializeSaberInfo_ADDR (0x0040B4C0)
 #define jkSaber_PolylineRand_ADDR (0x0040B590)
 #define jkSaber_Draw_ADDR (0x0040B5E0)
@@ -19,6 +21,8 @@ enum JKSABER_SPARKTYPE_E
     SPARKTYPE_SABER = 2,
 };
 
+void jkSaber_Startup();
+void jkSaber_Shutdown();
 void jkSaber_InitializeSaberInfo(sithThing *thing, char *material_side_fname, char *material_tip_fname, flex_t base_rad, flex_t tip_rad, flex_t len, sithThing *wall_sparks, sithThing *blood_sparks, sithThing *saber_sparks);
 MATH_FUNC void jkSaber_PolylineRand(rdThing *thing);
 MATH_FUNC void jkSaber_Draw(rdMatrix34 *posRotMat);

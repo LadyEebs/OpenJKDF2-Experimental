@@ -996,7 +996,7 @@ int sithMulti_ProcessLeaveJoin(sithCogMsg *msg)
     v4 = NETMSG_POPS16();
 
     sithNet_MultiModeFlags = v2;
-    jkPlayer_maxPlayers = v4;
+    jkPlayer_maxPlayers = v4; // TODO cap this to JKPLAYER_NUM_INFOS?
     for (v3 = 0; v3 < jkPlayer_maxPlayers; v3++)
     {
         v6 = &jkPlayer_playerInfos[v3];
@@ -1631,4 +1631,131 @@ void sithMulti_CheckForCheckpointUpdate(sithSector* sector)
 			break;
 		}
 	}
+}
+
+int sithMulti_map_init_related()
+{
+    sithNet_MultiModeFlags = sithMulti_multiModeFlags;
+    sithNet_scorelimit = stdComm_dword_832204;
+    sithNet_multiplayer_timelimit = sithMulti_multiplayerTimelimit;
+
+    for (uint32_t i = 0; i < 0x20; i++)
+    {
+		sithPlayer_InitPlayerInfo(i);
+        sithPlayer_Startup(i);
+    }
+
+    sithNet_teamScore[0] = 0;
+    sithNet_teamScore[1] = 0;
+    sithNet_teamScore[2] = 0;
+    sithNet_teamScore[3] = 0;
+    sithNet_teamScore[4] = 0;
+
+    sithPlayer_sub_4C87C0(0, stdComm_dplayIdSelf);
+    sithPlayer_idk(0);
+    sithPlayer_ResetPalEffects();
+
+    stdComm_DoReceive();
+    return 1;
+}
+
+int sithMulti_ResetNetState()
+{
+    sithNet_isMulti = 0;
+    sithNet_isServer = 1;
+
+    for (uint32_t i = 0; i < 0x20; i++)
+    {
+		sithPlayer_InitPlayerInfo(i);
+        sithPlayer_Startup(i);
+    }
+
+    sithNet_teamScore[0] = 0;
+    sithNet_teamScore[1] = 0;
+    sithNet_teamScore[2] = 0;
+    sithNet_teamScore[3] = 0;
+    sithNet_teamScore[4] = 0;
+
+    stdComm_DoReceive();
+    return 1;
+}
+
+void sithMulti_CleanupThings(sithWorld *pWorld)
+{
+    sithMulti_dword_83265C = 0;
+
+    for (int i = 0; i < pWorld->numThingsLoaded; i++)
+    {
+        sithThing *pThing = &pWorld->things[i];
+        if ( pThing->type == SITH_THING_CORPSE ) // type 2
+        {
+            sithThing_FreeEverythingNet(pThing);
+        }
+        else if ( sithNet_isMulti == 0 )
+        {
+            pThing->thingflags |= 0x100;
+        }
+    }
+}
+
+void sithMulti_sendmsgidk4(int playerIdx)
+{
+    wchar_t buf[128];
+    wchar_t *fmt = sithStrTable_GetUniStringWithFallback("%s_HAS_LEFT_THE_GAME");
+    jk_snwprintf(buf, 0x80, fmt, jkPlayer_playerInfos[playerIdx].player_name);
+    sithConsole_PrintUniStr(buf);
+    sithConsole_AlertSound();
+
+    if ( jkPlayer_playerInfos[playerIdx].net_id == sithNet_serverNetId )
+    {
+        wchar_t *serverMsg = sithStrTable_GetUniStringWithFallback("SERVER_LEFT_GAME");
+        sithConsole_PrintUniStr(serverMsg);
+        sithConsole_AlertSound();
+        if ( sithMulti_leaveJoinType != 2 || sithMulti_leaveJoinWaitMs < sithTime_curMs + 5000 )
+        {
+            sithMulti_leaveJoinType = 2;
+            sithMulti_leaveJoinWaitMs = sithTime_curMs + 5000;
+        }
+    }
+
+    sithSoundClass_StopSound(jkPlayer_playerInfos[playerIdx].playerThing, 0);
+    sithPlayer_Startup(playerIdx);
+
+    if ( sithNet_isServer )
+    {
+        sithCog_SendSimpleMessageToAll(SITH_MESSAGE_JOIN, 3, jkPlayer_playerInfos[playerIdx].playerThing->thing_id, 0, playerIdx);
+    }
+}
+
+void sithMulti_ProcessJoin_unused(int playerIdx)
+{
+    wchar_t buf[128];
+    wchar_t *fmt = sithStrTable_GetUniStringWithFallback("%s_HAS_JOINED_THE_GAME");
+    jk_snwprintf(buf, 0x80, fmt, jkPlayer_playerInfos[playerIdx].player_name);
+    sithConsole_PrintUniStr(buf);
+
+    jkPlayer_playerInfos[playerIdx].lastUpdateMs = sithTime_curMs;
+
+    if ( sithNet_isServer )
+    {
+        sithCog_SendSimpleMessageToAll(SITH_MESSAGE_JOIN, 3, jkPlayer_playerInfos[playerIdx].playerThing->thing_id, 0, playerIdx);
+    }
+
+    if ( sithMulti_handlerIdk )
+    {
+        sithMulti_handlerIdk();
+    }
+
+    sithDSSThing_SendSyncThing(sithPlayer_pLocalPlayerThing, -1, 0xFF);
+}
+
+void sithMulti_Send36(int param1, int param2, int sendtoId)
+{
+    NETMSG_START;
+
+    NETMSG_PUSHS32(param1);
+    NETMSG_PUSHS32(param2);
+    NETMSG_END(0x24);
+
+    sithComm_SendMsgToPlayer(&sithComm_netMsgTmp, sendtoId, 1, 0);
 }

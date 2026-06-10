@@ -52,6 +52,18 @@ int sithAIAwareness_AddEntry(sithSector *sector, rdVector3 *pos, int32_t a3, fle
     return 1;
 }
 
+void sithAIAwareness_FlushEntries()
+{
+    if ( sithAIAwareness_numEntries )
+    {
+        for (uint32_t i = 0; i < sithAIAwareness_numEntries; i++)
+        {
+            sithSectorEntry* entry = &sithAIAwareness_aEntries[i];
+            sithAIAwareness_sub_4F2C30(entry, entry->sector, &entry->pos, &entry->pos, entry->field_18, entry->field_18, entry->thing);
+        }
+    }
+}
+
 int sithAIAwareness_Tick(int32_t a, sithEventInfo* b)
 {
     // Added: co-op
@@ -78,7 +90,7 @@ int sithAIAwareness_Tick(int32_t a, sithEventInfo* b)
     {
         // Added: prevent OOB access
         // TODO: define this maximum
-        if (v3 >= 256) break;
+        if (v3 >= SITHAI_MAX_ACTORS) break;
 
         sithActor* i = &sithAI_actors[v3];
 
@@ -112,6 +124,7 @@ void sithAIAwareness_sub_4F2C30(sithSectorEntry *pSectorEntry, sithSector *pSect
     OPENJKDF2_WARN_NULL_AND_RETURN(pSector);
     OPENJKDF2_WARN_NULL_AND_RETURN(pPos1);
     OPENJKDF2_WARN_NULL_AND_RETURN(pPos2);
+    OPENJKDF2_WARN_NULL_AND_RETURN(sithAIAwareness_aSectors);
 
     sithSectorAlloc* pSectorAlloc = &sithAIAwareness_aSectors[pSector->id];
     if (pSectorAlloc->field_0 != sithAIAwareness_timerTicks)
@@ -124,7 +137,9 @@ void sithAIAwareness_sub_4F2C30(sithSectorEntry *pSectorEntry, sithSector *pSect
     {
         pSectorAlloc->field_4[pSectorEntry->field_14] = a5;
         pSectorAlloc->field_10[pSectorEntry->field_14] = *pPos1;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
         pSectorAlloc->field_34[pSectorEntry->field_14] = *pPos2;
+#endif
         pSectorAlloc->field_58[pSectorEntry->field_14] = pThing;
         if (a6 > 0.0)
         {
@@ -132,7 +147,11 @@ void sithAIAwareness_sub_4F2C30(sithSectorEntry *pSectorEntry, sithSector *pSect
             {
                 flex_t a6a = (i->mirror ? a6 - i->mirror->dist : a6);
 
-                sithAIAwareness_sub_4F2C30(pSectorEntry, i->sector, pPos1, &i->field_1C, a6, a6a, pThing);
+                rdVector3 adjoinUnk;
+#ifndef OPTIMIZE_AWAY_UNUSED_FIELDS
+                adjoinUnk = i->field_1C; // Maybe this was the adjoin center...?
+#endif
+                sithAIAwareness_sub_4F2C30(pSectorEntry, i->sector, pPos1, &adjoinUnk, a6, a6a, pThing);
             }
         }
     }

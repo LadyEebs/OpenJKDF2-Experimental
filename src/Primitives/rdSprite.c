@@ -49,7 +49,7 @@ int rdSprite_NewEntry(rdSprite *sprite, char *spritepath, int type, char *materi
 #endif
     if ( sprite->face.material )
     {
-        rdMaterial_EnsureData(sprite->face.material); // Added: TWL
+        rdMaterial_EnsureDataForced(sprite->face.material); // Added: TWL
         sprite->face.numVertices = 4;
         sprite->face.vertexPosIdx = (int *)rdroid_pHS->alloc(sizeof(int) * sprite->face.numVertices);
         if ( sprite->face.vertexPosIdx )
@@ -79,7 +79,7 @@ int rdSprite_NewEntry(rdSprite *sprite, char *spritepath, int type, char *materi
                 // Odd quirk: This requires the material be actually loaded
                 // Added: nullptr fallbacks
                 stdVBuffer* v24 = NULL;
-                if (sprite->face.material->texinfos && sprite->face.material->texinfos[0] && sprite->face.material->texinfos[0]->texture_ptr) {
+                if (sprite->face.material->texinfos[0] && sprite->face.material->texinfos[0]->texture_ptr) {
                     v24 = sprite->face.material->texinfos[0]->texture_ptr->texture_struct[0];
                 }
                 int32_t width = v24 ? v24->format.width : 1; // Added: nullptr check and fallback
@@ -144,7 +144,7 @@ int rdSprite_Draw(rdThing* thing, rdMatrix34* mat)
 
 	int clipResult;
 	if (rdroid_curCullFlags & 2)
-		clipResult = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, sprite->radius);
+		clipResult = rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, sprite->radius);
 	else
 		clipResult = thing->clippingIdk;
 
@@ -375,7 +375,7 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
     rdSprite *sprite = thing->sprite3;
     rdMatrix_TransformPoint34(&vertex_out, &mat->scale, &rdCamera_pCurCamera->view_matrix);
     if ( rdroid_curCullFlags & 2 )
-        clipResult = rdClip_SphereInFrustrum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, sprite->radius);
+        clipResult = rdClip_SphereInFrustum(rdCamera_pCurCamera->pClipFrustum, &vertex_out, sprite->radius);
     else
         clipResult = thing->clippingIdk;
 
@@ -389,11 +389,11 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
     mesh_in.numVertices = sprite->face.numVertices;
     mesh_in.vertexPosIdx = sprite->face.vertexPosIdx;
     mesh_in.vertexUVIdx = sprite->face.vertexUVIdx;
-    mesh_in.verticesProjected = rdSprite_inVerts;
+    mesh_in.vertices = rdSprite_inVerts;
     mesh_in.paDynamicLight = 0;
     mesh_in.vertexUVs = sprite->vertexUVs;
     mesh_in.intensities = 0;
-    mesh_out.verticesProjected = rdSprite_tmpVerts;
+    mesh_out.vertices = rdSprite_tmpVerts;
     mesh_out.verticesOrig = procEntry->vertices;
     mesh_out.vertexUVs = procEntry->vertexUVs;
     mesh_out.paDynamicLight = procEntry->vertexIntensities;
@@ -470,7 +470,7 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
             procEntry->geometryMode,
             procEntry->lightingMode,
             procEntry->textureMode,
-            (rdVertexIdxInfo *)&mesh_in,
+            &mesh_in,
             &mesh_out,
             &sprite->face.clipIdk);
     else
@@ -479,9 +479,9 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
         return 0;
 
 #ifdef VIEW_SPACE_GBUFFER
-	memcpy(procEntry->vertexVS, mesh_out.verticesProjected, sizeof(rdVector3) * mesh_out.numVertices);
+	memcpy(procEntry->vertexVS, mesh_out.vertices, sizeof(rdVector3) * mesh_out.numVertices);
 #endif
-    rdCamera_pCurCamera->fnProjectLst(mesh_out.verticesOrig, mesh_out.verticesProjected, mesh_out.numVertices);
+    rdCamera_pCurCamera->fnProjectLst(mesh_out.verticesOrig, mesh_out.vertices, mesh_out.numVertices);
 
 #ifdef RGB_AMBIENT
 	if (rdroid_curRenderOptions & RD_USE_AMBIENT_LIGHT)
@@ -495,6 +495,8 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
         procEntry->ambientLight = 0.0;
 #endif
 
+    // Software renderer optimizations
+#ifndef TARGET_TWL
     if ( procEntry->lightingMode )
     {
 #ifdef RGB_AMBIENT
@@ -555,6 +557,12 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
             procEntry->lightingMode = rdColormap_pCurMap == rdColormap_pIdentityMap ? 0 : 2;
         }
     }
+#else
+    if ( procEntry->lightingMode == 3 )
+    {
+        procEntry->light_level_static = *procEntry->vertexIntensities;
+    }
+#endif
 
     int procFlags = 1;
     if ( procEntry->geometryMode >= 4 )
@@ -580,7 +588,11 @@ int rdSprite_Draw(rdThing *thing, rdMatrix34 *mat)
 	rdVector_Copy3(&procEntry->color, &thing->color);
 #endif
 
+	// Added: Sprites should always be drawn
+    rdMaterial_EnsureDataForced(procEntry->material);
+
     rdCache_AddProcFace(extraData, mesh_out.numVertices, procFlags);
+
     return 1;
 }
 #endif
