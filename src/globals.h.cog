@@ -150,10 +150,9 @@ extern void OpenJKDF2_Globals_Reset();
     from pathlib import Path
 
     cog.outl("// %s" % embedded_resources)
-    embed_files = [p for p in embedded_resources.split("+") if p and os.path.isfile(p)]
-    embed_files += glob.glob(str(Path(project_root) / "resource" / "hlsl" / "*.cso"))
+    embed_files = glob.glob(str(Path(project_root) / "resource" / "hlsl" / "*.cso"))
     embed_files += glob.glob(str(Path(project_root) / "resource" / "ui" / "bm" / "*.bm"))
-
+	 
     #embed_files += glob.glob(str(Path(project_root) / "resource" / "shader" / "*.asm"))
     #embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "*.glsl"))
     #embed_files += glob.glob(str(Path(project_root) / "resource" / "shaders" / "world" / "*.glsl"))
@@ -163,6 +162,8 @@ extern void OpenJKDF2_Globals_Reset();
     #embed_files += glob.glob(str(Path(project_root) / "resource" / "ssl" / "*.pem"))
     #embed_files += glob.glob(str(Path(project_root) / "resource" / "ui" / "*.uni"))
     
+    embed_files += [p for p in embedded_resources.split("+") if p and os.path.isfile(p)]
+   
     cog.outl("extern const size_t embeddedResource_aFiles_num;")
     cog.outl("extern const embeddedResource_t embeddedResource_aFiles[%d];" % (len(embed_files),))
 ]]]
