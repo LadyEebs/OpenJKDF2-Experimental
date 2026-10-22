@@ -1,5 +1,5 @@
 # This fork
-This fork introduces a variety of new features and experiments. The content is currently not in the branch, until an official package is uploaded you'll need to contact me to try it out.
+This fork introduces a variety of new features and experiments. The content is currently not in the branch, until an official package is uploaded you'll need to contact me to try it out. Requires ownership of the Steam version of Jedi Knight.
 
 <img width="3839" height="2075" alt="image" src="https://github.com/user-attachments/assets/1a704d5e-d3e5-4c22-8fdb-778f995e319b" />
 
