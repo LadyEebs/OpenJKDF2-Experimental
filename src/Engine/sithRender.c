@@ -926,7 +926,7 @@ void sithRender_RenderOccludersAndDecals()
 
 			// todo: cache me toooo
 			flex_t radius = thingIter->rdthing.model3->radius;
-			int clippingVal = rdClip_SphereInFrustum(sector->clipFrustum, &thingIter->screenPos, radius);
+			int clippingVal = rdClip_SphereInFrustum(sector->clipFrustum ? sector->clipFrustum : rdCamera_pCurCamera->pClipFrustum, &thingIter->screenPos, radius);
 
 			thingIter->rdthing.clippingIdk = clippingVal;
 			if (clippingVal == 2 || sithRender_008d1668) // MoTS added: sithRender_008d1668
