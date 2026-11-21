@@ -1091,7 +1091,7 @@ void std3D_generateExtraFramebuffers(int32_t width, int32_t height)
 	GLuint refrFormat = GL_RG8_SNORM;
 #else
 	//GLuint refrFormat = GL_RGBA8;// GL_RGB565;
-	GLuint refrFormat = GL_RGB5_A1;//jkPlayer_enable32Bit ? GL_RGB10_A2 : GL_RGB5_A1;
+	GLuint refrFormat = jkPlayer_enable32Bit ? GL_RGB10_A2 : GL_RGB5_A1;
 #endif
 
 	std3D_generateIntermediateFbo(width >> 1, height >> 1, &refr, refrFormat, 0, 0, 0, 0);// 1, 0, 1, std3D_framebuffer.ztex);
