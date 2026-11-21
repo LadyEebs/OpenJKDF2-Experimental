@@ -18,9 +18,9 @@ tex glow, tex1, t0
 max diff.rgb, diff.rgb, glow.rgb
 
 # add light above 1.0 to glow
-#mul r3, v0, diff
-#sub r3, r3, 1.0 clamp mul:2
-#add glow, glow, r3
+mul r3, v0, diff
+sub r3, r3, 1.0 clamp mul:2
+add glow, glow, r3
 
 # apply glow multiplier
 mul glow, glow, mat:glow
