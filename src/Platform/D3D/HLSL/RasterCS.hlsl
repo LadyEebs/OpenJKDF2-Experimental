@@ -73,8 +73,8 @@ void main(int3 groupID : SV_GroupID, int groupIndex : SV_GroupIndex, int3 groupT
 			PrimitiveHeader header = ReadPrimitiveHeader(byteOffset);
 			
 			// read tex data
-			PrimitiveTex tex;
-			uint solidColor;
+			PrimitiveTex tex = (PrimitiveTex)0;
+			uint solidColor = 0;
 			if (header.geoMode == 3) // solid
 				solidColor = ReadUint(byteOffset);
 			else if (header.geoMode == 4) // textured
