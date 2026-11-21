@@ -284,14 +284,31 @@ void jkGuiRend_PaintBg(jkGuiMenu* menu)
 
 		rdRect rect = { menu_x, 0, menu_w, menu_h };
 		std3D_DrawUIBitmapZ(menu->bkBm16, 0, 0, 0, &rect, scaleX, scaleY, 0, 0.99f);
+
+		return;
 	}
-#ifndef TARGET_TWL
-	else
-#endif
 #endif
 #ifndef TARGET_TWL
-		if (menu->texture)
-			stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, 0, 0, 0, 0);
+#ifdef STDBITMAP_PARTIAL_LOAD
+	if (menu->pBgBitmap)
+	{
+		stdBitmap_EnsureData(menu->pBgBitmap);
+
+		if (menu->pBgBitmap->mipSurfaces[0])
+		{
+			stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pBgBitmap->mipSurfaces[0], 0, 0, 0, 0);
+		}
+	}
+	else if (menu->pTextureOverride)
+	{
+		stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->pTextureOverride, 0, 0, 0, 0);
+	}
+#else
+	if (menu->texture)
+	{
+		stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, 0, 0, 0, 0);
+	}
+#endif
 #endif
 }
 
@@ -309,8 +326,10 @@ void jkGuiRend_Paint(jkGuiMenu *menu)
     stdControl_ShowCursor(0);
     stdDisplay_SetMasterPalette(jkGuiRend_palette);
 
+#ifdef MENU_16BIT
 	jkGuiRend_PaintBg(menu);
-	
+#else
+
 #ifndef TARGET_TWL
 #ifdef STDBITMAP_PARTIAL_LOAD
     if (menu->pBgBitmap) {
@@ -327,6 +346,7 @@ void jkGuiRend_Paint(jkGuiMenu *menu)
     if (menu->texture) {
         stdDisplay_VBufferCopy(jkGuiRend_menuBuffer, menu->texture, 0, 0, 0, 0);
     }
+#endif
 #endif
 #endif
 

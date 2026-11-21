@@ -742,6 +742,7 @@ void jkGuiBuildMulti_ModelDrawer(jkGuiElement *pElement, jkGuiMenu *pMenu, stdVB
 #ifdef MENU_16BIT
 			if (!pMenu->bkBm16)
 #endif
+{
 #ifdef STDBITMAP_PARTIAL_LOAD
             if (pMenu->pBgBitmap) {
                 stdBitmap_EnsureData(pMenu->pBgBitmap);
@@ -755,6 +756,7 @@ void jkGuiBuildMulti_ModelDrawer(jkGuiElement *pElement, jkGuiMenu *pMenu, stdVB
             }
 #else
             stdDisplay_VBufferCopy(pVbuf, pMenu->texture, 315u, 115, &jkGuiBuildMulti_rect_5353C8, 0);
+}
 #endif
             return;
         }
