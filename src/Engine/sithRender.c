@@ -2221,17 +2221,17 @@ void sithRender_DrawSurface(sithSurface* surface)
 				{
 					if (sithWorld_pCurrentWorld->version > 1)
 					{
-						rdTexCoord2i(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
-						rdTexCoord2i(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
-						rdTexCoord2i(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
-						rdTexCoord2i(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
-					}
-					else
-					{
 						rdTexCoord2f(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
 						rdTexCoord2f(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
 						rdTexCoord2f(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
 						rdTexCoord2f(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
+					}
+					else
+					{
+						rdTexCoord2i(RD_TEXCOORD0, uv->x * 0.6, uv->y * 0.6);
+						rdTexCoord2i(RD_TEXCOORD1, uv->x * 0.4, uv->y * 0.4);
+						rdTexCoord2i(RD_TEXCOORD2, uv->x * 1.1, uv->y * 1.1);
+						rdTexCoord2i(RD_TEXCOORD3, uv->x * 0.9, uv->y * 0.9);
 					}
 
 					rdTexOffset(RD_TEXCOORD0,stdMath_Frac( 0.2 * sithTime_curSeconds),stdMath_Frac( 0.2 * sithTime_curSeconds));
